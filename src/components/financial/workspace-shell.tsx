@@ -1,0 +1,246 @@
+"use client";
+
+import { useState, type ComponentType, type ReactNode } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/ui/brand-mark";
+import { NotificationBell } from "@/components/financial/notification-bell";
+import { SignOutButton } from "@/components/auth/sign-out-button";
+import {
+  IconAlertTriangle,
+  IconArchive,
+  IconBank,
+  IconBanknote,
+  IconBarChart,
+  IconBell,
+  IconBookOpen,
+  IconBuilding,
+  IconChevronDown,
+  IconChevronLeft,
+  IconFileText,
+  IconGrid,
+  IconHelpCircle,
+  IconImport,
+  IconListChecks,
+  IconReceipt,
+  IconReconcile,
+  IconRefresh,
+  IconSearch,
+  IconSettings,
+  IconShieldCheck,
+  IconSliders,
+  IconSparkles,
+  IconUsers,
+} from "@/components/ui/icons";
+
+type ModuleLink = { label: string; href?: string; icon: ComponentType<{ className?: string }> };
+
+// Groups and items match the approved reference exactly. Items with no
+// `href` have no built page yet — per the "stop building placeholders"
+// instruction they're rendered inert (not a Link, no navigation) rather
+// than pointed at a route that would 404. See MIGRATION_ROADMAP.md.
+const NAV_GROUPS: { label: string; items: ModuleLink[] }[] = [
+  {
+    label: "Executive",
+    items: [
+      { label: "Dashboard", href: "dashboard", icon: IconGrid },
+      { label: "Bank Accounts", href: "bank-accounts", icon: IconBank },
+      { label: "Import Centre", href: "import-centre", icon: IconImport },
+      { label: "Cashbook", href: "cashbook", icon: IconBanknote },
+      { label: "Transaction Explorer", href: "transactions", icon: IconListChecks },
+      { label: "Automation Rules", href: "banking-rules", icon: IconSliders },
+      { label: "Banking Exceptions", href: "banking-exceptions", icon: IconAlertTriangle },
+      { label: "Matching", href: "matching", icon: IconReconcile },
+      { label: "Suppliers", href: "suppliers", icon: IconUsers },
+      { label: "Customers", href: "customers", icon: IconBuilding },
+      { label: "Sales", href: "sales", icon: IconBanknote },
+      { label: "Purchasing", href: "purchasing", icon: IconArchive },
+      { label: "Inventory", href: "inventory", icon: IconSliders },
+      { label: "Reports", href: "reports", icon: IconBarChart },
+    ],
+  },
+  {
+    label: "Automation",
+    items: [
+      { label: "Automation Dashboard", href: "automation-dashboard", icon: IconGrid },
+      { label: "Recurring Templates", href: "recurring-templates", icon: IconRefresh },
+    ],
+  },
+  {
+    label: "Workspace",
+    items: [
+      { label: "General Ledger", href: "general-ledger", icon: IconBookOpen },
+      { label: "Journals", href: "general-ledger?tab=journals", icon: IconFileText },
+      { label: "VAT", href: "vat", icon: IconReceipt },
+      { label: "Reconciliation", href: "supplier-reconciliation", icon: IconReconcile },
+      { label: "Auditor Workspace", href: "auditor", icon: IconShieldCheck },
+      { label: "Fixed Assets", href: "assets", icon: IconArchive },
+      { label: "AI Copilot", href: "copilot", icon: IconSparkles },
+      { label: "Financial Statements", href: "financial-statements", icon: IconFileText },
+      { label: "Communications", href: "communications", icon: IconBell },
+      { label: "Billing", href: "billing", icon: IconBanknote },
+      { label: "Settings", href: "settings", icon: IconSettings },
+    ],
+  },
+];
+
+export function FinancialWorkspaceShell({
+  children,
+  companyId,
+  companyName,
+  userEmail,
+  previewMode,
+}: {
+  children: ReactNode;
+  companyId: string;
+  companyName: string;
+  userEmail?: string;
+  previewMode?: boolean;
+}) {
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  const isActive = (href?: string) => {
+    if (!href) return false;
+    // Strip any query string (e.g. "general-ledger?tab=journals") — a
+    // nav item that deep-links into a tab on a page should still
+    // highlight when that page is active, `usePathname()` never includes
+    // the query string to compare against.
+    const hrefPath = href.split("?")[0];
+    return pathname === `/company/${companyId}/${hrefPath}` || pathname.startsWith(`/company/${companyId}/${hrefPath}/`);
+  };
+  const initials = (userEmail ?? companyName).slice(0, 2).toUpperCase();
+
+  return (
+    <div className="min-h-screen bg-vf-workspace-bg">
+      {previewMode && (
+        <div className="border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-600">
+          Preview Mode — no Supabase project is configured yet, so this workspace is showing mock
+          data with authentication disabled. See ARCHITECTURE.md.
+        </div>
+      )}
+
+      <div className="flex min-h-screen">
+        <aside
+          className={cn(
+            "hidden shrink-0 flex-col bg-gradient-to-b from-vf-red-600 to-vf-red-900 px-3 py-5 transition-[width] lg:flex",
+            collapsed ? "w-[72px]" : "w-64",
+          )}
+        >
+          <Link
+            href="/"
+            className="mb-6 flex items-center gap-2.5 px-2 font-display text-lg text-vf-on-dark"
+            title="VYRON FINANCE"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-vf-charcoal">
+              <BrandMark className="h-4 w-4" />
+            </span>
+            {!collapsed && (
+              <span>
+                VYRON <span className="text-vf-red-300">FINANCE</span>
+              </span>
+            )}
+          </Link>
+
+          <nav className="flex flex-1 flex-col gap-5 overflow-y-auto">
+            {NAV_GROUPS.map((group) => (
+              <div key={group.label}>
+                {!collapsed && (
+                  <p className="px-3 pb-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-vf-on-dark-faint">
+                    {group.label}
+                  </p>
+                )}
+                <div className="flex flex-col gap-0.5">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.href);
+                    const content = (
+                      <>
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {!collapsed && item.label}
+                      </>
+                    );
+                    const itemClass = cn(
+                      "flex items-center gap-2.5 rounded-vf-sm px-3 py-2 text-sm font-medium transition",
+                      collapsed && "justify-center",
+                      active
+                        ? "bg-white/16 text-vf-on-dark shadow-[inset_3px_0_0_var(--color-vf-red-300)]"
+                        : "text-vf-on-dark-soft hover:bg-white/8 hover:text-vf-on-dark",
+                    );
+                    return item.href ? (
+                      <Link key={item.label} href={`/company/${companyId}/${item.href}`} className={itemClass} title={collapsed ? item.label : undefined}>
+                        {content}
+                      </Link>
+                    ) : (
+                      <span key={item.label} className={itemClass} aria-disabled title={collapsed ? item.label : undefined}>
+                        {content}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={cn(
+              "mt-4 flex items-center gap-2 rounded-vf-sm px-3 py-2 text-xs font-medium text-vf-on-dark-faint transition hover:bg-white/8 hover:text-vf-on-dark",
+              collapsed && "justify-center",
+            )}
+          >
+            <IconChevronLeft className={cn("h-3.5 w-3.5 transition-transform", collapsed && "rotate-180")} />
+            {!collapsed && "Collapse"}
+          </button>
+        </aside>
+
+        <div className="flex flex-1 flex-col">
+          <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-vf-paper-border bg-vf-paper px-6 py-3">
+            <Link
+              href="/platform"
+              className="flex items-center gap-1.5 text-sm transition hover:text-vf-red-600"
+              title="Switch company — return to Platform Overview"
+            >
+              <span className="font-medium text-vf-ink">{companyName}</span>
+              <IconChevronDown className="h-3.5 w-3.5 text-vf-ink-faint" />
+              <span className="ml-1 hidden text-vf-ink-faint sm:inline">/ Financial Workspace</span>
+            </Link>
+
+            <div className="flex flex-1 items-center justify-end gap-3">
+              <div className="relative hidden max-w-xs flex-1 sm:block">
+                <IconSearch className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-vf-ink-faint" />
+                <input
+                  type="search"
+                  placeholder="Search — coming soon"
+                  disabled
+                  title="Workspace-wide search is not available yet"
+                  className="w-full rounded-full border border-vf-paper-border bg-vf-paper-alt py-1.5 pr-3 pl-9 text-sm text-vf-ink-faint outline-none disabled:cursor-not-allowed"
+                />
+              </div>
+              <NotificationBell companyId={companyId} previewMode={previewMode} />
+              <span
+                className="flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-full text-vf-ink-faint"
+                role="img"
+                aria-label="Help — documentation coming soon"
+                title="Help documentation is coming soon"
+              >
+                <IconHelpCircle className="h-4.5 w-4.5" />
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-vf-red-500 to-vf-red-800 text-xs font-semibold text-vf-on-dark">
+                  {initials}
+                </span>
+                {userEmail && <SignOutButton className="text-xs font-medium text-vf-ink-soft transition hover:text-vf-red-600" />}
+              </span>
+            </div>
+          </header>
+
+          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 2xl:px-10">{children}</main>
+        </div>
+      </div>
+    </div>
+  );
+}

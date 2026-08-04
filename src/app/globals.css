@@ -1,26 +1,240 @@
 @import "tailwindcss";
 
+/*
+ * VYRON FINANCE design tokens — Enterprise Design System (Product Review
+ * Board, "Enterprise Design System Rollout"): dark executive framing,
+ * deep red gradients, and bright white operational surfaces — "paper laid
+ * onto a luxury black desk." This design language is frozen: one fixed
+ * identity used everywhere, not a togglable light/dark theme — dark
+ * canvas and white cards coexist on the same screen by design, so there
+ * is no `prefers-color-scheme` branch here (see the previous emerald/gold
+ * system in git history if that's ever needed again).
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Dark framing — canvas, nav/header bars, dark stat cards */
+  --color-canvas: #0b0909;
+  --color-canvas-raised: #141010;
+  --color-charcoal: #1c1717;
+  --color-charcoal-soft: #251e1e;
+
+  /* Executive blue — hero gradients, primary actions, priority indicators.
+     Product Review Board "Dashboard Visual Layout Refinement": replaces
+     the previous executive-red accent with a lighter, Fluent/Azure
+     Portal-style corporate blue. Values only — the exposed Tailwind
+     tokens below are still named --color-vf-red-* (and every component
+     still uses classes like `bg-vf-red-500`) so this is a pure color
+     swap with zero component files touched, per that instruction's "only
+     work is changing colors/backgrounds, do not refactor" constraint.
+     Renaming the exposed vf-red-* names themselves to vf-blue-* is
+     deferred cleanup, not done here. */
+  --color-red-900: #0b3d66;
+  --color-red-700: #0f5c96;
+  --color-red-600: #106ebe;
+  --color-red-500: #0f6cbd;
+  --color-red-400: #2f97e0;
+  --color-red-300: #6cb8ea;
+
+  /* White operational surfaces — "paper" */
+  --color-paper: #fdfbf9;
+  --color-paper-alt: #f4f1ed;
+  /* Section canvas — a very light blue-white, distinct from the warmer
+     "paper" card tone, used only as the background behind grouped
+     Dashboard sections (Product Review Board "Dashboard Visual Layout
+     Refinement," Part 8). */
+  --color-section-canvas: #f6f9fc;
+  /* Financial Workspace shell background (header/sidebar/page) — the
+     reference screenshot shows a light workspace, not the dark canvas
+     used elsewhere in the app (marketing site, auth, Platform Workspace).
+     Scoped to the Financial Workspace shell only. */
+  --color-workspace-bg: #eef2f7;
+  --color-paper-border: #e6e1da;
+
+  /* Ink on paper (white cards) */
+  --color-ink: #181513;
+  --color-ink-soft: #57524c;
+  --color-ink-faint: #8c8680;
+
+  /* Ink on dark (canvas / charcoal / hero) */
+  --color-on-dark: #f7f4f1;
+  --color-on-dark-soft: #c7c0b8;
+  --color-on-dark-faint: #8f8880;
+  --color-dark-border: rgba(247, 244, 241, 0.12);
+  --color-dark-border-soft: rgba(247, 244, 241, 0.07);
+
+  /* Semantic — used inside white cards; report charts also draw on
+     orange/purple for variety per the Reports directive ("avoid
+     monochrome reporting"). */
+  --color-success: #1f8a4c;
+  --color-warning: #c9812c;
+  --color-danger: #c11c31;
+  --color-info: #2f66c9;
+  --color-purple: #7c3aed;
+  --color-orange: #d97a2b;
+
+  --shadow-paper-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 1px rgba(0, 0, 0, 0.25);
+  --shadow-paper-md: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-paper-lg: 0 26px 64px rgba(0, 0, 0, 0.55), 0 8px 20px rgba(0, 0, 0, 0.35);
+  --shadow-dark-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-red-glow: 0 24px 64px -12px rgba(15, 108, 189, 0.45), 0 10px 28px -10px rgba(15, 108, 189, 0.35);
+
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.14);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-vf-canvas: var(--color-canvas);
+  --color-vf-canvas-raised: var(--color-canvas-raised);
+  --color-vf-charcoal: var(--color-charcoal);
+  --color-vf-charcoal-soft: var(--color-charcoal-soft);
+
+  --color-vf-red-900: var(--color-red-900);
+  --color-vf-red-700: var(--color-red-700);
+  --color-vf-red-600: var(--color-red-600);
+  --color-vf-red-500: var(--color-red-500);
+  --color-vf-red-400: var(--color-red-400);
+  --color-vf-red-300: var(--color-red-300);
+
+  --color-vf-paper: var(--color-paper);
+  --color-vf-paper-alt: var(--color-paper-alt);
+  --color-vf-paper-border: var(--color-paper-border);
+  --color-vf-section-canvas: var(--color-section-canvas);
+  --color-vf-workspace-bg: var(--color-workspace-bg);
+
+  --color-vf-ink: var(--color-ink);
+  --color-vf-ink-soft: var(--color-ink-soft);
+  --color-vf-ink-faint: var(--color-ink-faint);
+
+  --color-vf-on-dark: var(--color-on-dark);
+  --color-vf-on-dark-soft: var(--color-on-dark-soft);
+  --color-vf-on-dark-faint: var(--color-on-dark-faint);
+  --color-vf-dark-border: var(--color-dark-border);
+  --color-vf-dark-border-soft: var(--color-dark-border-soft);
+
+  --color-vf-success: var(--color-success);
+  --color-vf-warning: var(--color-warning);
+  --color-vf-danger: var(--color-danger);
+  --color-vf-info: var(--color-info);
+  --color-vf-purple: var(--color-purple);
+  --color-vf-orange: var(--color-orange);
+
+  --font-display: var(--font-source-serif), Georgia, serif;
+  --font-sans: var(--font-inter), -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-plex-mono), "SF Mono", Consolas, monospace;
+
+  --shadow-vf-paper-sm: var(--shadow-paper-sm);
+  --shadow-vf-paper-md: var(--shadow-paper-md);
+  --shadow-vf-paper-lg: var(--shadow-paper-lg);
+  --shadow-vf-dark-card: var(--shadow-dark-card);
+  --shadow-vf-red-glow: var(--shadow-red-glow);
+
+  --radius-vf-sm: 10px;
+  --radius-vf-md: 18px;
+  --radius-vf-lg: 28px;
+  --radius-vf-xl: 36px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-vf-canvas);
+  color: var(--color-vf-on-dark);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-vf-red-400);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/*
+ * Premium glass effect — applied deliberately to the two places the
+ * Product Review Board calls out (the sticky nav floating over a dark
+ * hero, and Merchant Queue's floating quick-action bar), not globally,
+ * so it reads as a considered accent rather than a default treatment on
+ * every panel.
+ */
+.vf-glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+/*
+ * Reconciliation demo — the marketing hero's signature animation, kept
+ * from the previous system and re-pointed at the new palette (the active
+ * pulse now reads in executive red instead of antique gold).
+ */
+.ledger-row .rule-pending,
+.ledger-row .status-pending {
+  transition: opacity 0.5s ease;
+}
+.ledger-row .rule-resolved,
+.ledger-row .status-resolved {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ledger-row.animated .rule-resolved,
+  .ledger-row.animated .status-resolved {
+    animation: vf-resolve 7s ease-in-out infinite;
+  }
+  .ledger-row.animated .rule-pending,
+  .ledger-row.animated .status-pending {
+    animation: vf-fade-out 7s ease-in-out infinite;
+  }
+  .ledger-row.r1 .rule-resolved, .ledger-row.r1 .status-resolved,
+  .ledger-row.r1 .rule-pending, .ledger-row.r1 .status-pending { animation-delay: 0s; }
+  .ledger-row.r2 .rule-resolved, .ledger-row.r2 .status-resolved,
+  .ledger-row.r2 .rule-pending, .ledger-row.r2 .status-pending { animation-delay: 1.4s; }
+  .ledger-row.r3 .rule-resolved, .ledger-row.r3 .status-resolved,
+  .ledger-row.r3 .rule-pending, .ledger-row.r3 .status-pending { animation-delay: 2.8s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ledger-row .rule-resolved, .ledger-row .status-resolved { opacity: 1; }
+  .ledger-row .rule-pending, .ledger-row .status-pending { opacity: 0; }
+}
+@keyframes vf-resolve {
+  0%, 18% { opacity: 0; }
+  30%, 100% { opacity: 1; }
+}
+@keyframes vf-fade-out {
+  0%, 18% { opacity: 1; }
+  30%, 100% { opacity: 0; }
+}
+
+.pipeline-node {
+  transition: color 0.4s ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pipeline-node { animation: vf-pipeline-pulse 9.8s ease-in-out infinite; }
+  .pipeline-node:nth-child(1) { animation-delay: 0s; }
+  .pipeline-node:nth-child(3) { animation-delay: 1.4s; }
+  .pipeline-node:nth-child(5) { animation-delay: 2.8s; }
+  .pipeline-node:nth-child(7) { animation-delay: 4.2s; }
+  .pipeline-node:nth-child(9) { animation-delay: 5.6s; }
+  .pipeline-node:nth-child(11) { animation-delay: 7s; }
+  .pipeline-node:nth-child(13) { animation-delay: 8.4s; }
+}
+@keyframes vf-pipeline-pulse {
+  0%, 4% { color: var(--color-vf-red-400); }
+  16%, 100% { color: var(--color-vf-on-dark-soft); }
 }
