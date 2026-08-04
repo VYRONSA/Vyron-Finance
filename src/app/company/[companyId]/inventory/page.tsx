@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { InventoryTabs } from "@/components/financial/inventory/inventory-tabs";
 import { IconAlertTriangle, IconArchive, IconBanknote, IconImport } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -109,17 +111,19 @@ export default async function InventoryPage({ params }: { params: Promise<{ comp
         </p>
       )}
 
-      <InventoryTabs
-        companyId={companyId}
-        previewMode={previewMode}
-        stockItems={stockItems}
-        warehouses={warehouses}
-        transactions={transactions}
-        stockTakes={stockTakes}
-        vatTreatments={vatTreatments}
-        intelligenceSignals={intelligenceSignals}
-        integrationConnections={integrationConnections}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <InventoryTabs
+          companyId={companyId}
+          previewMode={previewMode}
+          stockItems={stockItems}
+          warehouses={warehouses}
+          transactions={transactions}
+          stockTakes={stockTakes}
+          vatTreatments={vatTreatments}
+          intelligenceSignals={intelligenceSignals}
+          integrationConnections={integrationConnections}
+        />
+      </Suspense>
     </div>
   );
 }

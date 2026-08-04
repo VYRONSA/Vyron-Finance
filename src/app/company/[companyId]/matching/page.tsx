@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { MatchingTabs } from "@/components/financial/matching/matching-tabs";
 import { IconAlertTriangle, IconGrid, IconImport, IconReconcile, IconShieldCheck, IconSparkles } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -105,16 +107,18 @@ export default async function MatchingPage({ params }: { params: Promise<{ compa
         </p>
       )}
 
-      <MatchingTabs
-        companyId={companyId}
-        summary={summary}
-        queue={queue}
-        merchants={merchants}
-        duplicateFindings={duplicateFindings}
-        customerMatching={customerMatching}
-        supplierMatching={supplierMatching}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <MatchingTabs
+          companyId={companyId}
+          summary={summary}
+          queue={queue}
+          merchants={merchants}
+          duplicateFindings={duplicateFindings}
+          customerMatching={customerMatching}
+          supplierMatching={supplierMatching}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }

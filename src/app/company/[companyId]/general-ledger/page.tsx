@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { GeneralLedgerTabs } from "@/components/financial/general-ledger/general-ledger-tabs";
 import { IconBookOpen, IconClock, IconFileText, IconImport, IconShieldCheck } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -110,19 +112,21 @@ export default async function GeneralLedgerPage({ params }: { params: Promise<{ 
         </p>
       )}
 
-      <GeneralLedgerTabs
-        companyId={companyId}
-        previewMode={previewMode}
-        accounts={accounts}
-        accountTree={accountTree}
-        journals={journals}
-        postingRules={postingRules}
-        trialBalance={trialBalance}
-        initialGlPage={glPage}
-        branches={branches}
-        departments={departments}
-        costCentres={costCentres}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <GeneralLedgerTabs
+          companyId={companyId}
+          previewMode={previewMode}
+          accounts={accounts}
+          accountTree={accountTree}
+          journals={journals}
+          postingRules={postingRules}
+          trialBalance={trialBalance}
+          initialGlPage={glPage}
+          branches={branches}
+          departments={departments}
+          costCentres={costCentres}
+        />
+      </Suspense>
     </div>
   );
 }

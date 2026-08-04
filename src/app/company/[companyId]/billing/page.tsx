@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BillingTabs } from "@/components/financial/billing/billing-tabs";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { getCompany } from "@/server/services/company-service";
@@ -33,22 +35,24 @@ export default async function BillingPage({ params }: { params: Promise<{ compan
     return (
       <div className="mx-auto flex max-w-[1400px] flex-col gap-6">
         <BillingHero companyName={company.name} />
-        <BillingTabs
-          companyId={companyId}
-          subscription={MOCK_SUBSCRIPTION}
-          plan={MOCK_BILLING_PLANS[0]}
-          allPlans={MOCK_BILLING_PLANS}
-          allPrices={MOCK_BILLING_PLAN_PRICES}
-          lifecycleState={MOCK_COMPANY_LIFECYCLE_STATE}
-          entitlements={MOCK_ENTITLEMENTS}
-          usage={MOCK_USAGE_SNAPSHOT}
-          billingAccount={MOCK_BILLING_ACCOUNT}
-          invoices={MOCK_INVOICES}
-          payments={MOCK_PAYMENTS}
-          credits={MOCK_CREDITS}
-          events={MOCK_BILLING_EVENTS}
-          previewMode
-        />
+        <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+          <BillingTabs
+            companyId={companyId}
+            subscription={MOCK_SUBSCRIPTION}
+            plan={MOCK_BILLING_PLANS[0]}
+            allPlans={MOCK_BILLING_PLANS}
+            allPrices={MOCK_BILLING_PLAN_PRICES}
+            lifecycleState={MOCK_COMPANY_LIFECYCLE_STATE}
+            entitlements={MOCK_ENTITLEMENTS}
+            usage={MOCK_USAGE_SNAPSHOT}
+            billingAccount={MOCK_BILLING_ACCOUNT}
+            invoices={MOCK_INVOICES}
+            payments={MOCK_PAYMENTS}
+            credits={MOCK_CREDITS}
+            events={MOCK_BILLING_EVENTS}
+            previewMode
+          />
+        </Suspense>
       </div>
     );
   }
@@ -91,23 +95,25 @@ export default async function BillingPage({ params }: { params: Promise<{ compan
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-6">
       <BillingHero companyName={company.name} />
-      <BillingTabs
-        companyId={companyId}
-        subscription={subscription}
-        plan={plan}
-        allPlans={allPlans}
-        allPrices={allPrices}
-        lifecycleState={lifecycleState}
-        entitlements={entitlements}
-        usage={usage}
-        billingAccount={billingAccount}
-        invoices={invoices}
-        payments={payments}
-        credits={credits}
-        events={events}
-        statusHistory={statusHistory}
-        previewMode={false}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <BillingTabs
+          companyId={companyId}
+          subscription={subscription}
+          plan={plan}
+          allPlans={allPlans}
+          allPrices={allPrices}
+          lifecycleState={lifecycleState}
+          entitlements={entitlements}
+          usage={usage}
+          billingAccount={billingAccount}
+          invoices={invoices}
+          payments={payments}
+          credits={credits}
+          events={events}
+          statusHistory={statusHistory}
+          previewMode={false}
+        />
+      </Suspense>
     </div>
   );
 }

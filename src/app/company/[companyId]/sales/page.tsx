@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SalesTabs } from "@/components/financial/sales/sales-tabs";
 import { IconBanknote, IconClock, IconFileText, IconImport, IconUsers } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -83,17 +85,19 @@ export default async function SalesPage({ params }: { params: Promise<{ companyI
         </p>
       )}
 
-      <SalesTabs
-        companyId={companyId}
-        previewMode={previewMode}
-        customers={customers}
-        vatTreatments={vatTreatments}
-        quotations={quotations}
-        orders={orders}
-        deliveries={deliveries}
-        invoices={invoices}
-        receipts={receipts}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <SalesTabs
+          companyId={companyId}
+          previewMode={previewMode}
+          customers={customers}
+          vatTreatments={vatTreatments}
+          quotations={quotations}
+          orders={orders}
+          deliveries={deliveries}
+          invoices={invoices}
+          receipts={receipts}
+        />
+      </Suspense>
     </div>
   );
 }

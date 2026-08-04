@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AssetsTabs } from "@/components/financial/assets/assets-tabs";
 import { IconAlertTriangle, IconBanknote, IconImport, IconShieldCheck } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -80,16 +82,18 @@ export default async function AssetsPage({ params }: { params: Promise<{ company
         </p>
       )}
 
-      <AssetsTabs
-        companyId={companyId}
-        summary={summary}
-        assets={assets}
-        assetClasses={assetClasses}
-        lifecycleEventsByAsset={lifecycleEventsByAsset}
-        depreciationRuns={depreciationRuns}
-        findings={findings}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <AssetsTabs
+          companyId={companyId}
+          summary={summary}
+          assets={assets}
+          assetClasses={assetClasses}
+          lifecycleEventsByAsset={lifecycleEventsByAsset}
+          depreciationRuns={depreciationRuns}
+          findings={findings}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AuditorTabs } from "@/components/financial/audit/auditor-tabs";
 import { IconAlertTriangle, IconFileText, IconImport, IconShieldCheck } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -105,22 +107,24 @@ export default async function AuditorPage({ params }: { params: Promise<{ compan
         </p>
       )}
 
-      <AuditorTabs
-        companyId={companyId}
-        engagement={engagement}
-        summary={summary}
-        areas={areas}
-        programmeStepsByArea={programmeStepsByArea}
-        risks={risks}
-        team={team}
-        findings={findings}
-        workingPapers={workingPapers}
-        queries={queries}
-        periodStart={periodStart}
-        periodEnd={periodEnd}
-        financialYearStartDate={financialYearStartDate}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <AuditorTabs
+          companyId={companyId}
+          engagement={engagement}
+          summary={summary}
+          areas={areas}
+          programmeStepsByArea={programmeStepsByArea}
+          risks={risks}
+          team={team}
+          findings={findings}
+          workingPapers={workingPapers}
+          queries={queries}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          financialYearStartDate={financialYearStartDate}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }

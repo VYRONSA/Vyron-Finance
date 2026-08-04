@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BankingRulesTabs } from "@/components/financial/banking-rules/banking-rules-tabs";
 import { IconImport } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -45,7 +47,9 @@ export default async function BankingRulesPage({ params }: { params: Promise<{ c
         </p>
       )}
 
-      <BankingRulesTabs companyId={companyId} rules={rules} previewMode={previewMode} />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <BankingRulesTabs companyId={companyId} rules={rules} previewMode={previewMode} />
+      </Suspense>
     </div>
   );
 }

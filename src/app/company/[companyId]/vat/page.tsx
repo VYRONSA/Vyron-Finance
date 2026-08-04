@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { VatTabs } from "@/components/financial/vat/vat-tabs";
 import { IconAlertTriangle, IconBanknote, IconFileText, IconImport, IconShieldCheck } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -113,18 +115,20 @@ export default async function VatPage({ params }: { params: Promise<{ companyId:
         </p>
       )}
 
-      <VatTabs
-        companyId={companyId}
-        summary={summary}
-        documents={documents}
-        intelligenceSignals={intelligenceSignals}
-        exceptions={exceptions}
-        adjustments={adjustments}
-        vatReturns={vatReturns}
-        auditLog={vatAuditLog}
-        vatTreatments={vatTreatments}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <VatTabs
+          companyId={companyId}
+          summary={summary}
+          documents={documents}
+          intelligenceSignals={intelligenceSignals}
+          exceptions={exceptions}
+          adjustments={adjustments}
+          vatReturns={vatReturns}
+          auditLog={vatAuditLog}
+          vatTreatments={vatTreatments}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }

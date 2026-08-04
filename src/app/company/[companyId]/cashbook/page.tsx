@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { CashbookTabs } from "@/components/financial/cashbook/cashbook-tabs";
 import { IconBanknote, IconImport, IconReconcile, IconSliders } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -78,16 +80,18 @@ export default async function CashbookPage({ params }: { params: Promise<{ compa
         </p>
       )}
 
-      <CashbookTabs
-        companyId={companyId}
-        entries={entries}
-        bankAccounts={bankAccounts}
-        batches={batches}
-        reconciliations={reconciliations}
-        activeReconciliation={activeReconciliation}
-        activeSummary={activeSummary}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <CashbookTabs
+          companyId={companyId}
+          entries={entries}
+          bankAccounts={bankAccounts}
+          batches={batches}
+          reconciliations={reconciliations}
+          activeReconciliation={activeReconciliation}
+          activeSummary={activeSummary}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatementsTabs } from "@/components/financial/statements/statements-tabs";
 import { IconFileText, IconImport, IconShieldCheck, IconSparkles } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -83,20 +85,22 @@ export default async function FinancialStatementsPage({ params }: { params: Prom
         </p>
       )}
 
-      <StatementsTabs
-        companyId={companyId}
-        incomeStatement={incomeStatement}
-        balanceSheet={balanceSheet}
-        cashFlowStatement={cashFlowStatement}
-        equityStatement={equityStatement}
-        disclosureNotes={disclosureNotes}
-        reportingPackages={reportingPackages}
-        periodStart={periodStart}
-        periodEnd={periodEnd}
-        financialYearStartDate={financialYearStartDate}
-        financialYearLabel={financialYearLabel}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <StatementsTabs
+          companyId={companyId}
+          incomeStatement={incomeStatement}
+          balanceSheet={balanceSheet}
+          cashFlowStatement={cashFlowStatement}
+          equityStatement={equityStatement}
+          disclosureNotes={disclosureNotes}
+          reportingPackages={reportingPackages}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          financialYearStartDate={financialYearStartDate}
+          financialYearLabel={financialYearLabel}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }

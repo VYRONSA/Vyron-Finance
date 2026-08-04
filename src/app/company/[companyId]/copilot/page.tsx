@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { CopilotTabs } from "@/components/financial/copilot/copilot-tabs";
 import { IconImport, IconShieldCheck, IconSparkles, IconTarget } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -78,18 +80,20 @@ export default async function CopilotPage({ params }: { params: Promise<{ compan
         </p>
       )}
 
-      <CopilotTabs
-        companyId={companyId}
-        narratives={narratives}
-        scenarios={scenarios}
-        briefing={latestBriefing}
-        assetOptions={assetOptions}
-        periodStart={periodStart}
-        periodEnd={periodEnd}
-        financialYearStartDate={financialYearStartDate}
-        financialYearLabel={financialYearLabel}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <CopilotTabs
+          companyId={companyId}
+          narratives={narratives}
+          scenarios={scenarios}
+          briefing={latestBriefing}
+          assetOptions={assetOptions}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          financialYearStartDate={financialYearStartDate}
+          financialYearLabel={financialYearLabel}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }

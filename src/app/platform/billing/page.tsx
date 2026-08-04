@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconShieldCheck } from "@/components/ui/icons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BillingConsoleTabs } from "@/components/platform/billing/billing-console-tabs";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { requirePlatformPermission } from "@/server/services/permission-service";
@@ -41,18 +43,20 @@ export default async function InternalBillingConsolePage() {
     return (
       <div className="mx-auto flex max-w-[1800px] flex-col gap-6">
         <ConsoleHero />
-        <BillingConsoleTabs
-          subscriptionRows={rows}
-          invoices={MOCK_INVOICES}
-          payments={MOCK_PAYMENTS}
-          credits={MOCK_CREDITS}
-          webhookEvents={[]}
-          providerConnection={null}
-          reporting={reporting}
-          supportNotes={[]}
-          billingEvents={MOCK_BILLING_EVENTS}
-          previewMode
-        />
+        <Suspense fallback={<ConsoleTabsFallback />}>
+          <BillingConsoleTabs
+            subscriptionRows={rows}
+            invoices={MOCK_INVOICES}
+            payments={MOCK_PAYMENTS}
+            credits={MOCK_CREDITS}
+            webhookEvents={[]}
+            providerConnection={null}
+            reporting={reporting}
+            supportNotes={[]}
+            billingEvents={MOCK_BILLING_EVENTS}
+            previewMode
+          />
+        </Suspense>
       </div>
     );
   }
@@ -110,19 +114,40 @@ export default async function InternalBillingConsolePage() {
   return (
     <div className="mx-auto flex max-w-[1800px] flex-col gap-6">
       <ConsoleHero />
-      <BillingConsoleTabs
-        subscriptionRows={subscriptionRows}
-        invoices={invoices}
-        payments={payments}
-        credits={credits}
-        webhookEvents={webhookEvents}
-        providerConnection={providerConnection}
-        reporting={reporting}
-        supportNotes={supportNotes}
-        billingEvents={billingEvents}
-        previewMode={false}
-      />
+      <Suspense fallback={<ConsoleTabsFallback />}>
+        <BillingConsoleTabs
+          subscriptionRows={subscriptionRows}
+          invoices={invoices}
+          payments={payments}
+          credits={credits}
+          webhookEvents={webhookEvents}
+          providerConnection={providerConnection}
+          reporting={reporting}
+          supportNotes={supportNotes}
+          billingEvents={billingEvents}
+          previewMode={false}
+        />
+      </Suspense>
     </div>
+  );
+}
+
+function ConsoleTabsFallback() {
+  return (
+    <Card>
+      <div className="flex flex-wrap gap-1 border-b border-vf-paper-border px-4 pt-3">
+        {["Subscriptions", "Payments & Invoices", "Webhooks & Provider Health", "Revenue Intelligence", "Support & Audit"].map((tab) => (
+          <span key={tab} className="rounded-t-lg px-3.5 py-2 text-sm font-medium text-vf-ink-faint">
+            {tab}
+          </span>
+        ))}
+      </div>
+      <CardContent className="flex flex-col gap-3 p-6">
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-full" />
+      </CardContent>
+    </Card>
   );
 }
 

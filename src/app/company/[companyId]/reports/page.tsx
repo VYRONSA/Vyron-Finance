@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { ExecutiveSummaryBar } from "@/components/financial/executive-summary-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ReportsTabs } from "@/components/financial/reports/reports-tabs";
 import { IconBanknote, IconImport, IconShieldCheck, IconTarget } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -145,19 +147,21 @@ export default async function ReportsPage({ params }: { params: Promise<{ compan
         </p>
       )}
 
-      <ReportsTabs
-        companyId={companyId}
-        incomeStatement={incomeStatement}
-        balanceSheet={balanceSheet}
-        cashFlowStatement={cashFlowStatement}
-        financialYearLabel={financialYearLabel}
-        budgets={budgets}
-        accounts={accounts}
-        forecasts={forecastResults}
-        executiveAlerts={executiveAlerts}
-        reportDefinitions={reportDefinitions}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <ReportsTabs
+          companyId={companyId}
+          incomeStatement={incomeStatement}
+          balanceSheet={balanceSheet}
+          cashFlowStatement={cashFlowStatement}
+          financialYearLabel={financialYearLabel}
+          budgets={budgets}
+          accounts={accounts}
+          forecasts={forecastResults}
+          executiveAlerts={executiveAlerts}
+          reportDefinitions={reportDefinitions}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }
