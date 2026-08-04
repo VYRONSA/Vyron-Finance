@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AccountActivityView } from "@/components/financial/general-ledger/account-activity-view";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { getChartOfAccount } from "@/server/services/chart-of-accounts-service";
@@ -140,18 +142,20 @@ export default async function AccountActivityPage({
         </CardContent>
       </Card>
 
-      <AccountActivityView
-        companyId={companyId}
-        accountId={id}
-        account={account}
-        activity={activity}
-        yearComparison={yearComparison}
-        transactions={glPage.transactions}
-        relatedJournals={relatedJournals}
-        intelligence={accountIntelligence}
-        auditEvidence={auditEvidence}
-        previewMode={previewMode}
-      />
+      <Suspense fallback={<Skeleton className="h-64 w-full rounded-vf-md" />}>
+        <AccountActivityView
+          companyId={companyId}
+          accountId={id}
+          account={account}
+          activity={activity}
+          yearComparison={yearComparison}
+          transactions={glPage.transactions}
+          relatedJournals={relatedJournals}
+          intelligence={accountIntelligence}
+          auditEvidence={auditEvidence}
+          previewMode={previewMode}
+        />
+      </Suspense>
     </div>
   );
 }
