@@ -25,7 +25,7 @@ Frozen by Product Review Board decision at the RC1 freeze review. From this poin
 | Launch Checklist | `LAUNCH_CHECKLIST.md` | Complete — reflects every fix through the RC1 freeze |
 | Defect Register | `DEFECT_REGISTER.md` | Complete — 42 findings logged (5 Critical, 6 High, 17 Medium, 13 Low, 1 Nice-to-have), 0 Critical open, full severity breakdown and rationale for every deferred item |
 | Architecture Documents | `ARCHITECTURE.md`, `ENTERPRISE_ARCHITECTURE.md`, `DATABASE_ARCHITECTURE.md`, `SECURITY_ARCHITECTURE.md`, `BILLING_ARCHITECTURE.md`, `PERMISSION_MODEL.md`, `LICENSING_ENGINE.md`, `FEATURE_FLAGS.md`, `STRIPE_PROVIDER.md`, `ARCHITECTURE_REVIEW_COMPANY_BILLING.md`, `ADR_001_COMPANY_CREATION_BILLING_DECOUPLING.md` | Complete |
-| Product Bible | *(when created)* | **Not yet created** — out of scope for the RC1 freeze itself; tracked as a post-freeze deliverable, not a blocker to this release package |
+| Product Bible | `VYRON_FINANCE_PRODUCT_BIBLE.md` | Complete — the definitive business/product reference (vision, target markets, full module catalogue, workflow maps, roles, AI capabilities, integrations, security, commercial model, roadmap, product principles) |
 | Deployment Guide | `DEPLOYMENT_GUIDE.md` | Complete |
 | Operations Manual | `OPERATIONS_MANUAL.md`, `COMMERCIAL_OPERATIONS.md` | Complete |
 | Disaster Recovery Guide | `DISASTER_RECOVERY.md` | Complete |
