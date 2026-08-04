@@ -153,6 +153,57 @@ See `DISASTER_RECOVERY.md` for the full procedure set.
 - [ ] Backup retention window confirmed for the actual plan tier in use (§12)
 - [ ] Domain DNS propagated and HTTPS certificate issued (Vercel handles this automatically once DNS is correct)
 
+## 16. Environment Recovery
+
+This section exists because of a real incident, not a hypothetical one: provisioning the Stripe Marketplace integration (`vercel integration add stripe`) automatically ran `vercel env pull`, which overwrote `.env.local` to match exactly what was registered on the Vercel project at the time — Stripe's four variables only. The three Supabase variables had only ever existed locally, never registered on the Vercel project, so the pull silently dropped them and broke the local dev server. Recorded here in full, per this guide's own standing rule of documenting the exact errors actually hit.
+
+### Required environment variables
+
+| Variable | Source | Registered on Vercel? |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Project Settings → API (§2) | Verify with `vercel env ls` — was **not** registered at the time of the incident above |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Project Settings → API (§2) | Same |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Project Settings → API (§2) | Same |
+| `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_MCP_KEY` | Provisioned automatically by `vercel integration add stripe` | Yes — registered across Production, Preview, and Development the moment the integration is added |
+
+Any variable that exists only in a local `.env.local` and not in the Vercel project's own Environment Variables list will be **removed** the next time something runs `vercel env pull` — this is Vercel's intended behaviour (the pull syncs local to match the project), not a bug, which is exactly why every variable the application needs must be registered on the Vercel project itself, not just present locally.
+
+### Safe backup procedure
+
+Never run `vercel env pull` (or any Marketplace `vercel integration add` command, which runs it automatically) without backing up first:
+
+```
+npm run env:backup   # or: npm run env:pull, which backs up first automatically
+```
+
+`scripts/backup-env.sh` copies `.env.local` to `.env-backups/.env.local.<timestamp>` before anything touches the working file, and refuses to silently overwrite an existing backup with the same timestamp. `.env-backups/` is covered by the repository's existing `.env*` gitignore pattern — verified with `git check-ignore` — so backups, like `.env.local` itself, are never committed.
+
+### Restoring `.env.local`
+
+1. If a recent backup exists in `.env-backups/`, restore from it: `cp .env-backups/.env.local.<timestamp> .env.local`.
+2. If no backup exists (as in the incident above, since the safeguard didn't exist yet when it happened), retrieve each missing value from its real source (Supabase Project Settings → API for the three Supabase variables) and **merge** them into the current `.env.local` — append the missing lines, never replace the whole file, so variables that are already correct (e.g. Stripe's, freshly pulled) aren't lost in the other direction.
+3. Never paste secret values into a chat conversation with an AI assistant, including this one — add them directly to `.env.local` in your own editor/terminal, then confirm they're restored.
+
+### Vercel environment synchronization
+
+After restoring `.env.local` locally, register any variable that was missing from the Vercel project so this failure mode cannot recur:
+
+```
+vercel env ls                                    # confirm what's actually registered
+vercel env add NEXT_PUBLIC_SUPABASE_URL           # repeat per missing variable, per environment
+vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
+vercel env add SUPABASE_SERVICE_ROLE_KEY
+```
+`vercel env add` prompts for the value and which environments (Production/Preview/Development) it applies to — it does not require pasting the value as a command-line argument, so it never needs to appear in a terminal history or an AI assistant's tool output either.
+
+### Common recovery steps, in order
+
+1. `npm run env:backup` before touching anything further.
+2. Restore/merge `.env.local` per the procedure above.
+3. `vercel env ls` — confirm every required variable is registered on the Vercel project, not just present locally.
+4. Restart the local dev server (`npm run dev`) so it picks up the corrected `.env.local`.
+5. Verify: the app loads, login succeeds, a Supabase-backed page returns real data (not a Preview Mode banner), and any provider added since (e.g. Stripe) still resolves correctly — the same verification this guide's Production Checklist (§15) already expects before any deployment.
+
 ---
 
 *Every numbered step in this guide, and the exact commands/curl calls shown, were performed against a real Supabase project during RC1 Phase 7.6 and RC2 live certification — not reconstructed from documentation after the fact.*

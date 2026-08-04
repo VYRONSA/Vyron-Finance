@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "env:backup": "bash scripts/backup-env.sh",
+    "env:pull": "npm run env:backup && vercel env pull"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
