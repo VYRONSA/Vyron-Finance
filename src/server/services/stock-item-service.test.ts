@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeStockLevelStatus } from "./stock-item-service";
+import { computeStockLevelStatus, editRequiresElevatedPermission } from "./stock-item-service";
 
 describe("computeStockLevelStatus", () => {
   it("flags out of stock when quantity on hand is zero", () => {
@@ -36,5 +36,23 @@ describe("computeStockLevelStatus", () => {
     const result = computeStockLevelStatus({ quantityOnHand: 5, reorderLevel: 0, safetyStock: 8 });
     expect(result.isBelowSafetyStock).toBe(true);
     expect(result.isLowStock).toBe(false);
+  });
+});
+
+describe("editRequiresElevatedPermission", () => {
+  it("requires elevated permission when cost price is present", () => {
+    expect(editRequiresElevatedPermission({ costPrice: 42.5 })).toBe(true);
+  });
+
+  it("requires elevated permission even when cost price is set to zero", () => {
+    expect(editRequiresElevatedPermission({ costPrice: 0 })).toBe(true);
+  });
+
+  it("does not require elevated permission for non-sensitive fields", () => {
+    expect(editRequiresElevatedPermission({ description: "New description", sellingPrice: 99.99, reorderLevel: 10 })).toBe(false);
+  });
+
+  it("does not require elevated permission for an empty edit", () => {
+    expect(editRequiresElevatedPermission({})).toBe(false);
   });
 });

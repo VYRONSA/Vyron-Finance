@@ -28,9 +28,10 @@ function renderTabs(previewMode = true) {
 }
 
 describe("CashbookTabs", () => {
-  it("shows Capture as the default active tab with a working entry", () => {
+  it("shows Capture as the default active tab with the batch entry grid", () => {
     renderTabs();
-    expect(screen.getByText("Capture Receipt")).toBeInTheDocument();
+    expect(screen.getByText("Save Draft")).toBeInTheDocument();
+    expect(screen.getByText("Post Batch")).toBeInTheDocument();
   });
 
   it("switches to the Receipts Cashbook tab and shows only credit entries", () => {

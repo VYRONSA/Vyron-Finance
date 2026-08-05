@@ -87,7 +87,6 @@ function baseProps(overrides: Partial<Parameters<typeof TransactionBulkActionBar
     onReview: noop,
     onGenerateJournal: noop,
     onApplyRule: noop,
-    onCreateRule: noop,
     onDeleteImport: noop,
     loading: false,
     previewMode: false,
@@ -106,14 +105,6 @@ describe("TransactionBulkActionBar", () => {
     for (const name of [/assign merchant/i, /assign customer/i, /apply rule/i]) {
       expect(screen.getByRole("button", { name })).not.toBeDisabled();
     }
-  });
-
-  it("enables Create Rule only when exactly one transaction is selected", () => {
-    const { rerender } = render(<TransactionBulkActionBar {...baseProps({ selected: [txn({ id: 1 })] })} />);
-    expect(screen.getByRole("button", { name: /create rule/i })).not.toBeDisabled();
-
-    rerender(<TransactionBulkActionBar {...baseProps({ selected: [txn({ id: 1 }), txn({ id: 2 })] })} />);
-    expect(screen.getByRole("button", { name: /create rule/i })).toBeDisabled();
   });
 
   it("enables Generate Journal only when every selected transaction has a GL account and no existing journal", () => {
@@ -144,13 +135,38 @@ describe("TransactionBulkActionBar", () => {
     expect(screen.getByRole("button", { name: /apply rule/i })).toBeDisabled();
   });
 
-  it("submits the chosen GL account through the inline form", () => {
+  it("submits the chosen GL account through the inline form with no rule when the checkbox is unchecked", () => {
     const onAssignGl = vi.fn();
     render(<TransactionBulkActionBar {...baseProps({ onAssignGl })} />);
     fireEvent.click(screen.getByRole("button", { name: /assign gl/i }));
     fireEvent.change(screen.getByPlaceholderText("GL account code"), { target: { value: "7000" } });
     fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
-    expect(onAssignGl).toHaveBeenCalledWith("7000");
+    expect(onAssignGl).toHaveBeenCalledWith("7000", null);
+  });
+
+  it("shows the Create Banking Rule panel only when exactly one transaction is selected", () => {
+    const { rerender } = render(<TransactionBulkActionBar {...baseProps({ selected: [txn({ id: 1 })] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /assign gl/i }));
+    expect(screen.getByText("Create Banking Rule")).toBeInTheDocument();
+
+    rerender(<TransactionBulkActionBar {...baseProps({ selected: [txn({ id: 1 }), txn({ id: 2 })] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /assign gl/i }));
+    expect(screen.queryByText("Create Banking Rule")).not.toBeInTheDocument();
+  });
+
+  it("submits a populated rule when Create Banking Rule is checked", () => {
+    const onAssignGl = vi.fn();
+    render(<TransactionBulkActionBar {...baseProps({ onAssignGl, selected: [txn({ id: 1, beneficiary: "ABC Supplies" })] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /assign gl/i }));
+    fireEvent.change(screen.getByPlaceholderText("GL account code"), { target: { value: "7000" } });
+    fireEvent.click(screen.getByLabelText("Create Banking Rule"));
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    expect(onAssignGl).toHaveBeenCalledWith("7000", {
+      matchDescription: "ABC Supplies",
+      matchType: "contains",
+      applyToRemaining: true,
+      applyToFutureImports: true,
+    });
   });
 
   it("submits the chosen merchant through the inline form", () => {
@@ -167,13 +183,6 @@ describe("TransactionBulkActionBar", () => {
     render(<TransactionBulkActionBar {...baseProps({ onApplyRule })} />);
     fireEvent.click(screen.getByRole("button", { name: /apply rule/i }));
     expect(onApplyRule).toHaveBeenCalledOnce();
-  });
-
-  it("calls onCreateRule directly with no inline form", () => {
-    const onCreateRule = vi.fn();
-    render(<TransactionBulkActionBar {...baseProps({ onCreateRule })} />);
-    fireEvent.click(screen.getByRole("button", { name: /create rule/i }));
-    expect(onCreateRule).toHaveBeenCalledOnce();
   });
 
   it("has no obvious accessibility violations with a selection active", async () => {
