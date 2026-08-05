@@ -12,6 +12,7 @@ import { cleanText, isBlankRow, normalizeHeader, parseCsvText } from "@/server/i
 import { simulateRuleAgainstTransactions, testRuleAgainstRecord, type EvaluableRecord, type RuleTestResult } from "@/server/banking-rules/rule-engine";
 import { DOMAIN_ACTION_TYPES, DOMAIN_CONDITION_FIELDS, DOMAIN_RULE_TYPES } from "@/server/banking-rules/automation-rule-domains";
 import { buildRuleAnalytics, buildRuleHistory, compareRuleAnalytics, type RuleAnalyticsEntry, type RuleApplicationOutcome } from "@/server/banking-rules/rule-analytics-engine";
+import { detectRuleConflicts, type RuleConflict } from "@/server/banking-rules/conflict-detection";
 import {
   CONDITION_OPERATORS,
   RULE_DOMAINS,
@@ -75,6 +76,19 @@ export async function updateBankingRule(
 }
 
 export const setBankingRuleActive = repo.setBankingRuleActive;
+
+/** Pilot Review Round 1, Phase 8 — "Delete" (soft, see repository's own
+ * comment). Distinct from Enable/Disable. */
+export async function deleteBankingRule(companyId: string, ruleId: number, performedBy: string): Promise<void> {
+  const existing = await repo.getBankingRule(companyId, ruleId);
+  if (!existing) throw new NotFoundError(`No banking rule with id ${ruleId}.`);
+  await repo.deleteBankingRule(companyId, ruleId, performedBy);
+}
+
+export async function getRuleConflicts(companyId: string, domain: RuleDomain): Promise<RuleConflict[]> {
+  const rules = await repo.listBankingRules(companyId, domain);
+  return detectRuleConflicts(rules);
+}
 
 export type SimulateResult = { matchedCount: number; totalCount: number; sample: { transactionId: number; matched: boolean }[] };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -136,6 +136,137 @@ function StockItemFormPanel({
   );
 }
 
+/** Pilot Review Round 1, Phase 10 — Inventory's edit UI. The backend
+ * (`updateStockItem`) already existed and was unused by any UI; this is
+ * the wiring, plus the same audit/elevated-permission discipline
+ * Customer/Supplier already have. `costPrice` is visually flagged since
+ * it's the one field requiring `Inventory:Approve`. */
+function EditStockItemPanel({
+  companyId,
+  item,
+  warehouses,
+  vatTreatments,
+  onDone,
+  onCancel,
+}: {
+  companyId: string;
+  item: StockItem;
+  warehouses: Warehouse[];
+  vatTreatments: VatTreatment[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [description, setDescription] = useState(item.description);
+  const [category, setCategory] = useState(item.category);
+  const [unitOfMeasure, setUnitOfMeasure] = useState(item.unitOfMeasure);
+  const [defaultWarehouseId, setDefaultWarehouseId] = useState(item.defaultWarehouseId ?? 0);
+  const [sellingPrice, setSellingPrice] = useState(String(item.sellingPrice));
+  const [costPrice, setCostPrice] = useState(String(item.costPrice));
+  const [reorderLevel, setReorderLevel] = useState(String(item.reorderLevel));
+  const [safetyStock, setSafetyStock] = useState(String(item.safetyStock));
+  const [vatTreatmentCode, setVatTreatmentCode] = useState(item.vatTreatmentCode);
+  const [notes, setNotes] = useState(item.notes);
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const costPriceChanged = Number(costPrice) !== item.costPrice;
+
+  async function submit() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/inventory/stock-items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          reason: reason.trim(),
+          fields: {
+            description, category, unitOfMeasure,
+            defaultWarehouseId: defaultWarehouseId || null,
+            sellingPrice: Number(sellingPrice) || 0,
+            costPrice: Number(costPrice) || 0,
+            reorderLevel: Number(reorderLevel) || 0,
+            safetyStock: Number(safetyStock) || 0,
+            vatTreatmentCode, notes,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      onDone();
+    } catch {
+      setError("Couldn't reach the API. Check the dev server is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-vf-md border border-vf-red-500/30 bg-vf-red-500/5 p-4">
+      <p className="mb-3 text-sm font-semibold text-vf-ink">Edit {item.stockCode}</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <Field label="Description" htmlFor="esi-desc" required className="lg:col-span-2">
+          <Input id="esi-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </Field>
+        <Field label="Category" htmlFor="esi-cat">
+          <Input id="esi-cat" value={category} onChange={(e) => setCategory(e.target.value)} />
+        </Field>
+        <Field label="Unit of Measure" htmlFor="esi-uom">
+          <Input id="esi-uom" value={unitOfMeasure} onChange={(e) => setUnitOfMeasure(e.target.value)} />
+        </Field>
+        <Field label="Default Warehouse" htmlFor="esi-wh">
+          <Select id="esi-wh" value={defaultWarehouseId} onChange={(e) => setDefaultWarehouseId(Number(e.target.value))}>
+            <option value={0}>None</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="VAT Treatment" htmlFor="esi-vat">
+          <Select id="esi-vat" value={vatTreatmentCode} onChange={(e) => setVatTreatmentCode(e.target.value)}>
+            {vatTreatments.map((v) => (
+              <option key={v.code} value={v.code}>{v.name} ({v.rate}%)</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Selling Price" htmlFor="esi-sell">
+          <Input id="esi-sell" type="number" step="0.01" value={sellingPrice} onChange={(e) => setSellingPrice(e.target.value)} />
+        </Field>
+        <Field label="Cost Price (requires Inventory:Approve)" htmlFor="esi-cost" className={costPriceChanged ? "rounded-md ring-2 ring-vf-warning/40" : undefined}>
+          <Input id="esi-cost" type="number" step="0.01" value={costPrice} onChange={(e) => setCostPrice(e.target.value)} />
+        </Field>
+        <Field label="Reorder Level" htmlFor="esi-reorder">
+          <Input id="esi-reorder" type="number" step="0.01" value={reorderLevel} onChange={(e) => setReorderLevel(e.target.value)} />
+        </Field>
+        <Field label="Safety Stock" htmlFor="esi-safety">
+          <Input id="esi-safety" type="number" step="0.01" value={safetyStock} onChange={(e) => setSafetyStock(e.target.value)} />
+        </Field>
+        <Field label="Notes" htmlFor="esi-notes" className="lg:col-span-2">
+          <Input id="esi-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        <Field label="Reason (recorded to audit trail)" htmlFor="esi-reason" className="lg:col-span-2">
+          <Input id="esi-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this being changed?" />
+        </Field>
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <Button variant="primary" size="sm" disabled={loading || !description.trim()} onClick={submit}>
+          Save Changes
+        </Button>
+        <Button variant="subtle" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+      {error && <p className="mt-2 text-sm text-vf-danger">{error}</p>}
+    </div>
+  );
+}
+
 export function StockItemsTab({
   companyId,
   stockItems,
@@ -154,6 +285,7 @@ export function StockItemsTab({
   const [search, setSearch] = useState("");
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const base = `/api/companies/${companyId}/inventory/stock-items`;
@@ -227,26 +359,52 @@ export function StockItemsTab({
           </TableHead>
           <TableBody>
             {filtered.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="font-mono text-xs font-medium text-vf-ink">{item.stockCode}</TableCell>
-                <TableCell>{item.description}</TableCell>
-                <TableCell>{warehouseName(item.defaultWarehouseId)}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{item.quantityOnHand}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{money(item.averageCost)}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{money(item.quantityOnHand * item.averageCost)}</TableCell>
-                <TableCell><Badge tone={STATUS_TONE[item.status]}>{item.status}</Badge></TableCell>
-                <TableCell className="text-right">
-                  {item.status === "Active" ? (
-                    <Button variant="subtle" size="sm" disabled={previewMode || loadingId === item.id} title={disabledTitle} onClick={() => setStatus(item.id, "Inactive")}>
-                      Deactivate
-                    </Button>
-                  ) : item.status === "Inactive" ? (
-                    <Button variant="subtle" size="sm" disabled={previewMode || loadingId === item.id} title={disabledTitle} onClick={() => setStatus(item.id, "Active")}>
-                      Reactivate
-                    </Button>
-                  ) : null}
-                </TableCell>
-              </TableRow>
+              <Fragment key={item.id}>
+                <TableRow>
+                  <TableCell className="font-mono text-xs font-medium text-vf-ink">{item.stockCode}</TableCell>
+                  <TableCell>{item.description}</TableCell>
+                  <TableCell>{warehouseName(item.defaultWarehouseId)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{item.quantityOnHand}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{money(item.averageCost)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{money(item.quantityOnHand * item.averageCost)}</TableCell>
+                  <TableCell><Badge tone={STATUS_TONE[item.status]}>{item.status}</Badge></TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="subtle" size="sm" disabled={previewMode} title={disabledTitle} onClick={() => setEditingId(editingId === item.id ? null : item.id)}>
+                        {editingId === item.id ? "Close" : "Edit"}
+                      </Button>
+                      {item.status === "Active" ? (
+                        <Button variant="subtle" size="sm" disabled={previewMode || loadingId === item.id} title={disabledTitle} onClick={() => setStatus(item.id, "Inactive")}>
+                          Deactivate
+                        </Button>
+                      ) : item.status === "Inactive" ? (
+                        <Button variant="subtle" size="sm" disabled={previewMode || loadingId === item.id} title={disabledTitle} onClick={() => setStatus(item.id, "Active")}>
+                          Reactivate
+                        </Button>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+                {editingId === item.id && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="p-0">
+                      <div className="p-3">
+                        <EditStockItemPanel
+                          companyId={companyId}
+                          item={item}
+                          warehouses={warehouses}
+                          vatTreatments={vatTreatments}
+                          onDone={() => {
+                            setEditingId(null);
+                            router.refresh();
+                          }}
+                          onCancel={() => setEditingId(null)}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
             ))}
           </TableBody>
         </Table>

@@ -19,8 +19,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
   }
 
   try {
-    const { batch, exceptions } = await importBankStatement(companyId, file);
-    return NextResponse.json({ batch, exceptions }, { status: 201 });
+    const { batch, exceptions, pdfDetection } = await importBankStatement(companyId, file);
+    return NextResponse.json({ batch, exceptions, pdfDetection }, { status: 201 });
   } catch (error) {
     if (error instanceof ValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });

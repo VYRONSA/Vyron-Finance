@@ -417,6 +417,36 @@ async function bulkUpdateWithAllocationHistory(
   }
 }
 
+/** Pilot Review Round 1, Phase 7 — "If repeated allocations are
+ * detected, prompt: would you like to create a Banking Rule?" Counts how
+ * many OTHER transactions with this same beneficiary already carry this
+ * same target (GL account, customer, or supplier) — queried against
+ * current state on `ae_bank_transactions` itself (the same columns
+ * `bulkAssignGl`/`bulkAssignCustomer`/`bulkAssignSupplier` write to),
+ * not a separate learning model. */
+export async function countBeneficiaryAllocations(
+  companyId: string,
+  beneficiary: string,
+  target: { glAccount?: string; customerId?: number; supplierId?: number },
+  excludeTransactionId: number,
+): Promise<number> {
+  const supabase = await createClient();
+  let query = supabase
+    .from("ae_bank_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .eq("beneficiary", beneficiary)
+    .neq("id", excludeTransactionId);
+  if (target.glAccount) query = query.eq("suggested_gl_account", target.glAccount);
+  else if (target.customerId !== undefined) query = query.eq("matched_customer_id", target.customerId);
+  else if (target.supplierId !== undefined) query = query.eq("matched_supplier_id", target.supplierId);
+  else return 0;
+
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function bulkAssignSupplier(companyId: string, transactionIds: number[], supplierId: number, performedBy: string): Promise<void> {
   await bulkUpdateWithAllocationHistory(
     companyId,

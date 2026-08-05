@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/server/auth/require-session";
-import { getStockItem, NotFoundError, setStockItemStatus, updateStockItem, ValidationError } from "@/server/services/stock-item-service";
+import { requireSession, getPerformedByLabel } from "@/server/auth/require-session";
+import { editRequiresElevatedPermission, getStockItem, NotFoundError, setStockItemStatus, updateStockItem, ValidationError } from "@/server/services/stock-item-service";
 import { requirePermission } from "@/server/services/permission-service";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; stockItemId: string }> }) {
@@ -31,7 +31,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
         return NextResponse.json({ stockItem });
       }
       case "update": {
-        const stockItem = await updateStockItem(companyId, id, body.fields ?? {});
+        if (editRequiresElevatedPermission(body.fields ?? {})) {
+          const elevated = await requirePermission(companyId, "Inventory:Approve");
+          if (!elevated.ok) return elevated.response;
+        }
+        const performedBy = await getPerformedByLabel();
+        const stockItem = await updateStockItem(companyId, id, body.fields ?? {}, performedBy, body.reason);
         return NextResponse.json({ stockItem });
       }
       default:

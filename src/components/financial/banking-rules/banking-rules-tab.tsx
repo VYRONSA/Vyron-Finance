@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import {
   type RuleDomain,
 } from "@/server/banking-rules/types";
 import { DOMAIN_ACTION_TYPES, DOMAIN_CONDITION_FIELDS, DOMAIN_RULE_TYPES } from "@/server/banking-rules/automation-rule-domains";
+import type { RuleConflict } from "@/server/banking-rules/conflict-detection";
 
 type EditableCondition = { field: ConditionField; operator: ConditionOperator; value: string; value2: string };
 type EditableAction = { actionType: ActionType; targetId: string; targetText: string };
@@ -273,7 +274,17 @@ function VersionHistoryPanel({ companyId, ruleId, previewMode, onRestored }: { c
   );
 }
 
-function RuleCard({ rule, companyId, previewMode }: { rule: BankingRule; companyId: string; previewMode: boolean }) {
+function RuleCard({
+  rule,
+  companyId,
+  previewMode,
+  conflictReasons,
+}: {
+  rule: BankingRule;
+  companyId: string;
+  previewMode: boolean;
+  conflictReasons: string[];
+}) {
   const router = useRouter();
   const [name, setName] = useState(rule.name);
   const [description, setDescription] = useState(rule.description);
@@ -284,6 +295,7 @@ function RuleCard({ rule, companyId, previewMode }: { rule: BankingRule; company
   const [testing, setTesting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const apiBase = `/api/companies/${companyId}/banking-rules/${rule.id}`;
   const disabledTitle = previewMode ? "Available once a production Supabase project is connected" : undefined;
@@ -306,13 +318,42 @@ function RuleCard({ rule, companyId, previewMode }: { rule: BankingRule; company
     }
   }
 
+  async function handleDelete() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(apiBase, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Couldn't reach the API. Check the dev server is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="rounded-vf-md border border-vf-paper-border p-4">
+      {conflictReasons.length > 0 && (
+        <div className="mb-3 rounded-md border border-vf-warning/25 bg-vf-warning/8 px-3 py-2 text-xs text-[#93601f]">
+          <p className="font-medium">Conflicts with another active rule:</p>
+          <ul className="mt-1 list-disc pl-4">
+            {conflictReasons.map((reason, i) => (
+              <li key={i}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
             <Badge tone="muted">{rule.domain}</Badge>
             <Badge tone="info">{rule.ruleType}</Badge>
+            {conflictReasons.length > 0 && <Badge tone="warn">Conflict</Badge>}
             <Input className="max-w-xs text-sm" value={name} onChange={(e) => setName(e.target.value)} aria-label={`Name for rule ${rule.id}`} />
           </div>
           <Input className="mt-1.5 max-w-md text-sm" value={description} onChange={(e) => setDescription(e.target.value)} aria-label={`Description for rule ${rule.id}`} />
@@ -331,6 +372,21 @@ function RuleCard({ rule, companyId, previewMode }: { rule: BankingRule; company
           <Button variant="subtle" size="sm" onClick={() => setTesting((t) => !t)}>
             {testing ? "Hide Test" : "Test"}
           </Button>
+          {confirmingDelete ? (
+            <>
+              <span className="text-xs text-vf-ink-faint">Delete this rule?</span>
+              <Button variant="subtle" size="sm" className="text-vf-danger" disabled={previewMode || loading} onClick={handleDelete}>
+                Confirm Delete
+              </Button>
+              <Button variant="subtle" size="sm" onClick={() => setConfirmingDelete(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button variant="subtle" size="sm" className="text-vf-danger" disabled={previewMode || loading} title={disabledTitle} onClick={() => setConfirmingDelete(true)}>
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -471,8 +527,21 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
   const [runningEngine, setRunningEngine] = useState(false);
   const [runOutcome, setRunOutcome] = useState<{ processed: number; autoPosted: number; exceptionsRaised: number } | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [conflicts, setConflicts] = useState<RuleConflict[]>([]);
   const apiBase = `/api/companies/${companyId}/banking-rules`;
   const disabledTitle = previewMode ? "Available once a production Supabase project is connected" : undefined;
+
+  useEffect(() => {
+    if (previewMode) return;
+    fetch(`${apiBase}/conflicts?domain=Banking`)
+      .then((res) => (res.ok ? res.json() : { conflicts: [] }))
+      .then((data) => setConflicts(data.conflicts ?? []))
+      .catch(() => setConflicts([]));
+  }, [apiBase, previewMode, rules]);
+
+  function conflictReasonsFor(ruleId: number): string[] {
+    return conflicts.filter((c) => c.ruleAId === ruleId || c.ruleBId === ruleId).map((c) => c.reason);
+  }
 
   async function handleImportFile(file: File) {
     setImportErrors([]);
@@ -577,7 +646,7 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
         return visibleRules.length === 0 ? (
           <EmptyState icon={<IconSliders className="h-5 w-5" />} title="No automation rules yet." description="Add your first rule above, or use Learn Rule from a transaction in Transaction Explorer." />
         ) : (
-          visibleRules.map((rule) => <RuleCard key={rule.id} rule={rule} companyId={companyId} previewMode={previewMode} />)
+          visibleRules.map((rule) => <RuleCard key={rule.id} rule={rule} companyId={companyId} previewMode={previewMode} conflictReasons={conflictReasonsFor(rule.id)} />)
         );
       })()}
     </div>

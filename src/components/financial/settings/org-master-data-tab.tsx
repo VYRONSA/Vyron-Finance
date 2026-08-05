@@ -38,6 +38,40 @@ export function OrgMasterDataTab({
   const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCode, setEditCode] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+
+  function startEdit(item: OrgMasterDataItem) {
+    setEditingId(item.id);
+    setEditName(item.name);
+    setEditCode(item.code);
+    setEditAddress(item.address ?? "");
+  }
+
+  async function saveEdit(id: number) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiPath}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName, code: editCode, ...(hasAddress ? { address: editAddress } : {}) }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      setEditingId(null);
+      router.refresh();
+    } catch {
+      setError("Couldn't reach the API. Check the dev server is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleAdd() {
     setLoading(true);
@@ -106,27 +140,61 @@ export function OrgMasterDataTab({
             </tr>
           </TableHead>
           <TableBody>
-            {items.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="font-medium text-vf-ink">{item.name}</TableCell>
-                <TableCell>{item.code || "—"}</TableCell>
-                {hasAddress && <TableCell>{item.address || "—"}</TableCell>}
-                <TableCell>
-                  <Badge tone={item.isActive ? "good" : "muted"}>{item.isActive ? "Active" : "Inactive"}</Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    variant="subtle"
-                    size="sm"
-                    disabled={loading || previewMode}
-                    title={disabledTitle}
-                    onClick={() => toggleActive(item.id, item.isActive)}
-                  >
-                    {item.isActive ? "Deactivate" : "Reactivate"}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {items.map((item) =>
+              editingId === item.id ? (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <Input aria-label={`${resourceLabel} name`} value={editName} onChange={(e) => setEditName(e.target.value)} />
+                  </TableCell>
+                  <TableCell>
+                    <Input aria-label={`${resourceLabel} code`} value={editCode} onChange={(e) => setEditCode(e.target.value)} />
+                  </TableCell>
+                  {hasAddress && (
+                    <TableCell>
+                      <Input aria-label={`${resourceLabel} address`} value={editAddress} onChange={(e) => setEditAddress(e.target.value)} />
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <Badge tone={item.isActive ? "good" : "muted"}>{item.isActive ? "Active" : "Inactive"}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="primary" size="sm" disabled={loading || !editName.trim()} onClick={() => saveEdit(item.id)}>
+                        Save
+                      </Button>
+                      <Button variant="subtle" size="sm" onClick={() => setEditingId(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium text-vf-ink">{item.name}</TableCell>
+                  <TableCell>{item.code || "—"}</TableCell>
+                  {hasAddress && <TableCell>{item.address || "—"}</TableCell>}
+                  <TableCell>
+                    <Badge tone={item.isActive ? "good" : "muted"}>{item.isActive ? "Active" : "Inactive"}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="subtle" size="sm" disabled={loading || previewMode} title={disabledTitle} onClick={() => startEdit(item)}>
+                        Edit
+                      </Button>
+                      <Button
+                        variant="subtle"
+                        size="sm"
+                        disabled={loading || previewMode}
+                        title={disabledTitle}
+                        onClick={() => toggleActive(item.id, item.isActive)}
+                      >
+                        {item.isActive ? "Deactivate" : "Reactivate"}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ),
+            )}
           </TableBody>
         </Table>
       )}

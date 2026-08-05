@@ -28,6 +28,31 @@ export async function createProject(companyId: string, input: NewProject): Promi
   return projectFromRow(data);
 }
 
+export async function getProject(companyId: string, projectId: number): Promise<Project | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("projects").select("*").eq("company_id", companyId).eq("id", projectId).maybeSingle<ProjectRow>();
+  if (error) throw error;
+  return data ? projectFromRow(data) : null;
+}
+
+export type UpdatableProjectFields = Partial<{ name: string; code: string }>;
+
+/** Pilot Review Round 1, Phase 10 — previously only `isActive` could
+ * change post-creation; a project could never be renamed or recoded
+ * once created. */
+export async function updateProject(companyId: string, projectId: number, fields: UpdatableProjectFields): Promise<Project> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update(fields)
+    .eq("company_id", companyId)
+    .eq("id", projectId)
+    .select("*")
+    .single<ProjectRow>();
+  if (error) throw error;
+  return projectFromRow(data);
+}
+
 export async function setProjectActive(companyId: string, projectId: number, isActive: boolean): Promise<Project> {
   const supabase = await createClient();
   const { data, error } = await supabase

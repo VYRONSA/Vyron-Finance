@@ -27,6 +27,31 @@ export async function createDepartment(companyId: string, input: NewDepartment):
   return departmentFromRow(data);
 }
 
+export async function getDepartment(companyId: string, departmentId: number): Promise<Department | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("departments").select("*").eq("company_id", companyId).eq("id", departmentId).maybeSingle<DepartmentRow>();
+  if (error) throw error;
+  return data ? departmentFromRow(data) : null;
+}
+
+export type UpdatableDepartmentFields = Partial<{ name: string; code: string }>;
+
+/** Pilot Review Round 1, Phase 10 — previously only `isActive` could
+ * change post-creation; a department could never be renamed or
+ * recoded once created. */
+export async function updateDepartment(companyId: string, departmentId: number, fields: UpdatableDepartmentFields): Promise<Department> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("departments")
+    .update(fields)
+    .eq("company_id", companyId)
+    .eq("id", departmentId)
+    .select("*")
+    .single<DepartmentRow>();
+  if (error) throw error;
+  return departmentFromRow(data);
+}
+
 export async function setDepartmentActive(companyId: string, departmentId: number, isActive: boolean): Promise<Department> {
   const supabase = await createClient();
   const { data, error } = await supabase

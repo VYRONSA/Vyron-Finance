@@ -4,15 +4,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import { DocumentsPanel } from "@/components/financial/documents/documents-panel";
-import type { AssetLifecycleEvent, FixedAssetWithNetBookValue } from "@/server/assets/types";
+import { DEPRECIATION_METHODS, type AssetLifecycleEvent, type FixedAssetWithNetBookValue } from "@/server/assets/types";
 
 function money(value: number): string {
   return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-type ActionForm = "capitalise" | "improve" | "transfer" | "revalue" | "dispose" | null;
+type ActionForm = "capitalise" | "improve" | "transfer" | "revalue" | "dispose" | "edit" | null;
 
 export function AssetDetailPanel({ companyId, asset, lifecycleEvents, previewMode }: { companyId: string; asset: FixedAssetWithNetBookValue; lifecycleEvents: AssetLifecycleEvent[]; previewMode: boolean }) {
   const router = useRouter();
@@ -29,6 +30,46 @@ export function AssetDetailPanel({ companyId, asset, lifecycleEvents, previewMod
   const [delta, setDelta] = useState("");
   const [disposeEventType, setDisposeEventType] = useState<"Disposal" | "WriteOff" | "Retirement">("Disposal");
   const [proceeds, setProceeds] = useState("0");
+
+  // Pilot Review Round 1, Phase 10 — the one general "Edit Details" form,
+  // separate from the 5 lifecycle actions above (which each still touch
+  // only their own specific fields through their own dedicated endpoint).
+  const [editDescription, setEditDescription] = useState(asset.description);
+  const [editCategory, setEditCategory] = useState(asset.category);
+  const [editAssetGroup, setEditAssetGroup] = useState(asset.assetGroup);
+  const [editUsefulLifeMonths, setEditUsefulLifeMonths] = useState(String(asset.usefulLifeMonths));
+  const [editDepreciationMethod, setEditDepreciationMethod] = useState(asset.depreciationMethod);
+  const [editResidualValue, setEditResidualValue] = useState(String(asset.residualValue));
+  const [editReason, setEditReason] = useState("");
+
+  async function submitEdit() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/assets/register/${asset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: editDescription, category: editCategory, assetGroup: editAssetGroup,
+          usefulLifeMonths: Number(editUsefulLifeMonths) || asset.usefulLifeMonths,
+          depreciationMethod: editDepreciationMethod,
+          residualValue: Number(editResidualValue) || 0,
+          reason: editReason.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      setActiveForm(null);
+      router.refresh();
+    } catch {
+      setError("Couldn't reach the API. Check the dev server is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function submit(path: string, body: Record<string, unknown>) {
     setLoading(true);
@@ -65,6 +106,9 @@ export function AssetDetailPanel({ companyId, asset, lifecycleEvents, previewMod
         </div>
         {!isTerminal && (
           <div className="flex flex-wrap gap-2">
+            <Button variant="subtle" size="sm" disabled={previewMode} title={disabledTitle} onClick={() => setActiveForm("edit")}>
+              Edit Details
+            </Button>
             {canCapitalise && (
               <Button variant="subtle" size="sm" disabled={previewMode} title={disabledTitle} onClick={() => setActiveForm("capitalise")}>
                 Capitalise
@@ -108,6 +152,42 @@ export function AssetDetailPanel({ companyId, asset, lifecycleEvents, previewMod
           <dd>{asset.depreciationMethod}</dd>
         </div>
       </dl>
+
+      {activeForm === "edit" && (
+        <div className="mt-3 grid grid-cols-1 gap-3 border-t border-vf-paper-border pt-3 sm:grid-cols-3">
+          <Field label="Description" htmlFor="ea-desc" className="sm:col-span-2">
+            <Input id="ea-desc" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+          </Field>
+          <Field label="Category" htmlFor="ea-cat">
+            <Input id="ea-cat" value={editCategory} onChange={(e) => setEditCategory(e.target.value)} />
+          </Field>
+          <Field label="Asset Group" htmlFor="ea-group">
+            <Input id="ea-group" value={editAssetGroup} onChange={(e) => setEditAssetGroup(e.target.value)} />
+          </Field>
+          <Field label="Useful Life (months) — requires Assets:Approve" htmlFor="ea-life">
+            <Input id="ea-life" type="number" value={editUsefulLifeMonths} onChange={(e) => setEditUsefulLifeMonths(e.target.value)} />
+          </Field>
+          <Field label="Depreciation Method — requires Assets:Approve" htmlFor="ea-method">
+            <Select id="ea-method" value={editDepreciationMethod} onChange={(e) => setEditDepreciationMethod(e.target.value as typeof editDepreciationMethod)}>
+              {DEPRECIATION_METHODS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Residual Value — requires Assets:Approve" htmlFor="ea-residual">
+            <Input id="ea-residual" type="number" step="0.01" value={editResidualValue} onChange={(e) => setEditResidualValue(e.target.value)} />
+          </Field>
+          <Field label="Reason (recorded to audit trail)" htmlFor="ea-reason" className="sm:col-span-3">
+            <Input id="ea-reason" value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Why is this being changed?" />
+          </Field>
+          <div className="flex gap-2 sm:col-span-3">
+            <Button variant="primary" size="sm" disabled={loading || !editDescription.trim()} onClick={submitEdit}>
+              Save Changes
+            </Button>
+            <Button variant="subtle" size="sm" onClick={() => setActiveForm(null)}>Cancel</Button>
+          </div>
+        </div>
+      )}
 
       {activeForm === "capitalise" && (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-vf-paper-border pt-3">

@@ -3,6 +3,7 @@ import { requireSession, getPerformedByLabel } from "@/server/auth/require-sessi
 import {
   applyBulkReview,
   applyRule,
+  applyRulesToRemainingBatchTransactions,
   assignCustomer,
   assignGl,
   assignMerchant,
@@ -53,6 +54,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
       }
       case "apply-rule": {
         const results = await applyRule(companyId, body.transactionIds ?? [], performedBy);
+        return NextResponse.json({ results });
+      }
+      case "apply-rule-to-batch": {
+        const results = await applyRulesToRemainingBatchTransactions(companyId, body.importBatch ?? "", body.excludeTransactionId ?? null, performedBy);
         return NextResponse.json({ results });
       }
       case "generate-journal": {

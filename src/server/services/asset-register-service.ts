@@ -17,6 +17,7 @@ import * as journalRepo from "@/server/repositories/journal-repository";
 import { buildJournalFromEvent } from "@/server/services/posting-rule-service";
 import { postApprovedJournals } from "@/server/services/posting-engine-service";
 import { recordAuditEntry } from "@/server/services/automation-audit-service";
+import { recordPermissionAuditEntry } from "@/server/repositories/permission-repository";
 import { buildAssetDisposalJournalLines } from "@/server/assets/asset-lifecycle-engine";
 import { computeNetBookValue } from "@/server/assets/depreciation-engine";
 import type { AssetLifecycleEventType, AssetStatus, FixedAsset, FixedAssetWithNetBookValue } from "@/server/assets/types";
@@ -44,6 +45,74 @@ async function requireAsset(companyId: string, assetId: number): Promise<FixedAs
   const asset = await assetRepo.getFixedAsset(companyId, assetId);
   if (!asset) throw new NotFoundError(`No fixed asset with id ${assetId}.`);
   return asset;
+}
+
+/** Pilot Review Round 1, Phase 10 — Fixed Assets previously had no
+ * general edit path at all, only 5 narrow lifecycle actions (each
+ * touching its own specific fields via `updateFixedAsset`, which this
+ * reuses). Standardises on `permission_audit_log`/`recordPermissionAuditEntry`
+ * for field-level audit — the same one mechanism Customer/Supplier/Bank
+ * Account/Stock Item/Branch/Department/Cost Centre/Project all use —
+ * rather than either of the two other, inconsistent mechanisms already
+ * in play here (`asset_lifecycle_events`, `automation-audit-service.ts`),
+ * which stay exactly as-is for the 5 lifecycle actions that already use
+ * them. `usefulLifeMonths`/`depreciationMethod`/`residualValue` directly
+ * change future depreciation expense — gated behind `Assets:Approve`,
+ * the same reused-grant pattern as every other elevated field this round. */
+export type EditAssetDetailsRequest = Partial<{
+  description: string;
+  category: string;
+  assetGroup: string;
+  usefulLifeMonths: number;
+  depreciationMethod: FixedAsset["depreciationMethod"];
+  residualValue: number;
+  serialNumber: string;
+  insuranceProvider: string;
+  insurancePolicyNumber: string;
+  insuranceExpiryDate: string | null;
+}>;
+
+export function editAssetDetailsRequiresElevatedPermission(input: EditAssetDetailsRequest): boolean {
+  return input.usefulLifeMonths !== undefined || input.depreciationMethod !== undefined || input.residualValue !== undefined;
+}
+
+export async function editAssetDetails(companyId: string, assetId: number, input: EditAssetDetailsRequest, performedBy = "System", reason = ""): Promise<FixedAsset> {
+  const existing = await requireAsset(companyId, assetId);
+  if (input.description !== undefined && !input.description.trim()) throw new ValidationError("Description cannot be empty.");
+  if (input.usefulLifeMonths !== undefined && input.usefulLifeMonths <= 0) throw new ValidationError("Useful life must be greater than zero months.");
+
+  const updated = await assetRepo.updateFixedAsset(companyId, assetId, {
+    ...(input.description !== undefined && { description: input.description.trim() }),
+    ...(input.category !== undefined && { category: input.category }),
+    ...(input.assetGroup !== undefined && { asset_group: input.assetGroup }),
+    ...(input.usefulLifeMonths !== undefined && { useful_life_months: input.usefulLifeMonths }),
+    ...(input.depreciationMethod !== undefined && { depreciation_method: input.depreciationMethod }),
+    ...(input.residualValue !== undefined && { residual_value: input.residualValue }),
+    ...(input.serialNumber !== undefined && { serial_number: input.serialNumber }),
+    ...(input.insuranceProvider !== undefined && { insurance_provider: input.insuranceProvider }),
+    ...(input.insurancePolicyNumber !== undefined && { insurance_policy_number: input.insurancePolicyNumber }),
+    ...(input.insuranceExpiryDate !== undefined && { insurance_expiry_date: input.insuranceExpiryDate }),
+  });
+
+  const fieldChanges: [string, unknown, unknown][] = [
+    ["description", existing.description, updated.description],
+    ["category", existing.category, updated.category],
+    ["assetGroup", existing.assetGroup, updated.assetGroup],
+    ["usefulLifeMonths", existing.usefulLifeMonths, updated.usefulLifeMonths],
+    ["depreciationMethod", existing.depreciationMethod, updated.depreciationMethod],
+    ["residualValue", existing.residualValue, updated.residualValue],
+    ["serialNumber", existing.serialNumber, updated.serialNumber],
+    ["insuranceProvider", existing.insuranceProvider, updated.insuranceProvider],
+    ["insurancePolicyNumber", existing.insurancePolicyNumber, updated.insurancePolicyNumber],
+    ["insuranceExpiryDate", existing.insuranceExpiryDate, updated.insuranceExpiryDate],
+  ];
+  for (const [field, oldValue, newValue] of fieldChanges) {
+    if (oldValue !== newValue) {
+      await recordPermissionAuditEntry(companyId, "FixedAsset", String(assetId), field, String(oldValue), String(newValue), reason || "Asset details updated.", performedBy);
+    }
+  }
+
+  return updated;
 }
 
 export type AcquireAssetInput = assetRepo.NewFixedAsset & { paymentAccountCode: string };

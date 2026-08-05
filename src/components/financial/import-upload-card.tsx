@@ -5,10 +5,37 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import type { ImportBatch } from "@/server/accounting/types";
 import type { ImportExceptionRecord } from "@/server/import-centre/types";
 
-type UploadResult = { batch: ImportBatch; exceptions: ImportExceptionRecord[] };
+type PdfDetection = { bankId: string; bankName: string; confidence: number; status: "validated" | "awaiting-validation" } | null;
+type UploadResult = { batch: ImportBatch; exceptions: ImportExceptionRecord[]; pdfDetection?: PdfDetection };
+
+/** Pilot Review Round 1, Phase 9 — "PDF Upload, Drag & Drop, Validation,
+ * Progress, Detection." Upload progress uses `XMLHttpRequest` rather than
+ * `fetch`, since `fetch` has no upload-progress event — the one place in
+ * this codebase that needs it, so the one place that reaches for it. */
+function uploadWithProgress(url: string, formData: FormData, onProgress: (percent: number) => void): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      let body: unknown = {};
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        // non-JSON response — body stays {}
+      }
+      resolve({ status: xhr.status, body });
+    };
+    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.send(formData);
+  });
+}
 
 export function ImportUploadCard({
   companyId,
@@ -28,32 +55,45 @@ export function ImportUploadCard({
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
 
+  const acceptString = kind === "bank-transactions" ? ".csv,.xlsx,.ofx,.qif,.pdf" : ".csv";
+
+  function selectFile(file: File | null) {
+    setPendingFile(file);
+    setFileName(file?.name ?? null);
+    setResult(null);
+    setError(null);
+  }
+
   async function handleUpload() {
-    const file = inputRef.current?.files?.[0];
+    const file = pendingFile;
     if (!file) {
-      setError(kind === "bank-transactions" ? "Choose a .csv, .xlsx, .ofx, or .qif file first." : "Choose a .csv file first.");
+      setError(kind === "bank-transactions" ? "Choose or drop a .csv, .xlsx, .ofx, .qif, or .pdf file first." : "Choose a .csv file first.");
       return;
     }
 
     setLoading(true);
+    setProgress(0);
     setError(null);
     setResult(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch(`/api/companies/${companyId}/import-centre/${kind}`, { method: "POST", body: formData });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? `Request failed (${res.status})`);
+      const { status, body } = await uploadWithProgress(`/api/companies/${companyId}/import-centre/${kind}`, formData, setProgress);
+      const parsed = body as UploadResult & { error?: string };
+      if (status < 200 || status >= 300) {
+        setError(parsed.error ?? `Request failed (${status})`);
         return;
       }
-      setResult(body as UploadResult);
+      setResult(parsed);
       if (inputRef.current) inputRef.current.value = "";
-      setFileName(null);
+      selectFile(null);
       router.refresh();
     } catch {
       setError("Couldn't reach the API. Check the dev server is running.");
@@ -80,25 +120,50 @@ export function ImportUploadCard({
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-3">
+            <div
+              className={cn(
+                "flex flex-col items-center gap-2 rounded-vf-md border-2 border-dashed p-6 text-center transition-colors",
+                dragActive ? "border-vf-red-500 bg-vf-red-500/5" : "border-vf-paper-border",
+              )}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) selectFile(file);
+              }}
+            >
               <input
                 ref={inputRef}
                 type="file"
-                accept={kind === "bank-transactions" ? ".csv,.xlsx,.ofx,.qif" : ".csv"}
+                accept={acceptString}
                 className="hidden"
                 id={`${kind}-file-input`}
                 aria-label={`Choose a file for ${title}`}
-                onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+                onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
               />
+              <p className="text-sm text-vf-ink-soft">Drag &amp; drop a file here, or</p>
               <Button variant="subtle" size="sm" onClick={() => inputRef.current?.click()}>
                 Choose File
               </Button>
               <span aria-live="polite" className="text-sm text-vf-ink-soft">
                 {fileName ?? "No file selected"}
               </span>
+            </div>
+
+            <div className="flex items-center gap-3">
               <Button variant="primary" size="sm" onClick={handleUpload} disabled={loading || !fileName}>
                 {loading ? "Importing…" : "Import"}
               </Button>
+              {loading && (
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-vf-paper-alt">
+                  <div className="h-full bg-vf-red-500 transition-all" style={{ width: `${progress}%` }} />
+                </div>
+              )}
             </div>
 
             {error && (
@@ -109,6 +174,21 @@ export function ImportUploadCard({
 
             {result && (
               <div role="status" aria-live="polite" className="flex flex-col gap-2 rounded-vf-md border border-vf-paper-border bg-vf-paper-alt p-3">
+                {result.pdfDetection !== undefined && (
+                  <p className="text-sm text-vf-ink-soft">
+                    {result.pdfDetection ? (
+                      <>
+                        Detected <span className="font-medium text-vf-ink">{result.pdfDetection.bankName}</span> ({Math.round(result.pdfDetection.confidence * 100)}% confidence)
+                        {" — "}
+                        <Badge tone={result.pdfDetection.status === "validated" ? "good" : "warn"}>
+                          {result.pdfDetection.status === "validated" ? "Validated parser" : "Awaiting validation"}
+                        </Badge>
+                      </>
+                    ) : (
+                      "No known bank detected in this PDF."
+                    )}
+                  </p>
+                )}
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge tone="good">{result.batch.importedCount} imported</Badge>
                   {result.batch.duplicateCount > 0 && <Badge tone="muted">{result.batch.duplicateCount} already on file</Badge>}

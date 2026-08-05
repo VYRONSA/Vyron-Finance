@@ -261,6 +261,46 @@ export async function applyRule(companyId: string, transactionIds: number[], per
   return applyRulesToTransactions(companyId, transactionIds, performedBy);
 }
 
+/** Pilot Review Round 1, Phase 7 — the repeated-allocation intelligence
+ * threshold. 3 matches this codebase's own precedent for "this is a
+ * pattern, not a coincidence" (the Matching Engine's own minimum
+ * training-sample size elsewhere in this platform) rather than an
+ * arbitrarily chosen number. */
+const REPEATED_ALLOCATION_THRESHOLD = 3;
+
+export async function getRepeatedAllocationCount(
+  companyId: string,
+  transactionId: number,
+  beneficiary: string,
+  target: { glAccount?: string; customerId?: number; supplierId?: number },
+): Promise<{ count: number; suggestRule: boolean }> {
+  const count = await repo.countBeneficiaryAllocations(companyId, beneficiary, target, transactionId);
+  return { count, suggestRule: count >= REPEATED_ALLOCATION_THRESHOLD };
+}
+
+/** Pilot Review Round 1, Phase 6 — "the accountant must never need to
+ * import the statement a second time." Called right after a Banking
+ * Rule is created inline during allocation: scans every still-Unallocated
+ * transaction in the SAME import batch and runs them through the real
+ * Rule Engine pipeline (`applyRulesToTransactions`, the exact function
+ * behind the existing manual "Apply Rule" bulk action) — the new rule is
+ * already active and in the database by the time this runs, so it
+ * naturally participates alongside every other active rule; no separate
+ * single-rule code path was needed. */
+export async function applyRulesToRemainingBatchTransactions(
+  companyId: string, importBatch: string, excludeTransactionId: number | null, performedBy: string,
+): Promise<TransactionProcessingResult[]> {
+  if (!importBatch) return [];
+  const { transactions } = await listTransactionsForExport(companyId, {
+    search: null, dateFrom: null, dateTo: null, minAmount: null, maxAmount: null,
+    statuses: ["Unallocated"], bankAccountId: null, importBatch, duplicateOnly: false, unknownSupplierOnly: false,
+    sortBy: "transactionDate", sortDirection: "desc",
+  });
+  const ids = transactions.map((t) => t.id).filter((id) => id !== excludeTransactionId);
+  if (ids.length === 0) return [];
+  return applyRulesToTransactions(companyId, ids, performedBy);
+}
+
 export async function generateJournal(companyId: string, transactionIds: number[]): Promise<GenerateJournalOutcome> {
   requireIds(transactionIds);
   const transactions = await repo.getTransactionsByIds(companyId, transactionIds);

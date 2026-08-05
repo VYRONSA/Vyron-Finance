@@ -28,6 +28,28 @@ export async function createBranch(companyId: string, input: NewBranch): Promise
   return branchFromRow(data);
 }
 
+export async function getBranch(companyId: string, branchId: number): Promise<Branch | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("branches").select("*").eq("company_id", companyId).eq("id", branchId).maybeSingle<BranchRow>();
+  if (error) throw error;
+  return data ? branchFromRow(data) : null;
+}
+
+export type UpdatableBranchFields = Partial<{ name: string; code: string; address: string }>;
+
+export async function updateBranch(companyId: string, branchId: number, fields: UpdatableBranchFields): Promise<Branch> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("branches")
+    .update(fields)
+    .eq("company_id", companyId)
+    .eq("id", branchId)
+    .select("*")
+    .single<BranchRow>();
+  if (error) throw error;
+  return branchFromRow(data);
+}
+
 export async function setBranchActive(companyId: string, branchId: number, isActive: boolean): Promise<Branch> {
   const supabase = await createClient();
   const { data, error } = await supabase

@@ -29,6 +29,28 @@ export async function createCostCentre(companyId: string, input: NewCostCentre):
   return costCentreFromRow(data);
 }
 
+export async function getCostCentre(companyId: string, costCentreId: number): Promise<CostCentre | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("cost_centres").select("*").eq("company_id", companyId).eq("id", costCentreId).maybeSingle<CostCentreRow>();
+  if (error) throw error;
+  return data ? costCentreFromRow(data) : null;
+}
+
+export type UpdatableCostCentreFields = Partial<{ name: string; code: string }>;
+
+export async function updateCostCentre(companyId: string, costCentreId: number, fields: UpdatableCostCentreFields): Promise<CostCentre> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("cost_centres")
+    .update(fields)
+    .eq("company_id", companyId)
+    .eq("id", costCentreId)
+    .select("*")
+    .single<CostCentreRow>();
+  if (error) throw error;
+  return costCentreFromRow(data);
+}
+
 export async function setCostCentreActive(companyId: string, costCentreId: number, isActive: boolean): Promise<CostCentre> {
   const supabase = await createClient();
   const { data, error } = await supabase

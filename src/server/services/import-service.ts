@@ -7,8 +7,9 @@
 
 import { parseBillsCsv } from "@/server/import-centre/xero-bills-parser";
 import { decodeCsvBuffer } from "@/server/import-centre/csv-utils";
-import { resolveBankStatementAdapter, SUPPORTED_EXTENSIONS } from "@/server/import-centre/bank-statement-adapter-registry";
-import type { ImportExceptionRecord } from "@/server/import-centre/types";
+import { resolveBankStatementAdapter, resolvePdfBankAdapter, SUPPORTED_EXTENSIONS, type PdfBankDetection } from "@/server/import-centre/bank-statement-adapter-registry";
+import { extractPdfText } from "@/server/import-centre/pdf-text-extraction";
+import type { BankStatementParseResult, ImportExceptionRecord } from "@/server/import-centre/types";
 import * as importRepo from "@/server/repositories/import-repository";
 import * as supplierRepo from "@/server/repositories/supplier-reconciliation-repository";
 import * as bankAccountRepo from "@/server/repositories/bank-account-repository";
@@ -20,6 +21,11 @@ export class ValidationError extends Error {}
 export type ImportOutcome = {
   batch: ImportBatch;
   exceptions: ImportExceptionRecord[];
+  /** Pilot Review Round 1, Phase 9 — populated only for a `.pdf` upload:
+   * which of the 10 named banks was detected from the statement's own
+   * text, and how confident that detection is. `null` means a PDF was
+   * uploaded but no known bank's markers were found in it. */
+  pdfDetection?: { bankId: string; bankName: string; confidence: number; status: "validated" | "awaiting-validation" } | null;
 };
 
 function generateBatchId(): string {
@@ -92,14 +98,36 @@ export async function importBillsCsv(companyId: string, file: File, importedBy =
  * Excel, OFX, QIF today) via the extensible parser framework — adding a
  * new bank-specific PDF adapter later needs no change here at all. */
 export async function importBankStatement(companyId: string, file: File, importedBy = "System"): Promise<ImportOutcome> {
-  const adapter = resolveBankStatementAdapter(file.name);
-  if (!adapter) {
-    throw new ValidationError(`Unsupported file type for bank statement import. Supported formats: ${SUPPORTED_EXTENSIONS.join(", ")}.`);
-  }
-
+  const isPdf = file.name.toLowerCase().endsWith(".pdf");
   const buffer = await file.arrayBuffer();
   const batchId = generateBatchId();
-  const { transactions, exceptions } = await adapter.parse(buffer, file.name, batchId);
+
+  let pdfDetection: ImportOutcome["pdfDetection"] = undefined;
+  let parseResult: BankStatementParseResult;
+
+  if (isPdf) {
+    // Phase 9 — filename can't identify a bank for a PDF (unlike every
+    // other format here, whose extension IS the match); real content
+    // extraction + marker detection replaces `resolveBankStatementAdapter`
+    // for this one format, see `bank-statement-adapter-registry.ts`.
+    const text = await extractPdfText(buffer);
+    const detection: PdfBankDetection | null = resolvePdfBankAdapter(text);
+    if (!detection) {
+      throw new ValidationError(
+        "Could not identify which bank produced this PDF statement — none of the 10 supported banks' name/domain markers were found in its text. If this is a genuine statement from a supported bank, its letterhead wording may differ from what's currently recognised.",
+      );
+    }
+    pdfDetection = { bankId: detection.adapter.id, bankName: detection.adapter.label.replace(" (PDF) — awaiting validation", ""), confidence: detection.confidence, status: detection.adapter.status ?? "awaiting-validation" };
+    parseResult = await detection.adapter.parse(buffer, file.name, batchId);
+  } else {
+    const adapter = resolveBankStatementAdapter(file.name);
+    if (!adapter) {
+      throw new ValidationError(`Unsupported file type for bank statement import. Supported formats: ${SUPPORTED_EXTENSIONS.join(", ")}.`);
+    }
+    parseResult = await adapter.parse(buffer, file.name, batchId);
+  }
+
+  const { transactions, exceptions } = parseResult;
 
   const bankAccountCache = new Map<string, number | null>();
   async function resolveBankAccountId(accountNumber: string): Promise<number | null> {
@@ -158,7 +186,7 @@ export async function importBankStatement(companyId: string, file: File, importe
   // performs, matching how the UI/history already counts imports).
   await recordUsageEvent(companyId, "bank_imports");
 
-  return { batch, exceptions };
+  return { batch, exceptions, pdfDetection };
 }
 
 export async function listRecentImports(companyId: string): Promise<ImportBatch[]> {

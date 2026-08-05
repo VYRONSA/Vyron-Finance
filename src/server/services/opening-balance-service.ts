@@ -146,6 +146,122 @@ export async function deleteOpeningBalanceEntry(companyId: string, entryId: numb
   );
 }
 
+export type BulkGlOpeningBalanceRow = {
+  /** The row's own GL account code — always present, including for a
+   * bank-linked row, so the grid can render every row uniformly. */
+  accountCode: string;
+  /** Set only when this row IS a bank account's own GL code — routes the
+   * write to a `BankAccount`-category entry (and, on posting, syncs that
+   * account's cached balance — see `postOpeningBalances`) instead of a
+   * plain `GeneralLedger` entry. */
+  bankAccountId?: number | null;
+  /** Signed amount, Dr positive / Cr negative. Zero means "no entry" —
+   * clears any existing draft entry for this row. */
+  amount: number;
+  description: string;
+  reference?: string;
+  balanceDate?: string;
+};
+
+export type BulkUpsertGlOpeningBalancesResult = {
+  created: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+  skipped: { accountCode: string; reason: string }[];
+};
+
+/** Pilot Review Round 1 (Board revision) — the Opening Balances Centre's
+ * primary surface is now a full Chart-of-Accounts grid, not one form per
+ * account. This is the grid's one save path: given the full current
+ * state of every editable row, upsert-by-account-code against whatever
+ * draft entries already exist, reusing `createOpeningBalanceEntry`/
+ * `editOpeningBalanceEntry`/`deleteOpeningBalanceEntry` for every actual
+ * write — so validation, governance, and the audit trail all stay in
+ * that one place rather than being re-implemented here. A grid row for a
+ * Debtors/Creditors control account is silently skipped whenever real
+ * per-customer/per-supplier subsidiary entries already exist for it —
+ * writing a direct entry at the same resolved account code on top of a
+ * subsidiary rollup would double the posted balance (both net to the
+ * same GL code — see `resolveAccountCode` below). The UI is expected to
+ * render that row read-only in the same situation; this is the backend
+ * half of that guarantee, not just a UI nicety. */
+export async function bulkUpsertGlOpeningBalances(
+  companyId: string,
+  rows: BulkGlOpeningBalanceRow[],
+  performedBy: string,
+  reason?: string,
+): Promise<BulkUpsertGlOpeningBalancesResult> {
+  const [existing, accounts] = await Promise.all([repo.listOpeningBalanceEntries(companyId), listChartOfAccounts(companyId)]);
+  const debtorsControl = accounts.find((a) => a.isControlAccount && a.description === "Debtors");
+  const creditorsControl = accounts.find((a) => a.isControlAccount && a.description === "Creditors");
+  const hasSubsidiaryDebtors = existing.some((e) => e.category === "Customer" && e.status === "draft");
+  const hasSubsidiaryCreditors = existing.some((e) => e.category === "Supplier" && e.status === "draft");
+
+  const result: BulkUpsertGlOpeningBalancesResult = { created: 0, updated: 0, deleted: 0, unchanged: 0, skipped: [] };
+
+  for (const row of rows) {
+    if (debtorsControl && row.accountCode === debtorsControl.accountCode && hasSubsidiaryDebtors) {
+      result.skipped.push({ accountCode: row.accountCode, reason: "Captured via individual Customer opening balances — edit those instead of the control account." });
+      continue;
+    }
+    if (creditorsControl && row.accountCode === creditorsControl.accountCode && hasSubsidiaryCreditors) {
+      result.skipped.push({ accountCode: row.accountCode, reason: "Captured via individual Supplier opening balances — edit those instead of the control account." });
+      continue;
+    }
+
+    const existingEntry = row.bankAccountId
+      ? existing.find((e) => e.category === "BankAccount" && e.bankAccountId === row.bankAccountId)
+      : existing.find((e) => (e.category === "GeneralLedger" || e.category === "VATControl" || e.category === "Loan") && e.accountCode === row.accountCode);
+
+    if (existingEntry?.status === "posted") {
+      if (Math.round((existingEntry.amount - row.amount) * 100) !== 0) {
+        result.skipped.push({ accountCode: row.accountCode, reason: "Already posted to the General Ledger — reverse the journal instead of editing here." });
+      } else {
+        result.unchanged++;
+      }
+      continue;
+    }
+
+    const isZero = Math.round(row.amount * 100) === 0;
+
+    if (!existingEntry && isZero) continue;
+
+    if (existingEntry && isZero) {
+      await deleteOpeningBalanceEntry(companyId, existingEntry.id, reason, performedBy);
+      result.deleted++;
+      continue;
+    }
+
+    if (existingEntry) {
+      if (Math.round((existingEntry.amount - row.amount) * 100) === 0 && existingEntry.description === row.description) {
+        result.unchanged++;
+        continue;
+      }
+      await editOpeningBalanceEntry(companyId, existingEntry.id, {
+        amount: row.amount, description: row.description, reference: row.reference, balanceDate: row.balanceDate, reason, performedBy,
+      });
+      result.updated++;
+      continue;
+    }
+
+    await createOpeningBalanceEntry(companyId, {
+      category: row.bankAccountId ? "BankAccount" : "GeneralLedger",
+      accountCode: row.bankAccountId ? undefined : row.accountCode,
+      bankAccountId: row.bankAccountId ?? undefined,
+      description: row.description,
+      amount: row.amount,
+      reference: row.reference,
+      balanceDate: row.balanceDate,
+      reason,
+      performedBy,
+    });
+    result.created++;
+  }
+
+  return result;
+}
+
 /** Resolves the real Chart of Accounts control-account code a category
  * posts against. Bank Accounts carry their own `glAccount`; Customer/
  * Supplier entries roll up into the company's single Debtors/Creditors

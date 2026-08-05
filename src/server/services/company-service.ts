@@ -9,6 +9,7 @@ import * as permissionRepo from "@/server/repositories/permission-repository";
 import * as communicationRepo from "@/server/repositories/communication-repository";
 import { getCurrentUserEmail } from "@/server/auth/require-session";
 import { subscribeCompanyToPlan } from "@/server/billing-platform/engine/billing-engine";
+import { createFinancialYear, setCurrentFinancialYear, suggestFinancialYear } from "@/server/services/financial-year-service";
 import type { Company } from "@/server/company-management/types";
 
 export class ValidationError extends Error {}
@@ -96,6 +97,24 @@ export async function createCompany(userId: string, input: CreateCompanyRequest)
 
   await repo.seedCompanyDefaults(company.id);
   await communicationRepo.seedCompanyCommunicationDefaults(company.id);
+
+  // Pilot Review Round 1 Final Certification — found live: a brand new
+  // company had zero rows in `financial_years` (that table has always
+  // been purely manual — no reference-app or prior-phase seeding ever
+  // populated it), so `validatePostingDate` correctly refused every
+  // Cashbook/Journal posting with "No financial year covers <date>."
+  // immediately after signup — even though creating a company implies
+  // its onboarding will start soon and needs to be able to post
+  // straight away. Opening Balances posting never hit this because
+  // `postApprovedJournals` itself doesn't call `validatePostingDate` —
+  // an existing, disclosed inconsistency between modules, not something
+  // this fix changes. Seeds exactly the one financial year that covers
+  // today, using the company's own `financial_year_start_month` and the
+  // same period-math (`suggestFinancialYear`) the manual "create
+  // financial year" form already uses — no new date logic invented.
+  const currentFinancialYear = suggestFinancialYear(new Date().toISOString().slice(0, 10), company.financialYearStartMonth);
+  const createdFinancialYear = await createFinancialYear(company.id, currentFinancialYear);
+  await setCurrentFinancialYear(company.id, createdFinancialYear.id);
 
   // Commercial Billing Platform — "a customer must never create a
   // production company without passing through the Billing Platform

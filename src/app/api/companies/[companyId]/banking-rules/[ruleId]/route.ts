@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSession, getPerformedByLabel } from "@/server/auth/require-session";
-import { getBankingRule, setBankingRuleActive, updateBankingRule, ValidationError } from "@/server/services/banking-rule-service";
+import { deleteBankingRule, getBankingRule, setBankingRuleActive, updateBankingRule, NotFoundError, ValidationError } from "@/server/services/banking-rule-service";
 import { requirePermission } from "@/server/services/permission-service";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; ruleId: string }> }) {
@@ -44,6 +44,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
     if (error instanceof ValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
+    throw error;
+  }
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ companyId: string; ruleId: string }> }) {
+  const session = await requireSession();
+  if (!session.ok) return session.response;
+
+  const { companyId, ruleId } = await params;
+  const performedBy = await getPerformedByLabel();
+
+  const check = await requirePermission(companyId, "Banking:Edit");
+  if (!check.ok) return check.response;
+
+  try {
+    await deleteBankingRule(companyId, Number(ruleId), performedBy);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (error instanceof NotFoundError) return NextResponse.json({ error: error.message }, { status: 404 });
     throw error;
   }
 }

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { TransactionGrid } from "./transaction-grid";
 import { TransactionFiltersBar, EMPTY_FILTER_DRAFT, type FilterDraft } from "./transaction-filters-bar";
 import { TransactionColumnChooser } from "./transaction-column-chooser";
-import { TransactionBulkActionBar } from "./transaction-bulk-action-bar";
+import { TransactionBulkActionBar, type MatchType, type RuleCreationOptions } from "./transaction-bulk-action-bar";
 import { TransactionDetailPanel } from "./transaction-detail-panel";
 import type { BankTransactionRecord, Supplier, TransactionDetail } from "@/server/accounting/types";
 import type { Merchant } from "@/server/banking-rules/types";
@@ -87,6 +87,14 @@ export function TransactionExplorer({
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [highlightedIds, setHighlightedIds] = useState<Set<number>>(new Set());
+  const [repeatedAllocationPrompt, setRepeatedAllocationPrompt] = useState<{
+    transaction: BankTransactionRecord;
+    ruleType: "GL" | "Customer" | "Supplier";
+    action: { actionType: string; targetId?: number; targetText?: string };
+    count: number;
+  } | null>(null);
 
   const buildQuery = useCallback(
     (cursor: string | null, filtersArg: FilterDraft, sortingArg: SortingState) => {
@@ -204,6 +212,93 @@ export function TransactionExplorer({
     }
   }
 
+  /** Pilot Review Round 1, Phase 5+6 — "Provide ☐ Create Banking Rule"
+   * during allocation; once saved, "immediately scan the remainder of
+   * the imported statement and allocate every matching transaction."
+   * `matchType` maps onto `ConditionOperator` (see
+   * `transaction-bulk-action-bar.tsx`'s own doc comment for why
+   * "Multiple Keywords" uses `regex` rather than a native OR-operator). */
+  function conditionFor(matchType: MatchType, matchDescription: string): { operator: string; value: string } {
+    if (matchType === "exact") return { operator: "equals", value: matchDescription };
+    if (matchType === "multiple_keywords") {
+      const keywords = matchDescription.split(/[,\n]/).map((k) => k.trim()).filter(Boolean).map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+      return { operator: "regex", value: `(${keywords.join("|")})` };
+    }
+    return { operator: matchType, value: matchDescription };
+  }
+
+  async function createRuleFromAllocation(
+    transaction: BankTransactionRecord,
+    ruleType: "GL" | "Customer" | "Supplier",
+    action: { actionType: string; targetId?: number; targetText?: string },
+    options: RuleCreationOptions,
+  ): Promise<void> {
+    const { operator, value } = conditionFor(options.matchType, options.matchDescription);
+    const ruleRes = await fetch(`/api/companies/${companyId}/banking-rules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        domain: "Banking",
+        ruleType,
+        name: `Auto: ${options.matchDescription} → ${ruleType}`,
+        description: "Created inline while allocating a transaction.",
+        isActive: options.applyToFutureImports,
+        conditions: [{ field: "beneficiary", operator, value }],
+        actions: [action],
+      }),
+    });
+    const ruleBody = await ruleRes.json();
+    if (!ruleRes.ok) {
+      setError(`Allocation saved, but the Banking Rule could not be created: ${ruleBody.error ?? ruleRes.status}`);
+      return;
+    }
+
+    if (!options.applyToRemaining || !transaction.importBatch) {
+      setNotice(`Banking Rule "${ruleBody.rule.name}" created.`);
+      return;
+    }
+
+    const applyRes = await fetch(`/api/companies/${companyId}/transactions/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "apply-rule-to-batch", importBatch: transaction.importBatch, excludeTransactionId: transaction.id }),
+    });
+    const applyBody = await applyRes.json();
+    if (!applyRes.ok) {
+      setNotice(`Banking Rule "${ruleBody.rule.name}" created, but applying it to the rest of the statement failed: ${applyBody.error ?? applyRes.status}`);
+      return;
+    }
+    const results: { transactionId: number; matchedRuleIds: number[] }[] = applyBody.results ?? [];
+    const matchedIds = results.filter((r) => r.matchedRuleIds.length > 0).map((r) => r.transactionId);
+    setHighlightedIds(new Set(matchedIds));
+    setNotice(`Banking Rule "${ruleBody.rule.name}" created and applied to ${matchedIds.length} more transaction${matchedIds.length === 1 ? "" : "s"} in this statement.`);
+    if (matchedIds.length > 0) {
+      await fetchPage(cursorStack[cursorIndex], filters, sorting);
+      router.refresh();
+    }
+  }
+
+  /** Pilot Review Round 1, Phase 7 — only checked when the accountant did
+   * NOT already tick "Create Banking Rule" inline (that already covers
+   * it); a single-transaction manual allocation is the one case this
+   * applies to, since a bulk assignment isn't "the accountant noticing a
+   * pattern one at a time." */
+  async function checkRepeatedAllocation(
+    transaction: BankTransactionRecord,
+    ruleType: "GL" | "Customer" | "Supplier",
+    action: { actionType: string; targetId?: number; targetText?: string },
+    target: { glAccount?: string; customerId?: number; supplierId?: number },
+  ) {
+    const params = new URLSearchParams({ transactionId: String(transaction.id), beneficiary: transaction.beneficiary });
+    if (target.glAccount) params.set("glAccount", target.glAccount);
+    if (target.customerId !== undefined) params.set("customerId", String(target.customerId));
+    if (target.supplierId !== undefined) params.set("supplierId", String(target.supplierId));
+    const res = await fetch(`/api/companies/${companyId}/transactions/repeated-allocation-check?${params.toString()}`);
+    if (!res.ok) return;
+    const body = await res.json();
+    if (body.suggestRule) setRepeatedAllocationPrompt({ transaction, ruleType, action, count: body.count });
+  }
+
   async function openDetail(transaction: BankTransactionRecord) {
     if (previewMode) {
       setDetail(MOCK_TRANSACTION_DETAILS[transaction.id] ?? null);
@@ -234,20 +329,29 @@ export function TransactionExplorer({
           suppliers={suppliers}
           customers={customers}
           merchants={merchants}
-          onAssignSupplier={(supplierId) => runBulkAction({ action: "assign-supplier", transactionIds: selectedIds, supplierId })}
+          onAssignSupplier={async (supplierId, ruleOptions) => {
+            const t = selectedTransactions[0];
+            await runBulkAction({ action: "assign-supplier", transactionIds: selectedIds, supplierId });
+            if (ruleOptions && t) await createRuleFromAllocation(t, "Supplier", { actionType: "set_supplier", targetId: supplierId }, ruleOptions);
+            else if (!ruleOptions && t && selectedIds.length === 1) await checkRepeatedAllocation(t, "Supplier", { actionType: "set_supplier", targetId: supplierId }, { supplierId });
+          }}
           onAssignMerchant={(merchantId) => runBulkAction({ action: "assign-merchant", transactionIds: selectedIds, merchantId })}
-          onAssignCustomer={(customerId) => runBulkAction({ action: "assign-customer", transactionIds: selectedIds, customerId })}
-          onAssignGl={(glAccount) => runBulkAction({ action: "assign-gl", transactionIds: selectedIds, glAccount })}
+          onAssignCustomer={async (customerId, ruleOptions) => {
+            const t = selectedTransactions[0];
+            await runBulkAction({ action: "assign-customer", transactionIds: selectedIds, customerId });
+            if (ruleOptions && t) await createRuleFromAllocation(t, "Customer", { actionType: "set_customer", targetId: customerId }, ruleOptions);
+            else if (!ruleOptions && t && selectedIds.length === 1) await checkRepeatedAllocation(t, "Customer", { actionType: "set_customer", targetId: customerId }, { customerId });
+          }}
+          onAssignGl={async (glAccount, ruleOptions) => {
+            const t = selectedTransactions[0];
+            await runBulkAction({ action: "assign-gl", transactionIds: selectedIds, glAccount });
+            if (ruleOptions && t) await createRuleFromAllocation(t, "GL", { actionType: "set_gl_account", targetText: glAccount }, ruleOptions);
+            else if (!ruleOptions && t && selectedIds.length === 1) await checkRepeatedAllocation(t, "GL", { actionType: "set_gl_account", targetText: glAccount }, { glAccount });
+          }}
           onAssignVat={(vatCode) => runBulkAction({ action: "assign-vat", transactionIds: selectedIds, vatCode })}
           onReview={(newStatus, note) => runBulkAction({ action: "review", transactionIds: selectedIds, newStatus, note })}
           onGenerateJournal={() => runBulkAction({ action: "generate-journal", transactionIds: selectedIds })}
           onApplyRule={() => runBulkAction({ action: "apply-rule", transactionIds: selectedIds })}
-          onCreateRule={() => {
-            const t = selectedTransactions[0];
-            if (!t) return;
-            const params = new URLSearchParams({ prefillBeneficiary: t.beneficiary, prefillGlAccount: t.suggestedGlAccount ?? "" });
-            router.push(`/company/${companyId}/banking-rules?${params.toString()}`);
-          }}
           onDeleteImport={() =>
             runBulkAction({ action: "delete-import", importType: "bank_transactions", importBatch: selectedTransactions[0]?.importBatch })
           }
@@ -267,6 +371,32 @@ export function TransactionExplorer({
       </div>
 
       {error && <p className="text-sm text-vf-danger">{error}</p>}
+      {notice && <p className="text-sm text-[#1f6e4b]">{notice}</p>}
+
+      {repeatedAllocationPrompt && (
+        <div className="flex flex-wrap items-center gap-3 rounded-vf-md border border-vf-warning/25 bg-vf-warning/8 px-3.5 py-2.5 text-sm text-[#93601f]">
+          <span>
+            You have allocated &ldquo;{repeatedAllocationPrompt.transaction.beneficiary}&rdquo; the same way {repeatedAllocationPrompt.count} times.
+            Would you like to create a Banking Rule?
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const { transaction, ruleType, action } = repeatedAllocationPrompt;
+              setRepeatedAllocationPrompt(null);
+              await createRuleFromAllocation(transaction, ruleType, action, {
+                matchDescription: transaction.beneficiary, matchType: "contains", applyToRemaining: true, applyToFutureImports: true,
+              });
+            }}
+          >
+            Create Banking Rule
+          </Button>
+          <Button variant="subtle" size="sm" onClick={() => setRepeatedAllocationPrompt(null)}>
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       <TransactionGrid
         transactions={transactions}
@@ -280,6 +410,7 @@ export function TransactionExplorer({
         onColumnSizingChange={setColumnSizing}
         onRowClick={openDetail}
         loading={loading}
+        highlightedIds={highlightedIds}
       />
 
       {!previewMode && (

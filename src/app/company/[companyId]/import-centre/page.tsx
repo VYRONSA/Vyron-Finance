@@ -76,8 +76,8 @@ export default async function ImportCentrePage({ params }: { params: Promise<{ c
           companyId={companyId}
           kind="bank-transactions"
           title="Bank Statement"
-          description="Standard VYRON Bank Import Template (CSV or Excel), OFX, or QIF — an extensible parser framework so more bank-specific formats can plug in later."
-          templateHint="CSV/Excel: Date, Reference, Description, Beneficiary, Debit, Credit, Balance, Bank Account, VAT, GL Account, Notes, in that order. OFX and QIF are read using their own standard formats."
+          description="Standard VYRON Bank Import Template (CSV or Excel), OFX, QIF, or PDF — an extensible parser framework so more bank-specific formats can plug in later."
+          templateHint="CSV/Excel: Date, Reference, Description, Beneficiary, Debit, Credit, Balance, Bank Account, VAT, GL Account, Notes, in that order. OFX and QIF are read using their own standard formats. PDF: FNB, ABSA, Standard Bank, Nedbank, Capitec, Investec, Discovery, Bidvest, Mercantile, and TymeBank statements are detected automatically; transaction extraction for each is awaiting a real sample statement to validate against."
           previewMode={previewMode}
         />
       </div>

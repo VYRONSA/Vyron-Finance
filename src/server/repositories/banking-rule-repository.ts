@@ -32,7 +32,7 @@ const LIST_CAP = 10_000;
  * its own records. */
 export async function listBankingRules(companyId: string, domain?: RuleDomain, ruleType?: string): Promise<BankingRule[]> {
   const supabase = await createClient();
-  let query = supabase.from("banking_rules").select(RULE_SELECT).eq("company_id", companyId);
+  let query = supabase.from("banking_rules").select(RULE_SELECT).eq("company_id", companyId).eq("is_deleted", false);
   if (domain) query = query.eq("domain", domain);
   if (ruleType) query = query.eq("rule_type", ruleType);
   const { data, error } = await query.order("rule_type").order("priority").returns<BankingRuleRow[]>();
@@ -48,6 +48,7 @@ export async function listActiveBankingRules(companyId: string, domain: RuleDoma
     .eq("company_id", companyId)
     .eq("domain", domain)
     .eq("is_active", true)
+    .eq("is_deleted", false)
     .order("rule_type")
     .order("priority")
     .returns<BankingRuleRow[]>();
@@ -62,9 +63,28 @@ export async function getBankingRule(companyId: string, ruleId: number): Promise
     .select(RULE_SELECT)
     .eq("company_id", companyId)
     .eq("id", ruleId)
+    .eq("is_deleted", false)
     .maybeSingle<BankingRuleRow>();
   if (error) throw error;
   return data ? bankingRuleFromRow(data) : null;
+}
+
+/** Pilot Review Round 1, Phase 8 — soft delete, deliberately not a hard
+ * `delete from banking_rules` (see migration 0057's own comment): it
+ * would cascade away the version history and application log this same
+ * phase's "Rule Statistics"/"Rule History" asks also depend on. Distinct
+ * from `setBankingRuleActive` (Enable/Disable — temporarily won't fire,
+ * still listed) — this removes the rule from the management list
+ * entirely, matching what "Delete" means in every other module here
+ * (Customer/Supplier/Bank Account all soft-toggle, never hard-delete). */
+export async function deleteBankingRule(companyId: string, ruleId: number, performedBy = "System"): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("banking_rules")
+    .update({ is_deleted: true, updated_by: performedBy })
+    .eq("company_id", companyId)
+    .eq("id", ruleId);
+  if (error) throw error;
 }
 
 export type NewBankingRuleCondition = { field: ConditionField; operator: ConditionOperator; value: string; value2?: string | null };

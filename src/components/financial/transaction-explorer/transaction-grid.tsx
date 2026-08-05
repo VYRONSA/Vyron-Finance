@@ -157,6 +157,7 @@ export function TransactionGrid({
   onColumnSizingChange,
   onRowClick,
   loading,
+  highlightedIds,
 }: {
   transactions: BankTransactionRecord[];
   sorting: SortingState;
@@ -169,6 +170,11 @@ export function TransactionGrid({
   onColumnSizingChange: (updater: ColumnSizingState | ((old: ColumnSizingState) => ColumnSizingState)) => void;
   onRowClick: (transaction: BankTransactionRecord) => void;
   loading?: boolean;
+  /** Pilot Review Round 1, Phase 6 — "Highlight auto-allocated rows" the
+   * moment a newly-created Banking Rule scans and allocates the rest of
+   * an imported statement, so the accountant can see (and, per "Allow
+   * manual override," still click into) exactly what just changed. */
+  highlightedIds?: Set<number>;
 }) {
   const data = useMemo(() => transactions, [transactions]);
 
@@ -250,7 +256,11 @@ export function TransactionGrid({
           </TableRow>
         ) : (
           table.getRowModel().rows.map((row) => (
-            <TableRow key={row.id} className="cursor-pointer" onClick={() => onRowClick(row.original)}>
+            <TableRow
+              key={row.id}
+              className={cn("cursor-pointer", highlightedIds?.has(row.original.id) && "bg-vf-success/10 hover:bg-vf-success/15")}
+              onClick={() => onRowClick(row.original)}
+            >
               {row.getVisibleCells().map((cell) => {
                 const pinned = PINNED_COLUMN_IDS.has(cell.column.id);
                 return (
