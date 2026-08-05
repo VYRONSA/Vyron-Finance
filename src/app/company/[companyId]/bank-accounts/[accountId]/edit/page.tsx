@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { BankAccountForm } from "@/components/financial/bank-account-form";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { getBankAccountSummary } from "@/server/services/bank-account-service";
+import { getOpeningBalanceGovernance } from "@/server/services/opening-balance-service";
 import { MOCK_BANK_ACCOUNT_SUMMARIES } from "@/lib/mock/bank-accounts-data";
 
 export const metadata: Metadata = {
@@ -25,6 +26,8 @@ export default async function EditBankAccountPage({
 
   if (!summary) notFound();
 
+  const governance = previewMode ? { requiresGovernance: false, reasonRequired: false } : await getOpeningBalanceGovernance(companyId);
+
   return (
     <div className="mx-auto max-w-xl">
       <Card>
@@ -33,7 +36,7 @@ export default async function EditBankAccountPage({
           <CardDescription>Account number cannot be changed after creation.</CardDescription>
         </CardHeader>
         <CardContent className="pt-0">
-          <BankAccountForm companyId={companyId} mode="edit" account={summary.account} previewMode={previewMode} />
+          <BankAccountForm companyId={companyId} mode="edit" account={summary.account} previewMode={previewMode} governance={governance} />
         </CardContent>
       </Card>
     </div>

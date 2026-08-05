@@ -264,6 +264,8 @@ export type BankAccountRow = {
   notes: string;
   created_at: string;
   gl_account: string;
+  opening_balance_date: string | null;
+  opening_balance_reference: string;
 };
 
 export function bankAccountFromRow(row: BankAccountRow): BankAccount {
@@ -283,6 +285,8 @@ export function bankAccountFromRow(row: BankAccountRow): BankAccount {
     notes: row.notes,
     createdAt: row.created_at,
     glAccount: row.gl_account ?? "",
+    openingBalanceDate: row.opening_balance_date,
+    openingBalanceReference: row.opening_balance_reference ?? "",
   };
 }
 
@@ -332,6 +336,8 @@ export type BankAccountUpdatableFields = Partial<{
   last_reconciliation_date: string | null;
   notes: string;
   gl_account: string;
+  opening_balance_date: string | null;
+  opening_balance_reference: string;
 }>;
 
 export type MatchHistoryRow = {

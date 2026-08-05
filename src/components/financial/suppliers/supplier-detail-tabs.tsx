@@ -26,7 +26,135 @@ function money(value: number): string {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function EditSupplierOverviewForm({ companyId, supplier, onDone }: { companyId: string; supplier: Supplier; onDone: () => void }) {
+  const router = useRouter();
+  const [values, setValues] = useState({
+    name: supplier.name,
+    supplierCategory: supplier.supplierCategory,
+    defaultGlAccount: supplier.defaultGlAccount ?? "",
+    defaultVatCode: supplier.defaultVatCode ?? "",
+    vatNumber: supplier.vatNumber,
+    taxNumber: supplier.taxNumber,
+    bankName: supplier.bankName,
+    bankAccountNumber: supplier.bankAccountNumber,
+    bankBranchCode: supplier.bankBranchCode,
+    paymentTermsDays: String(supplier.paymentTermsDays),
+    reason: "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const bankingChanged =
+    values.bankName !== supplier.bankName || values.bankAccountNumber !== supplier.bankAccountNumber || values.bankBranchCode !== supplier.bankBranchCode;
+
+  function set<K extends keyof typeof values>(key: K, value: string) {
+    setValues((v) => ({ ...v, [key]: value }));
+  }
+
+  async function handleSave() {
+    setError(null);
+    if (!values.name.trim()) return setError("Supplier Name cannot be empty.");
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/suppliers/${supplier.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: values.name.trim(),
+          supplierCategory: values.supplierCategory,
+          defaultGlAccount: values.defaultGlAccount || null,
+          defaultVatCode: values.defaultVatCode || null,
+          vatNumber: values.vatNumber,
+          taxNumber: values.taxNumber,
+          bankName: values.bankName,
+          bankAccountNumber: values.bankAccountNumber,
+          bankBranchCode: values.bankBranchCode,
+          paymentTermsDays: Number(values.paymentTermsDays) || 0,
+          reason: values.reason.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      router.refresh();
+      onDone();
+    } catch {
+      setError("Couldn't reach the API. Check the dev server is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Company Name" htmlFor="edit-s-name">
+          <Input id="edit-s-name" value={values.name} onChange={(e) => set("name", e.target.value)} />
+        </Field>
+        <Field label="Category" htmlFor="edit-s-category">
+          <Input id="edit-s-category" value={values.supplierCategory} onChange={(e) => set("supplierCategory", e.target.value)} />
+        </Field>
+        <Field label="Default GL Account" htmlFor="edit-s-gl">
+          <Input id="edit-s-gl" value={values.defaultGlAccount} onChange={(e) => set("defaultGlAccount", e.target.value)} />
+        </Field>
+        <Field label="Default VAT Code" htmlFor="edit-s-vatcode">
+          <Input id="edit-s-vatcode" value={values.defaultVatCode} onChange={(e) => set("defaultVatCode", e.target.value)} />
+        </Field>
+        <Field label="VAT Number" htmlFor="edit-s-vat">
+          <Input id="edit-s-vat" value={values.vatNumber} onChange={(e) => set("vatNumber", e.target.value)} />
+        </Field>
+        <Field label="Tax Number" htmlFor="edit-s-tax">
+          <Input id="edit-s-tax" value={values.taxNumber} onChange={(e) => set("taxNumber", e.target.value)} />
+        </Field>
+        <Field label="Payment Terms (days)" htmlFor="edit-s-terms">
+          <Input id="edit-s-terms" type="number" value={values.paymentTermsDays} onChange={(e) => set("paymentTermsDays", e.target.value)} />
+        </Field>
+      </div>
+
+      <div className={cn("rounded-lg border p-4", bankingChanged ? "border-vf-warning/25 bg-vf-warning/8" : "border-vf-paper-border bg-vf-paper-alt")}>
+        <p className="mb-3 text-xs font-semibold tracking-wide text-vf-ink-faint uppercase">Banking Details</p>
+        <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+          <Field label="Bank" htmlFor="edit-s-bankname">
+            <Input id="edit-s-bankname" value={values.bankName} onChange={(e) => set("bankName", e.target.value)} />
+          </Field>
+          <Field label="Bank Account Number" htmlFor="edit-s-bankacc">
+            <Input id="edit-s-bankacc" value={values.bankAccountNumber} onChange={(e) => set("bankAccountNumber", e.target.value)} />
+          </Field>
+          <Field label="Bank Branch Code" htmlFor="edit-s-branch">
+            <Input id="edit-s-branch" value={values.bankBranchCode} onChange={(e) => set("bankBranchCode", e.target.value)} />
+          </Field>
+        </div>
+        {bankingChanged && (
+          <p className="mt-2 text-xs text-vf-ink-faint">
+            Changing banking details requires Purchasing Manager approval or higher, since it affects where a real
+            payment run sends funds.
+          </p>
+        )}
+      </div>
+
+      <Field label="Reason for change (recommended)" htmlFor="edit-s-reason">
+        <Input id="edit-s-reason" value={values.reason} onChange={(e) => set("reason", e.target.value)} placeholder="e.g. Supplier confirmed new banking details" />
+      </Field>
+      {error && (
+        <p role="alert" className="rounded-lg border border-vf-danger/25 bg-vf-danger/8 px-3.5 py-2.5 text-sm text-vf-danger">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-3">
+        <Button type="button" variant="primary" size="sm" disabled={loading} onClick={handleSave}>
+          {loading ? "Saving…" : "Save Changes"}
+        </Button>
+        <Button type="button" variant="subtle" size="sm" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function OverviewTab({ companyId, supplier, contacts, financialSummary, previewMode }: { companyId: string; supplier: Supplier; contacts: SupplierContact[]; financialSummary: SupplierFinancialSummary; previewMode: boolean }) {
+  const [isEditing, setIsEditing] = useState(false);
   const primaryContact = contacts.find((c) => c.isPrimary) ?? contacts[0];
   const rows: [string, string][] = [
     ["Supplier Type", supplier.supplierType],
@@ -41,8 +169,25 @@ function OverviewTab({ companyId, supplier, contacts, financialSummary, previewM
     ["Payment Terms", `${supplier.paymentTermsDays} days`],
     ["Alternative Names", supplier.alternativeNames.join(", ") || "—"],
   ];
+
+  if (isEditing) {
+    return (
+      <div className="flex flex-col gap-6">
+        <EditSupplierOverviewForm companyId={companyId} supplier={supplier} onDone={() => setIsEditing(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-vf-ink-faint">Supplier Details</p>
+        {!previewMode && (
+          <Button type="button" variant="subtle" size="sm" onClick={() => setIsEditing(true)}>
+            Edit Details
+          </Button>
+        )}
+      </div>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
         {rows.map(([label, value]) => (
           <div key={label}>

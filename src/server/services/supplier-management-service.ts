@@ -15,10 +15,12 @@ import {
 } from "@/server/repositories/supplier-reconciliation-repository";
 import { queueCommunication } from "@/server/services/communication-service";
 import { getCompany } from "@/server/services/company-service";
+import { recordPermissionAuditEntry } from "@/server/repositories/permission-repository";
 import type { Supplier, SupplierRiskRating, SupplierType } from "@/server/accounting/types";
 import type { SupplierAddress, SupplierAddressType, SupplierContact } from "@/server/supplier-management/types";
 
 export class ValidationError extends Error {}
+export class NotFoundError extends Error {}
 
 const SUPPLIER_TYPES: SupplierType[] = ["Company", "Individual"];
 const RISK_RATINGS: SupplierRiskRating[] = ["Low", "Medium", "High"];
@@ -94,13 +96,32 @@ export type EditSupplierRequest = Partial<{
   paymentTermsDays: number;
 }>;
 
-export async function updateSupplier(companyId: string, supplierId: number, input: EditSupplierRequest): Promise<Supplier> {
+/** Pilot Review Round 1, Phase 3 — banking details are the one supplier
+ * field class with direct payment-fraud exposure (a changed bank account
+ * number silently redirects a real payment run); gated behind
+ * `Purchasing:Approve`, already held by Purchasing Manager+, not base
+ * Purchasing:Edit clerks. Reuses the existing grant this codebase
+ * already seeds for every senior Purchasing role — no new permission key. */
+export function editRequiresElevatedPermission(input: EditSupplierRequest): boolean {
+  return input.bankName !== undefined || input.bankAccountNumber !== undefined || input.bankBranchCode !== undefined;
+}
+
+export async function updateSupplier(companyId: string, supplierId: number, input: EditSupplierRequest, performedBy = "System", reason = ""): Promise<Supplier> {
   if (input.name !== undefined && !input.name.trim()) throw new ValidationError("Supplier Name cannot be empty.");
   if (input.supplierType !== undefined && !SUPPLIER_TYPES.includes(input.supplierType)) throw new ValidationError("Invalid Supplier Type.");
   if (input.riskRating !== undefined && !RISK_RATINGS.includes(input.riskRating)) throw new ValidationError("Invalid Risk Rating.");
   if (input.paymentTermsDays !== undefined && input.paymentTermsDays < 0) throw new ValidationError("Payment Terms cannot be negative.");
 
-  return repo.updateSupplier(companyId, supplierId, {
+  // Same NotFoundError pre-check `customer-service.ts::updateCustomer`
+  // already has (RC1 Phase 7.6) — a nonexistent or cross-tenant id
+  // previously reached `.single()` on zero rows and threw a raw,
+  // uncaught PostgREST error (500) instead of a clean 404. The write was
+  // always correctly blocked at the data layer (RLS + company_id
+  // filter); only the error response was wrong.
+  const existing = await getSupplierRepo(companyId, supplierId);
+  if (!existing) throw new NotFoundError(`No supplier with id ${supplierId}.`);
+
+  const updated = await repo.updateSupplier(companyId, supplierId, {
     ...(input.name !== undefined && { name: input.name.trim() }),
     ...(input.defaultGlAccount !== undefined && { default_gl_account: input.defaultGlAccount }),
     ...(input.defaultVatCode !== undefined && { default_vat_code: input.defaultVatCode }),
@@ -115,6 +136,31 @@ export async function updateSupplier(companyId: string, supplierId: number, inpu
     ...(input.riskRating !== undefined && { risk_rating: input.riskRating }),
     ...(input.paymentTermsDays !== undefined && { payment_terms_days: input.paymentTermsDays }),
   });
+
+  // Every editable field, not a hand-picked subset — same "complete
+  // audit history" requirement as customer-service.ts::updateCustomer.
+  const changedFields: [string, unknown, unknown][] = [
+    ["name", existing.name, updated.name],
+    ["defaultGlAccount", existing.defaultGlAccount, updated.defaultGlAccount],
+    ["defaultVatCode", existing.defaultVatCode, updated.defaultVatCode],
+    ["supplierCode", existing.supplierCode, updated.supplierCode],
+    ["supplierCategory", existing.supplierCategory, updated.supplierCategory],
+    ["supplierType", existing.supplierType, updated.supplierType],
+    ["bankName", existing.bankName, updated.bankName],
+    ["bankAccountNumber", existing.bankAccountNumber, updated.bankAccountNumber],
+    ["bankBranchCode", existing.bankBranchCode, updated.bankBranchCode],
+    ["vatNumber", existing.vatNumber, updated.vatNumber],
+    ["taxNumber", existing.taxNumber, updated.taxNumber],
+    ["riskRating", existing.riskRating, updated.riskRating],
+    ["paymentTermsDays", existing.paymentTermsDays, updated.paymentTermsDays],
+  ];
+  for (const [field, oldValue, newValue] of changedFields) {
+    if (oldValue !== newValue) {
+      await recordPermissionAuditEntry(companyId, "Supplier", String(supplierId), field, String(oldValue), String(newValue), reason || "Supplier details updated.", performedBy);
+    }
+  }
+
+  return updated;
 }
 
 export const setSupplierActive = repo.setSupplierActive;

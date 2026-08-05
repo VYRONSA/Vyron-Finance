@@ -7,6 +7,7 @@
 import * as repo from "@/server/repositories/customer-repository";
 import { queueCommunication } from "@/server/services/communication-service";
 import { getCompany } from "@/server/services/company-service";
+import { recordPermissionAuditEntry } from "@/server/repositories/permission-repository";
 import type { AddressType, Customer, CustomerAddress, CustomerContact, CustomerType, RiskRating } from "@/server/customer-management/types";
 
 export class ValidationError extends Error {}
@@ -70,7 +71,18 @@ export type EditCustomerRequest = Partial<{
   notes: string;
 }>;
 
-export async function updateCustomer(companyId: string, customerId: number, input: EditCustomerRequest): Promise<Customer> {
+/** Pilot Review Round 1, Phase 3 — "sensitive fields should require
+ * elevated permissions where appropriate." Credit Limit is the one
+ * customer field with direct financial exposure (raises how much a
+ * customer can owe before Sales stops accepting orders) — gated behind
+ * `Sales:Approve` (already held by Sales Manager+, not base Sales:Edit
+ * clerks) rather than a new permission key, reusing the existing grant
+ * this codebase already seeds for every senior Sales role. */
+export function editRequiresElevatedPermission(input: EditCustomerRequest): boolean {
+  return input.creditLimit !== undefined;
+}
+
+export async function updateCustomer(companyId: string, customerId: number, input: EditCustomerRequest, performedBy = "System", reason = ""): Promise<Customer> {
   if (input.name !== undefined && !input.name.trim()) throw new ValidationError("Customer Name cannot be empty.");
   if (input.customerType !== undefined && !CUSTOMER_TYPES.includes(input.customerType)) throw new ValidationError("Invalid Customer Type.");
   if (input.riskRating !== undefined && !RISK_RATINGS.includes(input.riskRating)) throw new ValidationError("Invalid Risk Rating.");
@@ -89,7 +101,7 @@ export async function updateCustomer(companyId: string, customerId: number, inpu
   const existing = await repo.getCustomer(companyId, customerId);
   if (!existing) throw new NotFoundError(`No customer with id ${customerId}.`);
 
-  return repo.updateCustomer(companyId, customerId, {
+  const updated = await repo.updateCustomer(companyId, customerId, {
     ...(input.name !== undefined && { name: input.name.trim() }),
     ...(input.customerType !== undefined && { customer_type: input.customerType }),
     ...(input.customerGroup !== undefined && { customer_group: input.customerGroup }),
@@ -104,6 +116,32 @@ export async function updateCustomer(companyId: string, customerId: number, inpu
     ...(input.riskRating !== undefined && { risk_rating: input.riskRating }),
     ...(input.notes !== undefined && { notes: input.notes }),
   });
+
+  // Every editable field, not a hand-picked subset — "maintain complete
+  // audit history of changes" (Pilot Review Round 1, Phase 3) means
+  // every field, including ones that don't feel individually sensitive.
+  const changedFields: [string, unknown, unknown][] = [
+    ["name", existing.name, updated.name],
+    ["customerType", existing.customerType, updated.customerType],
+    ["customerGroup", existing.customerGroup, updated.customerGroup],
+    ["industry", existing.industry, updated.industry],
+    ["vatNumber", existing.vatNumber, updated.vatNumber],
+    ["registrationNumber", existing.registrationNumber, updated.registrationNumber],
+    ["creditLimit", existing.creditLimit, updated.creditLimit],
+    ["paymentTermsDays", existing.paymentTermsDays, updated.paymentTermsDays],
+    ["currencyCode", existing.currencyCode, updated.currencyCode],
+    ["priceList", existing.priceList, updated.priceList],
+    ["riskRating", existing.riskRating, updated.riskRating],
+    ["salesRep", existing.salesRep, updated.salesRep],
+    ["notes", existing.notes, updated.notes],
+  ];
+  for (const [field, oldValue, newValue] of changedFields) {
+    if (oldValue !== newValue) {
+      await recordPermissionAuditEntry(companyId, "Customer", String(customerId), field, String(oldValue), String(newValue), reason || "Customer details updated.", performedBy);
+    }
+  }
+
+  return updated;
 }
 
 export async function setCustomerActive(companyId: string, customerId: number, isActive: boolean): Promise<Customer> {

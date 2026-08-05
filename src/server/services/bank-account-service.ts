@@ -5,6 +5,8 @@
  */
 
 import * as repo from "@/server/repositories/bank-account-repository";
+import { recordPermissionAuditEntry } from "@/server/repositories/permission-repository";
+import { getOpeningBalanceGovernance } from "@/server/services/opening-balance-service";
 import type { BankAccount, BankAccountSummary } from "@/server/accounting/types";
 
 export class ValidationError extends Error {}
@@ -54,13 +56,44 @@ export type EditBankAccountRequest = Partial<{
   currency: string;
   notes: string;
   glAccount: string;
+  // Pilot Review Round 1, Phase 2 — previously create-only.
+  openingBalance: number;
+  openingBalanceDate: string | null;
+  openingBalanceReference: string;
+  reason: string;
 }>;
 
-export async function editBankAccount(companyId: string, accountId: number, input: EditBankAccountRequest): Promise<BankAccount> {
+/** Pure core of the opening-balance edit path — changing the opening
+ * balance shifts `current_balance` by the same delta, never recalculated
+ * from scratch, so every real transaction/reconciliation movement
+ * already posted against the account is preserved. Extracted for direct
+ * unit testing, matching this codebase's pure-core/orchestration split. */
+export function computeOpeningBalanceDelta(existingOpeningBalance: number, existingCurrentBalance: number, newOpeningBalance: number): { opening_balance: number; current_balance: number } {
+  const delta = newOpeningBalance - existingOpeningBalance;
+  return { opening_balance: newOpeningBalance, current_balance: existingCurrentBalance + delta };
+}
+
+export async function editBankAccount(companyId: string, accountId: number, input: EditBankAccountRequest, performedBy = "System"): Promise<BankAccount> {
   if (input.accountName !== undefined && !input.accountName.trim()) {
     throw new ValidationError("Account name cannot be empty.");
   }
-  return repo.updateBankAccount(companyId, accountId, {
+  if (input.openingBalance !== undefined && (typeof input.openingBalance !== "number" || Number.isNaN(input.openingBalance))) {
+    throw new ValidationError("Opening balance must be a number.");
+  }
+
+  const existing = input.openingBalance !== undefined ? await repo.getBankAccount(companyId, accountId) : null;
+  if (input.openingBalance !== undefined && !existing) {
+    throw new ValidationError(`No bank account with id ${accountId}.`);
+  }
+
+  if (input.openingBalance !== undefined && existing) {
+    const governance = await getOpeningBalanceGovernance(companyId);
+    if (governance.reasonRequired && !input.reason?.trim()) {
+      throw new ValidationError("A reason is required to change an opening balance after go-live.");
+    }
+  }
+
+  const updated = await repo.updateBankAccount(companyId, accountId, {
     ...(input.accountName !== undefined && { account_name: input.accountName.trim() }),
     ...(input.bankName !== undefined && { bank_name: input.bankName.trim() }),
     ...(input.accountType !== undefined && { account_type: input.accountType.trim() }),
@@ -68,7 +101,20 @@ export async function editBankAccount(companyId: string, accountId: number, inpu
     ...(input.currency !== undefined && { currency: input.currency.trim() }),
     ...(input.notes !== undefined && { notes: input.notes }),
     ...(input.glAccount !== undefined && { gl_account: input.glAccount.trim() }),
+    ...(input.openingBalance !== undefined && existing && computeOpeningBalanceDelta(existing.openingBalance, existing.currentBalance, input.openingBalance)),
+    ...(input.openingBalanceDate !== undefined && { opening_balance_date: input.openingBalanceDate }),
+    ...(input.openingBalanceReference !== undefined && { opening_balance_reference: input.openingBalanceReference.trim() }),
   });
+
+  if (input.openingBalance !== undefined && existing && input.openingBalance !== existing.openingBalance) {
+    await recordPermissionAuditEntry(
+      companyId, "BankAccountOpeningBalance", String(accountId), "openingBalance",
+      existing.openingBalance.toFixed(2), input.openingBalance.toFixed(2),
+      input.reason?.trim() || "Corrected during implementation.", performedBy,
+    );
+  }
+
+  return updated;
 }
 
 export async function archiveBankAccount(companyId: string, accountId: number): Promise<BankAccount> {

@@ -222,6 +222,22 @@ export async function assignRole(userId: string, companyId: string, roleId: numb
   return userRoleAssignmentFromRow(data);
 }
 
+/** Pilot Review Round 1 Final Certification — the one-time, atomic
+ * bootstrap of a brand-new company's very first role assignment
+ * (`bootstrap_company_owner_role`, migration 0056). Unlike `assignRole`
+ * above, this needs no client-side `permission_roles` lookup and no
+ * pre-existing `ManageUsers` permission on the target company — both are
+ * structurally impossible for a company that has no role assignments
+ * yet. Self-limits to exactly that moment (see the RPC's own guard). */
+export async function bootstrapCompanyOwnerRole(companyId: string, performedBy: string): Promise<UserRoleAssignment> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .rpc("bootstrap_company_owner_role", { target_company_id: companyId, performed_by: performedBy })
+    .single<UserRoleAssignmentRow>();
+  if (error) throw error;
+  return userRoleAssignmentFromRow(data);
+}
+
 export async function revokeRoleAssignment(assignmentId: number, companyId: string): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from("user_role_assignments").delete().eq("id", assignmentId).eq("company_id", companyId);
@@ -242,5 +258,13 @@ export async function seedCompanyRbacDefaults(companyId: string): Promise<void> 
 export async function grantManageBillingToCompanyOwner(companyId: string): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.rpc("grant_manage_billing_to_company_owner", { target_company_id: companyId });
+  if (error) throw error;
+}
+
+/** Pilot Review Round 1, Phase 1 — mirrors `grantManageBillingToCompanyOwner`
+ * exactly (0055_opening_balances_management.sql). */
+export async function grantManageOpeningBalancesDefaults(companyId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("grant_manage_opening_balances_defaults", { target_company_id: companyId });
   if (error) throw error;
 }

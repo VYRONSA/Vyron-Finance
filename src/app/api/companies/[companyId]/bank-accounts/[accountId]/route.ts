@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/server/auth/require-session";
+import { requireSession, getPerformedByLabel } from "@/server/auth/require-session";
 import {
   archiveBankAccount,
   editBankAccount,
@@ -8,7 +8,8 @@ import {
   reactivateBankAccount,
   ValidationError,
 } from "@/server/services/bank-account-service";
-import { requirePermission } from "@/server/services/permission-service";
+import { getOpeningBalanceGovernance } from "@/server/services/opening-balance-service";
+import { requirePermission, requireApproval } from "@/server/services/permission-service";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; accountId: string }> }) {
   const session = await requireSession();
@@ -41,7 +42,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
       const account = await reactivateBankAccount(companyId, Number(accountId));
       return NextResponse.json({ account });
     }
-    const account = await editBankAccount(companyId, Number(accountId), body);
+    if (body.openingBalance !== undefined) {
+      const governance = await getOpeningBalanceGovernance(companyId);
+      if (governance.requiresGovernance) {
+        const approval = await requireApproval(companyId, "ManageOpeningBalances", "OpeningBalance", Math.abs(Number(body.openingBalance) || 0));
+        if (!approval.ok) return approval.response;
+      }
+    }
+    const performedBy = await getPerformedByLabel();
+    const account = await editBankAccount(companyId, Number(accountId), body, performedBy);
     return NextResponse.json({ account });
   } catch (error) {
     if (error instanceof ValidationError) {

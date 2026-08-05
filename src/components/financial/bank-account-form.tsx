@@ -14,11 +14,13 @@ export function BankAccountForm({
   mode,
   account,
   previewMode,
+  governance,
 }: {
   companyId: string;
   mode: "create" | "edit";
   account?: BankAccount;
   previewMode: boolean;
+  governance?: { requiresGovernance: boolean; reasonRequired: boolean };
 }) {
   const router = useRouter();
   const [values, setValues] = useState({
@@ -29,6 +31,9 @@ export function BankAccountForm({
     branch: account?.branch ?? "",
     currency: account?.currency ?? "ZAR",
     openingBalance: account ? String(account.openingBalance) : "0",
+    openingBalanceDate: account?.openingBalanceDate ?? "",
+    openingBalanceReference: account?.openingBalanceReference ?? "",
+    reason: "",
     notes: account?.notes ?? "",
     glAccount: account?.glAccount ?? "",
   });
@@ -40,11 +45,16 @@ export function BankAccountForm({
     setValues((v) => ({ ...v, [key]: value }));
   }
 
+  const openingBalanceChanged = mode === "edit" && account && Number(values.openingBalance) !== account.openingBalance;
+
   function validate(): boolean {
     const next: Record<string, string> = {};
     if (mode === "create" && !values.accountNumber.trim()) next.accountNumber = "Account number is required.";
     if (!values.accountName.trim()) next.accountName = "Account name is required.";
     if (!values.bankName.trim()) next.bankName = "Bank name is required.";
+    if (openingBalanceChanged && governance?.reasonRequired && !values.reason.trim()) {
+      next.reason = "A reason is required to change an opening balance after go-live.";
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -80,6 +90,12 @@ export function BankAccountForm({
               currency: values.currency,
               notes: values.notes,
               glAccount: values.glAccount,
+              ...(openingBalanceChanged && {
+                openingBalance: Number(values.openingBalance) || 0,
+                openingBalanceDate: values.openingBalanceDate || null,
+                openingBalanceReference: values.openingBalanceReference.trim(),
+                reason: values.reason.trim(),
+              }),
             };
 
       const res = await fetch(url, {
@@ -180,6 +196,62 @@ export function BankAccountForm({
 
       {mode === "edit" && (
         <>
+          <div className="rounded-lg border border-vf-paper-border bg-vf-paper-alt p-4">
+            <p className="mb-3 text-xs font-semibold tracking-wide text-vf-ink-faint uppercase">Opening Balance</p>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Opening Balance" htmlFor="openingBalance" error={errors.openingBalance}>
+                <Input
+                  id="openingBalance"
+                  type="number"
+                  step="0.01"
+                  value={values.openingBalance}
+                  onChange={(e) => set("openingBalance", e.target.value)}
+                />
+              </Field>
+              <Field label="Opening Balance Date" htmlFor="openingBalanceDate">
+                <Input
+                  id="openingBalanceDate"
+                  type="date"
+                  value={values.openingBalanceDate}
+                  onChange={(e) => set("openingBalanceDate", e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="mt-4">
+              <Field label="Opening Balance Reference" htmlFor="openingBalanceReference">
+                <Input
+                  id="openingBalanceReference"
+                  value={values.openingBalanceReference}
+                  onChange={(e) => set("openingBalanceReference", e.target.value)}
+                  placeholder="e.g. Migration from previous system"
+                />
+              </Field>
+            </div>
+            {openingBalanceChanged && (
+              <div className="mt-4">
+                <Field
+                  label="Reason for change"
+                  htmlFor="reason"
+                  required={governance?.reasonRequired}
+                  error={errors.reason}
+                >
+                  <Input
+                    id="reason"
+                    value={values.reason}
+                    onChange={(e) => set("reason", e.target.value)}
+                    placeholder="Why is this opening balance being corrected?"
+                  />
+                </Field>
+                {governance?.requiresGovernance && (
+                  <p className="mt-1.5 text-xs text-vf-ink-faint">
+                    This company has gone live — this change requires the Manage Opening Balances permission and is
+                    recorded in the audit trail with your name, the reason, and the old and new values.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           <Field label="GL Account" htmlFor="glAccount">
             <Input
               id="glAccount"

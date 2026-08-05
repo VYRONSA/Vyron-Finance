@@ -15,6 +15,7 @@ const APPROVAL_CATEGORY_LABEL: Record<ApprovalCategory, string> = {
   CustomerCreditNote: "Customer Credit Notes",
   PurchaseApproval: "Purchase Approvals",
   AssetDisposal: "Asset Disposals",
+  OpeningBalance: "Opening Balances",
 };
 
 function RolePermissionEditor({ companyId, role, previewMode }: { companyId: string; role: PermissionRoleWithGrants; previewMode: boolean }) {

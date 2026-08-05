@@ -33,7 +33,128 @@ function money(value: number): string {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function EditCustomerOverviewForm({ companyId, customer, onDone }: { companyId: string; customer: Customer; onDone: () => void }) {
+  const router = useRouter();
+  const [values, setValues] = useState({
+    name: customer.name,
+    customerGroup: customer.customerGroup,
+    industry: customer.industry,
+    vatNumber: customer.vatNumber,
+    registrationNumber: customer.registrationNumber,
+    creditLimit: String(customer.creditLimit),
+    paymentTermsDays: String(customer.paymentTermsDays),
+    priceList: customer.priceList,
+    salesRep: customer.salesRep,
+    notes: customer.notes,
+    reason: "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const creditLimitChanged = Number(values.creditLimit) !== customer.creditLimit;
+
+  function set<K extends keyof typeof values>(key: K, value: string) {
+    setValues((v) => ({ ...v, [key]: value }));
+  }
+
+  async function handleSave() {
+    setError(null);
+    if (!values.name.trim()) return setError("Customer Name cannot be empty.");
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/customers/${customer.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: values.name.trim(),
+          customerGroup: values.customerGroup,
+          industry: values.industry,
+          vatNumber: values.vatNumber,
+          registrationNumber: values.registrationNumber,
+          creditLimit: Number(values.creditLimit) || 0,
+          paymentTermsDays: Number(values.paymentTermsDays) || 0,
+          priceList: values.priceList,
+          salesRep: values.salesRep,
+          notes: values.notes,
+          reason: values.reason.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      router.refresh();
+      onDone();
+    } catch {
+      setError("Couldn't reach the API. Check the dev server is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Company Name" htmlFor="edit-name">
+          <Input id="edit-name" value={values.name} onChange={(e) => set("name", e.target.value)} />
+        </Field>
+        <Field label="Customer Group" htmlFor="edit-group">
+          <Input id="edit-group" value={values.customerGroup} onChange={(e) => set("customerGroup", e.target.value)} />
+        </Field>
+        <Field label="Industry" htmlFor="edit-industry">
+          <Input id="edit-industry" value={values.industry} onChange={(e) => set("industry", e.target.value)} />
+        </Field>
+        <Field label="VAT Number" htmlFor="edit-vat">
+          <Input id="edit-vat" value={values.vatNumber} onChange={(e) => set("vatNumber", e.target.value)} />
+        </Field>
+        <Field label="Registration Number" htmlFor="edit-reg">
+          <Input id="edit-reg" value={values.registrationNumber} onChange={(e) => set("registrationNumber", e.target.value)} />
+        </Field>
+        <Field label="Credit Limit" htmlFor="edit-credit" className={creditLimitChanged ? "rounded-lg bg-vf-warning/8 p-2" : undefined}>
+          <Input id="edit-credit" type="number" step="0.01" value={values.creditLimit} onChange={(e) => set("creditLimit", e.target.value)} />
+          {creditLimitChanged && <p className="text-xs text-vf-ink-faint">Changing the credit limit requires Sales Manager approval or higher.</p>}
+        </Field>
+        <Field label="Payment Terms (days)" htmlFor="edit-terms">
+          <Input id="edit-terms" type="number" value={values.paymentTermsDays} onChange={(e) => set("paymentTermsDays", e.target.value)} />
+        </Field>
+        <Field label="Price List" htmlFor="edit-pricelist">
+          <Input id="edit-pricelist" value={values.priceList} onChange={(e) => set("priceList", e.target.value)} />
+        </Field>
+        <Field label="Sales Representative" htmlFor="edit-salesrep">
+          <Input id="edit-salesrep" value={values.salesRep} onChange={(e) => set("salesRep", e.target.value)} />
+        </Field>
+      </div>
+      <Field label="Notes" htmlFor="edit-notes">
+        <textarea
+          id="edit-notes"
+          value={values.notes}
+          onChange={(e) => set("notes", e.target.value)}
+          rows={3}
+          className="w-full rounded-lg border border-vf-paper-border bg-vf-paper px-3.5 py-2.5 text-vf-ink outline-none focus:border-vf-red-500"
+        />
+      </Field>
+      <Field label="Reason for change (recommended)" htmlFor="edit-reason">
+        <Input id="edit-reason" value={values.reason} onChange={(e) => set("reason", e.target.value)} placeholder="e.g. Corrected after client confirmation" />
+      </Field>
+      {error && (
+        <p role="alert" className="rounded-lg border border-vf-danger/25 bg-vf-danger/8 px-3.5 py-2.5 text-sm text-vf-danger">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-3">
+        <Button type="button" variant="primary" size="sm" disabled={loading} onClick={handleSave}>
+          {loading ? "Saving…" : "Save Changes"}
+        </Button>
+        <Button type="button" variant="subtle" size="sm" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function OverviewTab({ companyId, customer, contacts, financialSummary, previewMode }: { companyId: string; customer: Customer; contacts: CustomerContact[]; financialSummary: CustomerFinancialSummary; previewMode: boolean }) {
+  const [isEditing, setIsEditing] = useState(false);
   const primaryContact = contacts.find((c) => c.isPrimary) ?? contacts[0];
   const rows: [string, string][] = [
     ["Customer Type", customer.customerType],
@@ -48,8 +169,25 @@ function OverviewTab({ companyId, customer, contacts, financialSummary, previewM
     ["Sales Representative", customer.salesRep || "—"],
   ];
   const overdueAmount = financialSummary.aging.days30 + financialSummary.aging.days60 + financialSummary.aging.days90 + financialSummary.aging.days120Plus;
+
+  if (isEditing) {
+    return (
+      <div className="flex flex-col gap-6">
+        <EditCustomerOverviewForm companyId={companyId} customer={customer} onDone={() => setIsEditing(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-vf-ink-faint">Customer Details</p>
+        {!previewMode && (
+          <Button type="button" variant="subtle" size="sm" onClick={() => setIsEditing(true)}>
+            Edit Details
+          </Button>
+        )}
+      </div>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
         {rows.map(([label, value]) => (
           <div key={label}>

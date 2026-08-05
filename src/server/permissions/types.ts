@@ -25,7 +25,7 @@ export const GLOBAL_PERMISSIONS = [
   "RunAutomation", "RunReports", "AccessAICopilot", "ManageUsers", "ManageFinancialYears",
   "ManageVAT", "ApproveJournals", "ApprovePayments", "ApprovePurchases", "ApproveSales",
   "ApproveAssets", "RunDepreciation", "GenerateFinancialStatements", "AuditAccess", "SystemAdministration",
-  "ManageBilling",
+  "ManageBilling", "ManageOpeningBalances",
 ] as const;
 export type GlobalPermission = (typeof GLOBAL_PERMISSIONS)[number];
 
@@ -63,7 +63,7 @@ export type PermissionRole = {
  * ABSENCE of a `RoleApprovalLimit` row for a category (not represented
  * in this type — see `permission-engine.ts::evaluateApproval`) means
  * the role cannot approve that category at all. */
-export const APPROVAL_CATEGORIES = ["Journal", "SupplierPayment", "CustomerCreditNote", "PurchaseApproval", "AssetDisposal"] as const;
+export const APPROVAL_CATEGORIES = ["Journal", "SupplierPayment", "CustomerCreditNote", "PurchaseApproval", "AssetDisposal", "OpeningBalance"] as const;
 export type ApprovalCategory = (typeof APPROVAL_CATEGORIES)[number];
 
 export type RoleApprovalLimit = {

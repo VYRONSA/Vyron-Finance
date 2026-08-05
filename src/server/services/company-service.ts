@@ -57,19 +57,44 @@ export async function createCompany(userId: string, input: CreateCompanyRequest)
     baseCurrencyCode: input.baseCurrencyCode?.trim(),
   });
 
-  await repo.seedCompanyDefaults(company.id);
-
   // RC1 Phase 1 — every new company gets its 15 real system roles
   // immediately (idempotent RPC — see 0025_rbac_platform.sql), and the
   // creating user is assigned the Company Owner role so the company is
   // never left in an "everyone unassigned, nobody can approve anything"
   // state on day one.
+  //
+  // Pilot Review Round 1 Final Certification — found live (via migration
+  // 0056's own comment for the full trace): a plain client-side read of
+  // `permission_roles` to find the `company_owner` role id, followed by
+  // `assign_company_role`, both independently required the caller to
+  // already have access to/permission on a company that — by
+  // definition, at this exact moment — has no role assignments yet.
+  // Masked in every prior round of live verification because the test
+  // admin accounts used already held a platform-scope role. Fixed with
+  // one atomic, security-definer bootstrap RPC (mirrors
+  // `bootstrap_organisation`'s own trust model) that needs no
+  // client-side role lookup and self-limits to a company's first-ever
+  // role assignment. This block must still run before `seedCompanyDefaults`
+  // below — `seed_company_defaults()` (0006) is `security invoker` and
+  // needs the creating user's role assignment to already exist.
   await permissionRepo.seedCompanyRbacDefaults(company.id);
-  const roles = await permissionRepo.listRolesForCompany(company.id);
-  const ownerRole = roles.find((r) => r.companyId === company.id && r.roleKey === "company_owner");
-  if (ownerRole) await permissionRepo.assignRole(userId, company.id, ownerRole.id, "System");
+  await permissionRepo.bootstrapCompanyOwnerRole(company.id, "System");
   await permissionRepo.grantManageBillingToCompanyOwner(company.id);
 
+  // Pilot Review Round 1 — deliberately non-blocking. This grant's RPC
+  // (migration 0055) is not guaranteed to exist in every environment the
+  // moment this code ships (the same real gap D-032 already documented:
+  // a new permission-grant step failing must never break the whole
+  // Company Creation flow). A company created before the migration is
+  // applied simply doesn't have this grant yet — exactly the same
+  // "backfill later" shape as D-018/D-028's own fix (migration 0054).
+  try {
+    await permissionRepo.grantManageOpeningBalancesDefaults(company.id);
+  } catch (error) {
+    console.error("grantManageOpeningBalancesDefaults failed (non-fatal — company creation continues):", error);
+  }
+
+  await repo.seedCompanyDefaults(company.id);
   await communicationRepo.seedCompanyCommunicationDefaults(company.id);
 
   // Commercial Billing Platform — "a customer must never create a

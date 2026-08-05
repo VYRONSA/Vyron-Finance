@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/server/auth/require-session";
+import { requireSession, getPerformedByLabel } from "@/server/auth/require-session";
 import { requirePermission } from "@/server/services/permission-service";
-import { setCustomerActive, updateCustomer, ValidationError, NotFoundError } from "@/server/services/customer-service";
+import { setCustomerActive, updateCustomer, editRequiresElevatedPermission, ValidationError, NotFoundError } from "@/server/services/customer-service";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ companyId: string; customerId: string }> }) {
   const session = await requireSession();
@@ -15,12 +15,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
   const id = Number(customerId);
   const body = await request.json();
 
+  if (editRequiresElevatedPermission(body)) {
+    const elevated = await requirePermission(companyId, "Sales:Approve");
+    if (!elevated.ok) return elevated.response;
+  }
+
   try {
     if (typeof body.isActive === "boolean") {
       const customer = await setCustomerActive(companyId, id, body.isActive);
       return NextResponse.json({ customer });
     }
-    const customer = await updateCustomer(companyId, id, body);
+    const performedBy = await getPerformedByLabel();
+    const customer = await updateCustomer(companyId, id, body, performedBy, body.reason);
     return NextResponse.json({ customer });
   } catch (error) {
     if (error instanceof ValidationError) {

@@ -208,6 +208,10 @@ export type BankAccount = {
   // The control-account GL code Journal generation debits/credits
   // against for this account's "bank side" — see journal-service.ts.
   glAccount: string;
+  // Pilot Review Round 1, Phase 2 — editable post-creation, distinct
+  // from `openingBalance`'s original creation-time value semantics.
+  openingBalanceDate: string | null;
+  openingBalanceReference: string;
 };
 
 // Import Centre module (Migration Roadmap Module 3) — real import history,
