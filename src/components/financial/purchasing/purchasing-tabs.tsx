@@ -75,7 +75,17 @@ export function PurchasingTabs({
       <CardContent className="pt-5">
         {activeTab === "Requisitions" && <RequisitionsTab companyId={companyId} requisitions={requisitions} suppliers={suppliers} previewMode={previewMode} />}
         {activeTab === "Purchase Orders" && (
-          <PurchaseOrdersTab companyId={companyId} orders={orders} suppliers={suppliers} vatTreatments={vatTreatments} previewMode={previewMode} />
+          <PurchaseOrdersTab
+            companyId={companyId}
+            orders={orders}
+            suppliers={suppliers}
+            vatTreatments={vatTreatments}
+            chartOfAccounts={chartOfAccounts}
+            costCentres={costCentres}
+            projects={projects}
+            departments={departments}
+            previewMode={previewMode}
+          />
         )}
         {activeTab === "GRNs" && <GrnsTab companyId={companyId} grns={grns} suppliers={suppliers} orders={orders} previewMode={previewMode} />}
         {activeTab === "Bills" && (

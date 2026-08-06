@@ -62,7 +62,24 @@ export async function getPurchaseOrder(companyId: string, orderId: number): Prom
   return data ? purchaseOrderFromRow(data) : null;
 }
 
-export type NewPurchaseOrderLine = { description: string; quantity: number; unitPrice: number; stockItemId?: number | null };
+export type NewPurchaseOrderLine = {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  stockItemId?: number | null;
+  // Product Review Board — multi-line capture parity with Bills. All
+  // optional: a caller that doesn't supply them (e.g. Requisition ->
+  // Order conversion) gets exactly today's behaviour — see
+  // 0060_purchase_order_line_dimensions.sql.
+  glAccount?: string | null;
+  vatCode?: string | null;
+  costCentreId?: number | null;
+  projectId?: number | null;
+  departmentId?: number | null;
+  discount?: number;
+  netAmount?: number;
+  vatAmount?: number;
+};
 export type NewPurchaseOrder = {
   orderNumber?: string;
   supplierId: number;
@@ -93,15 +110,31 @@ export async function createPurchaseOrder(companyId: string, input: NewPurchaseO
   const { data: lineRows, error: linesError } = await supabase
     .from("purchase_order_lines")
     .insert(
-      input.lines.map((line, index) => ({
-        order_id: orderRow.id,
-        line_order: index,
-        description: line.description,
-        quantity: line.quantity,
-        unit_price: line.unitPrice,
-        line_total: Math.round(line.quantity * line.unitPrice * 100) / 100,
-        stock_item_id: line.stockItemId ?? null,
-      })),
+      input.lines.map((line, index) => {
+        const discount = line.discount ?? 0;
+        // Falls back to exactly today's arithmetic (no VAT concept)
+        // when a caller doesn't supply netAmount/vatAmount — see
+        // NewPurchaseOrderLine's own comment.
+        const netAmount = line.netAmount ?? Math.round((line.quantity * line.unitPrice - discount) * 100) / 100;
+        const vatAmount = line.vatAmount ?? 0;
+        return {
+          order_id: orderRow.id,
+          line_order: index,
+          description: line.description,
+          quantity: line.quantity,
+          unit_price: line.unitPrice,
+          line_total: Math.round((netAmount + vatAmount) * 100) / 100,
+          stock_item_id: line.stockItemId ?? null,
+          gl_account: line.glAccount ?? null,
+          vat_code: line.vatCode ?? null,
+          cost_centre_id: line.costCentreId ?? null,
+          project_id: line.projectId ?? null,
+          department_id: line.departmentId ?? null,
+          discount,
+          net_amount: netAmount,
+          vat_amount: vatAmount,
+        };
+      }),
     )
     .select("*");
   if (linesError) throw linesError;

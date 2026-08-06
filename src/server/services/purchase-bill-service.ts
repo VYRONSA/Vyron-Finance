@@ -31,6 +31,7 @@ import { postApprovedJournals } from "@/server/services/posting-engine-service";
 import { listVatTreatments } from "@/server/services/vat-treatment-service";
 import type { NewJournalLine } from "@/server/repositories/journal-repository";
 import type { PostingRuleAmountSource } from "@/server/general-ledger/types";
+import { computeLineAmounts } from "@/server/purchasing/line-amounts";
 import type { BillPostingStatus, ImportedBill, PurchaseBillLine } from "@/server/accounting/types";
 
 /** Every bill company-wide, regardless of `origin` — Supplier Payments'
@@ -105,15 +106,15 @@ export type ComputedBillLine = BillLineInput & { discount: number; netAmount: nu
 
 /** Pure — exported for direct unit testing, same convention this
  * codebase uses for every other double-entry-adjacent arithmetic core
- * (`splitGrossAmount`, `buildJournalLinesFromRule`). */
+ * (`splitGrossAmount`, `buildJournalLinesFromRule`). The actual net/VAT
+ * math is `computeLineAmounts` (`purchasing/line-amounts.ts`), shared
+ * with Purchase Orders — this wraps it with Bill-specific validation. */
 export function computeBillLine(line: BillLineInput, vatRatePercent: number): ComputedBillLine {
   if (!line.glAccount?.trim()) throw new ValidationError("Every line needs a GL account.");
   if (!line.quantity || line.quantity <= 0) throw new ValidationError(`Line "${line.description || line.glAccount}" needs a quantity greater than zero.`);
   const discount = line.discount ?? 0;
-  const netAmount = round2(line.quantity * line.unitCost - discount);
+  const { netAmount, vatAmount, lineTotal } = computeLineAmounts(line.quantity, line.unitCost, discount, vatRatePercent);
   if (netAmount <= 0) throw new ValidationError(`Line "${line.description || line.glAccount}" must have a positive net amount.`);
-  const vatAmount = round2(netAmount * (vatRatePercent / 100));
-  const lineTotal = round2(netAmount + vatAmount);
   return { ...line, discount, netAmount, vatAmount, lineTotal };
 }
 
@@ -380,9 +381,19 @@ export async function retryPostBill(companyId: string, billId: number): Promise<
 /** Real Order -> Bill conversion — "Purchase Orders can be billed" per
  * the completion standard. Mirrors
  * `sales-invoice-service.ts::createInvoiceFromOrder`. Requires the order
- * fully `Received` first, sums its lines into a single bill amount
- * (`ae_imported_bills` is header-only — see `purchase-bill-repository.ts`),
- * marks every line fully billed, and moves the order to `Billed`. */
+ * fully `Received` first, marks every line fully billed, and moves the
+ * order to `Billed`.
+ *
+ * Two paths, chosen automatically from what the order's own lines
+ * carry — never a caller flag: when every line is dimensioned (a real
+ * GL account and VAT code on each — the Purchase Orders multi-line
+ * capture screen), the resulting Bill is built with the *same* lines,
+ * same GL accounts, same VAT codes, same cost-centre/project/department
+ * allocations, not collapsed into one number. An order with any
+ * undimensioned line (captured before this existed, or a Requisition ->
+ * Order conversion, which never carries GL/VAT) falls back to the
+ * original single-subtotal behaviour, using the caller-supplied
+ * `vatTreatmentCode` exactly as before. */
 export async function createBillFromOrder(
   companyId: string,
   orderId: number,
@@ -396,16 +407,37 @@ export async function createBillFromOrder(
     throw new ValidationError(`Only a Received order can be billed (current status: ${order.status}).`);
   }
 
-  const subtotal = round2(order.lines.reduce((sum, l) => sum + l.lineTotal, 0));
+  const everyLineDimensioned = order.lines.every((l) => l.glAccount && l.vatCode);
 
-  const bill = await createPurchaseBill(companyId, {
-    supplierId: order.supplierId,
-    invoiceNumber,
-    invoiceDate,
-    vatTreatmentCode,
-    subtotal,
-    purchaseOrderId: order.id,
-  });
+  const bill = await createPurchaseBill(
+    companyId,
+    everyLineDimensioned
+      ? {
+          supplierId: order.supplierId,
+          invoiceNumber,
+          invoiceDate,
+          purchaseOrderId: order.id,
+          lines: order.lines.map((l) => ({
+            description: l.description,
+            glAccount: l.glAccount!,
+            vatCode: l.vatCode!,
+            costCentreId: l.costCentreId,
+            projectId: l.projectId,
+            departmentId: l.departmentId,
+            quantity: l.quantity,
+            unitCost: l.unitPrice,
+            discount: l.discount,
+          })),
+        }
+      : {
+          supplierId: order.supplierId,
+          invoiceNumber,
+          invoiceDate,
+          vatTreatmentCode,
+          subtotal: round2(order.lines.reduce((sum, l) => sum + l.lineTotal, 0)),
+          purchaseOrderId: order.id,
+        },
+  );
 
   for (const line of order.lines) {
     await orderRepo.incrementOrderLineQuantity(line.id, "billed_quantity", line.quantity);

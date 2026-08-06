@@ -61,6 +61,19 @@ export type PurchaseOrderLine = {
    * line. See `0012_inventory_platform.sql`'s "One Business Object"
    * header comment. */
   stockItemId: number | null;
+  // Product Review Board — multi-line capture parity with Bills
+  // (0060_purchase_order_line_dimensions.sql). All optional/nullable:
+  // an order captured before this existed simply has none of them set,
+  // and `lineTotal` stays exactly what it always was (see that
+  // migration's own comment).
+  glAccount: string | null;
+  vatCode: string | null;
+  costCentreId: number | null;
+  projectId: number | null;
+  departmentId: number | null;
+  discount: number;
+  netAmount: number;
+  vatAmount: number;
 };
 
 export type GoodsReceivedNoteStatus = "Draft" | "Received" | "Cancelled";

@@ -7,6 +7,8 @@
 
 import * as repo from "@/server/repositories/purchase-order-repository";
 import * as requisitionRepo from "@/server/repositories/purchase-requisition-repository";
+import { listVatTreatments } from "@/server/services/vat-treatment-service";
+import { computeLineAmounts } from "@/server/purchasing/line-amounts";
 import type { PurchaseOrder, PurchaseOrderStatus } from "@/server/purchasing/types";
 
 export class ValidationError extends Error {}
@@ -40,11 +42,33 @@ export const listPurchaseOrders = repo.listPurchaseOrders;
 export const listPurchaseOrdersBySupplier = repo.listPurchaseOrdersBySupplier;
 export const getPurchaseOrder = repo.getPurchaseOrder;
 
+/** Pure — exported for direct unit testing (same convention as
+ * `purchase-bill-service.ts::computeBillLine`, which shares this same
+ * `computeLineAmounts` core). GL account/VAT code stay optional here —
+ * unlike a Bill, a Purchase Order's own accounting dimensions are
+ * budgetary/commitment data (POs never post to the GL, by design), not
+ * a posting requirement — a line with neither is still a valid PO line. */
+export function computeOrderLine<T extends { quantity: number; unitPrice: number; discount?: number }>(line: T, vatRatePercent: number): T & { discount: number; netAmount: number; vatAmount: number } {
+  const discount = line.discount ?? 0;
+  const { netAmount, vatAmount } = computeLineAmounts(line.quantity, line.unitPrice, discount, vatRatePercent);
+  return { ...line, discount, netAmount, vatAmount };
+}
+
 export async function createPurchaseOrder(companyId: string, input: repo.NewPurchaseOrder): Promise<PurchaseOrder> {
   if (!input.supplierId) throw new ValidationError("Supplier is required.");
   if (!input.orderDate) throw new ValidationError("Order date is required.");
   validateOrderLines(input.lines);
-  return repo.createPurchaseOrder(companyId, input);
+
+  const vatTreatments = await listVatTreatments(companyId);
+  const computedLines = input.lines.map((line) => {
+    if (line.vatCode && !vatTreatments.some((t) => t.code === line.vatCode)) {
+      throw new ValidationError(`Unknown VAT treatment "${line.vatCode}".`);
+    }
+    const rate = line.vatCode ? (vatTreatments.find((t) => t.code === line.vatCode)?.rate ?? 0) : 0;
+    return computeOrderLine(line, rate);
+  });
+
+  return repo.createPurchaseOrder(companyId, { ...input, lines: computedLines });
 }
 
 /** Real conversion — copies the requisition's own lines (estimated

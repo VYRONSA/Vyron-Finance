@@ -35,12 +35,12 @@ export const MOCK_PURCHASE_ORDERS: PurchaseOrder[] = [
   {
     id: 1, companyId: COMPANY_ID, supplierId: 1, requisitionId: null, orderNumber: "PO000001", orderDate: "2026-05-25",
     status: "Received", notes: "", createdAt: "2026-05-25T09:00:00Z",
-    lines: [{ id: 1, orderId: 1, lineOrder: 0, description: "Office supplies restock", quantity: 1, unitPrice: 4500, lineTotal: 4500, receivedQuantity: 1, billedQuantity: 1, stockItemId: null }],
+    lines: [{ id: 1, orderId: 1, lineOrder: 0, description: "Office supplies restock", quantity: 1, unitPrice: 4500, lineTotal: 4500, receivedQuantity: 1, billedQuantity: 1, stockItemId: null, glAccount: null, vatCode: null, costCentreId: null, projectId: null, departmentId: null, discount: 0, netAmount: 4500, vatAmount: 0 }],
   },
   {
     id: 2, companyId: COMPANY_ID, supplierId: 2, requisitionId: 2, orderNumber: "PO000002", orderDate: "2026-07-15",
     status: "Submitted", notes: "", createdAt: "2026-07-15T09:00:00Z",
-    lines: [{ id: 2, orderId: 2, lineOrder: 0, description: "July freight contract", quantity: 1, unitPrice: 4800, lineTotal: 4800, receivedQuantity: 0, billedQuantity: 0, stockItemId: null }],
+    lines: [{ id: 2, orderId: 2, lineOrder: 0, description: "July freight contract", quantity: 1, unitPrice: 4800, lineTotal: 4800, receivedQuantity: 0, billedQuantity: 0, stockItemId: null, glAccount: null, vatCode: null, costCentreId: null, projectId: null, departmentId: null, discount: 0, netAmount: 4800, vatAmount: 0 }],
   },
 ];
 

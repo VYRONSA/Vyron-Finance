@@ -79,6 +79,14 @@ export type PurchaseOrderLineRow = {
   received_quantity: number;
   billed_quantity: number;
   stock_item_id: number | null;
+  gl_account: string | null;
+  vat_code: string | null;
+  cost_centre_id: number | null;
+  project_id: number | null;
+  department_id: number | null;
+  discount: number;
+  net_amount: number;
+  vat_amount: number;
 };
 
 export function purchaseOrderLineFromRow(row: PurchaseOrderLineRow): PurchaseOrderLine {
@@ -93,6 +101,14 @@ export function purchaseOrderLineFromRow(row: PurchaseOrderLineRow): PurchaseOrd
     receivedQuantity: Number(row.received_quantity),
     billedQuantity: Number(row.billed_quantity),
     stockItemId: row.stock_item_id,
+    glAccount: row.gl_account,
+    vatCode: row.vat_code,
+    costCentreId: row.cost_centre_id,
+    projectId: row.project_id,
+    departmentId: row.department_id,
+    discount: Number(row.discount),
+    netAmount: Number(row.net_amount),
+    vatAmount: Number(row.vat_amount),
   };
 }
 
