@@ -18,6 +18,8 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 
 *Numbering note: the Board's own continuation instruction specified the next batch starts at VR-008. VR-003–VR-007 are intentionally unused — not renumbered, not skipped by mistake.*
 
+*Round status note: `v1.0.0-pilot1` was tagged 2026-08-06 reflecting Round 1's state at that moment, but the Board's Final Outstanding Requirement (VR-015, added the same day) means the round is not actually fully closed — Phase 9 (PDF Bank Statement Import) remains open pending real sample statements or an explicit Board deferral decision. The tag itself is frozen and will not be modified; a future tag will mark the round's true close once VR-015 resolves.*
+
 ### VR-001 — Opening Balances Centre: BankAccount-category postings never synced the bank account's own cached balance
 - **Description**: `postOpeningBalances` correctly posted a BankAccount-category entry to the General Ledger (against the account's `glAccount` code), but never updated `ae_bank_accounts.opening_balance`/`current_balance` — the figures the Bank Accounts screen and reconciliation module actually display, which are cached separately from the GL rather than derived from it. The two would silently diverge: GL correct, Bank Accounts screen stale.
 - **Priority**: High
@@ -104,6 +106,17 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Date Fixed**: 2026-08-06
 - **Verified By**: Live certification — reproduced (a fresh, genuinely GL-only rule match threw exactly this constraint violation), fixed by populating `new_status` from the same `allocationStatus` value the function already computes and writes to `ae_bank_transactions`, re-verified live (scan-and-apply now correctly auto-allocates the rest of a statement)
 - **Verification Method**: Live
+- **Commit Hash**: Pending (this commit)
+
+### VR-015 — PDF Bank Statement Import: framework alone did not satisfy the original business requirement (Product Review Board's Final Outstanding Requirement)
+- **Description**: The Board's own Final Outstanding Requirement, raised after `v1.0.0-pilot1` was first tagged: the PDF Bank Statement Import framework (detection, honest non-parsing, upload UI) was a strong foundation but not production import support — no statement-level field extraction, no balance/running-balance/duplicate-statement validation, no review-before-import screen, no manual-correction affordance, and no Banking Rules integration on import. Closed the gaps that don't require a real bank sample: statement-metadata types (`BankStatementMetadata`), a pure bank-agnostic validation pipeline (`pdf-statement-validation.ts` — balance reconciliation, running-balance consistency), duplicate-statement detection against `ae_import_batches` (migration `0058`), a genuine two-step preview/confirm split (`previewPdfBankStatement`/`confirmPdfBankStatementImport`) replacing the old single-shot PDF commit, an Import Review Screen (`PdfImportReviewPanel`, built on the existing `BatchEntryGrid` framework) that displays every extracted transaction and allows manual correction before commit, and Banking Rules integration on confirm (`applyRulesToTransactions`, the same pipeline Phase 5/6 already use). **What remains explicitly out of reach without real bank samples**: per-bank column/field extraction. Per "Do not fabricate parsers or guess layouts. Implement only against real bank statement samples," no bank has moved off "awaiting-validation" — this is disclosed, not a defect, and the fix is supplying real redacted sample statements (see the Completion Report's Phase 9 section for the exact list) or an explicit Board deferral decision.
+- **Priority**: High — the original Phase 9 business requirement (production PDF import for 10 named SA banks) remains unmet pending real samples
+- **Status**: In Progress — framework/pipeline complete and code-complete; live verification pending migration `0058`; parser implementation pending real samples per bank
+- **Version Target**: 1.0 (Pilot Round 1) — Final Outstanding Requirement
+- **Date Found**: 2026-08-06
+- **Date Fixed**: Partial — see Status
+- **Verified By**: `tsc`/`eslint`/`vitest` (10 new unit tests for the validation pipeline) /`npm run build` all clean; live verification of the review/confirm pipeline pending migration `0058`
+- **Verification Method**: Unit Test (pending Live)
 - **Commit Hash**: Pending (this commit)
 
 ### VR-013 — Master Data Framework: Inventory, Departments/Projects/Branches/Cost Centres, and Fixed Assets had no edit-with-audit-trail capability
