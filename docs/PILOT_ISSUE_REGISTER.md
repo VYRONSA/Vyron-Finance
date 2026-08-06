@@ -191,7 +191,46 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Date Fixed**: 2026-08-06
 - **Verified By**: Unit tests (2 new `reconcileStatementBalances`/`validateRunningBalances` cases confirming the liability formula; 2 new `checkFnbCreditCardReconciliation` cases). Live: re-ran the real Business Credit Card file through the actual API after the fix — `validation.balanceReconciliation.expectedClosingBalance` changed from R35,684.68 (wrong, asset convention) to R35,143.08 (correct, liability convention), confirmed via the real preview response, not inferred.
 - **Verification Method**: Live + Unit Test
-- **Commit Hash**: Pending (this commit)
+- **Commit Hash**: `0ce2b0a`
+
+### VR-023 — Company Dashboard: production SSR crash, "ReferenceError: DOMMatrix is not defined"
+- **Description**: Production build crashed rendering `/company/[companyId]/dashboard` — a page that never parses a PDF — with a browser-only `pdfjs-dist` API evaluated during SSR. Traced precisely: the dashboard imports `listRecentImports` from `import-service.ts`, which statically imported `pdf-text-extraction.ts` (directly, and again via `bank-statement-adapter-registry.ts`), which statically imported `pdf-parse` and `pdfjs-dist`'s worker at module top level — pulling the entire PDF toolchain into the dashboard's SSR module graph regardless of whether PDF parsing is ever invoked. Local `next dev` never reproduced it; only a real production build did.
+- **Priority**: Critical — broke a core, unrelated page in production
+- **Status**: Complete
+- **Version Target**: 1.0 (Pilot Round 1)
+- **Date Found**: 2026-08-06
+- **Date Fixed**: 2026-08-06
+- **Verified By**: Live, against a real local production build (`next build && next start`) with a real authenticated session hitting the actual dashboard route — 200, full page render, no error.
+- **Verification Method**: Live
+- **Commit Hash**: `3fa674e`
+
+### VR-024 — FNB PDF parser: `extractPdfText` detaches the caller's own `ArrayBuffer`, breaking the second of two calls per import request
+- **Description**: Found while root-causing VR-025 (below). `pdfjs-dist`'s `getDocument()` detaches the underlying `ArrayBuffer` it's handed (its fake-worker transfer simulation) — a real, confirmed bug independent of any deployment environment. `extractPdfText` is called twice per PDF import request (once for bank detection in `previewPdfBankStatement`, once again inside the resolved adapter's own `parse()`), both times with the identical buffer reference; the second call failed with "Cannot perform Construct on a detached ArrayBuffer" once the first had already consumed it.
+- **Priority**: Critical — blocked every PDF import, not statement-type-specific
+- **Status**: Complete
+- **Version Target**: 1.0 (Pilot Round 1)
+- **Date Found**: 2026-08-06
+- **Date Fixed**: 2026-08-06
+- **Verified By**: Live, against a real local production build — confirmed the exact "detached ArrayBuffer" error via temporary diagnostic logging, fixed by slicing an independent copy from the still-intact caller-owned buffer on every call, re-confirmed the same request succeeding afterward (132/132 transactions).
+- **Verification Method**: Live
+- **Commit Hash**: `44d6182`
+
+### VR-025 — PDF Bank Statement Import: HTTP 500 in production only — six compounding deployment-environment defects, none reproducible in `next dev` or a local production build
+- **Description**: After VR-023/VR-024 were fixed and every local verification passed (including a full local production build), PDF import still 500'd on the actual deployed Vercel site. Root-caused by making the API route surface real error detail instead of a bare 500 (temporary, reverted once diagnosed) and querying the live deployed API directly — the only way to see what was actually happening, since this session has no Vercel dashboard/log access. Six distinct, compounding causes, each confirmed live against the real deployment before being fixed, not guessed:
+  1. `pdf-parse`'s package.json `"exports"` map has three competing conditions ("browser"/"import"/"require") for its bare `.` specifier; its browser build alone has 14 unguarded top-level `DOMMatrix` references (confirmed by inspecting the built output — the "import"/"require" conditions' own builds have none). Turbopack's runtime loader for `serverExternalPackages`-listed packages resolved the ambiguous specifier to the browser condition on Vercel specifically, for both `import()` and `require()` (via `createRequire`) — confirmed live both ways.
+  2. `pdf-parse`'s own `./node` subpath export exists but doesn't expose its `PDFParse` class at all (only header-reading helpers), so there was no unambiguous alternative entry point within the package itself. Fixed by dropping `pdf-parse` entirely and calling `pdfjs-dist` directly via deep import paths, reimplementing `pdf-parse`'s own text-extraction algorithm exactly (`lineThreshold: 4.6`, `cellSeparator: '\t'`, `lineEnforce: true`, the `-- N of Total --` page marker) so the FNB parsers' carefully-tuned regexes kept working against an identical text shape — verified byte-for-byte equivalent output against both real files.
+  3. Even `pdfjs-dist`'s own deep `legacy/build/pdf.mjs` path (no package.json `exports` field at all, ruling out condition ambiguity) crashed identically through Turbopack's `serverExternalPackages` loader — confirmed live, ruling out `pdf-parse`'s package structure as the cause entirely.
+  4. Removing `serverExternalPackages` let Turbopack bundle `pdfjs-dist` normally instead — but Turbopack's own bundling *transformation* of that content then crashed at module-evaluation time with the same error, a genuine Turbopack bug (or at minimum an unsupported pattern) with this specific file, not anything about the package or this codebase — the exact same file imports cleanly with zero errors in plain Node.js every single time it was tested.
+  5. Building both `pdfjs-dist` import specifiers from concatenated string segments at runtime (rather than plain literals) made Turbopack skip static analysis of these two imports entirely, avoiding the bundling crash — but this also defeated Vercel's own deployment file-tracing, which relies on the same static analysis to know a dependency needs to be included in the deployed function: "Cannot find package 'pdfjs-dist'" at runtime. Fixed by adding `outputFileTracingIncludes` (Next's own documented mechanism for exactly this situation) to force-include `pdfjs-dist`'s files independently of specifier literalness.
+  6. The actual, final root cause once every deployment/bundling issue above was resolved: `pdfjs-dist/legacy/build/pdf.mjs` unconditionally constructs `new DOMMatrix()` at true module top level (confirmed by reading the exact source line the production stack trace itself pointed to) — true in every `pdfjs-dist` build, legacy and modern both checked, regardless of which API is ever called. Node.js has no native `DOMMatrix`. `pdfjs-dist` already ships its own official mechanism for this — not a polyfill this codebase wrote — `@napi-rs/canvas`, one of `pdfjs-dist`'s own `optionalDependencies`, providing a real N-API-native `DOMMatrix` implementation it auto-detects. Present locally (installed automatically alongside `pdfjs-dist`, explaining why every local test passed) but its platform-specific native binary sub-package needed the same `outputFileTracingIncludes` help Next's own docs show for other native-binary packages (`sharp`, `aws-crt`) to actually reach the deployed function.
+- **Priority**: Critical — the PDF import feature was completely non-functional in production despite being fully certified against a local build; per the Board's own framing, "the code may exist, but the feature is not working in production, therefore it is not complete"
+- **Status**: Complete
+- **Version Target**: 1.0 (Pilot Round 1)
+- **Date Found**: 2026-08-06
+- **Date Fixed**: 2026-08-06
+- **Verified By**: Live, directly against the deployed production API (`vyron-finance-v3y1.vercel.app`) after every fix, not inferred from local success — the actual failure mode changed with each fix, confirming each was real and the next was genuinely different, not a repeat. Final state confirmed with a full real-file round trip against production: both real FNB PDFs (Platinum 212/212, Business Credit Card 132/132) preview (200) and confirm (201) successfully; duplicate re-upload correctly detected; Dashboard/Cashbook/Transaction Explorer/Banking Rules pages all load (200); 344 real transactions confirmed in the live database via a direct query; a corrupted PDF correctly returns 400 with a specific message, never a bare 500.
+- **Verification Method**: Live
+- **Commit Hash**: `e55b0cc`, `ae147ab`, `e983aa6`, `05b2604`, `d1a6438`, `84a4a31`
 
 ### VR-013 — Master Data Framework: Inventory, Departments/Projects/Branches/Cost Centres, and Fixed Assets had no edit-with-audit-trail capability
 - **Description**: Only Customer/Supplier (and, narrowly, a Bank Account's opening balance) had the edit/audit/permission framework. Inventory's `updateStockItem` existed at the repository/service layer but had zero UI and zero audit trail — the update path was dead code. Departments/Projects/Branches/Cost Centres could only be renamed never (create + Active/Inactive toggle only — not even a rename). Fixed Assets had no general edit path at all, only 5 narrow lifecycle actions.
