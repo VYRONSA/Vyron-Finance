@@ -527,9 +527,21 @@ export async function applyRuleActions(companyId: string, transactionId: number,
   const { error: updateError } = await supabase.from("ae_bank_transactions").update(update).eq("company_id", companyId).eq("id", transactionId);
   if (updateError) throw updateError;
 
+  // Pilot Review Round 1 — LIVE DEFECT found while verifying Phase 6's
+  // scan-and-apply flow, but pre-existing in already-shipped code: this
+  // insert never set `new_status`, a NOT NULL column on
+  // `ae_allocation_history` — every successful automatic rule match
+  // (via "Apply Rule," "Run Rule Engine Now," or this round's new scan-
+  // and-apply) has always thrown here. Masked previously because prior
+  // manual testing only ever exercised rules against transactions that
+  // already had a matched supplier from the separate Matching Engine
+  // (a different, working code path) — a genuinely new company's
+  // imported transactions, resolved by a GL-only rule with no
+  // supplier/customer match, hit this every time.
   const { error: historyError } = await supabase.from("ae_allocation_history").insert({
     company_id: companyId,
     transaction_id: transactionId,
+    new_status: fields.allocationStatus,
     is_manual_override: false,
     performed_by: performedBy,
     allocation_reason: `Resolved by rule "${matchedRuleName}"`,
