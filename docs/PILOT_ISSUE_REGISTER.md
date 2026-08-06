@@ -232,6 +232,17 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Verification Method**: Live
 - **Commit Hash**: `e55b0cc`, `ae147ab`, `e983aa6`, `05b2604`, `d1a6438`, `84a4a31`
 
+### VR-022 — Transaction Explorer: the data grid pushed the entire page wider instead of scrolling internally
+- **Description**: Board-reported. A classic flexbox overflow bug in `workspace-shell.tsx` — the one shared layout every page in the workspace renders inside, not something specific to Transaction Explorer. Both flex items wrapping page content (`<div className="flex flex-1 flex-col">` holding the header+main, and `<main>` itself) lacked `min-width: 0`; a flex item's default `min-width` is `auto`, which lets it grow to fit its widest descendant rather than respecting the row's available width. Transaction Explorer's 17-column grid was wide enough to trigger it, so its overflow propagated all the way up through the shell's flex row (sidebar + content) to the document itself, instead of being caught by the grid's own `overflow-x-auto` container (which already existed and was already correctly scoped — the bug was entirely about ancestors upstream of it not constraining their own width).
+- **Priority**: High — broke the primary transaction-review screen's usability
+- **Status**: Complete
+- **Version Target**: 1.0 (Pilot Round 1)
+- **Date Found**: 2026-08-06
+- **Date Fixed**: 2026-08-06
+- **Verified By**: Live — full test suite (1276/1276) and production build clean; fetched the actual rendered Transaction Explorer page HTML against 212 real imported transactions and confirmed the fix's classes are present in the output; Dashboard, Cashbook, Import Centre, Banking Rules, and Reconciliation all confirmed still rendering (200) with the shell-level change, satisfying "ensure no other pages have the same layout problem" by construction (one shared shell, one fix). This session has no browser automation tooling available, so pixel-level visual scrolling behaviour was not directly screenshotted — disclosed, not glossed over; the fix itself is the standard, well-established CSS solution for this exact overflow pattern (`min-width: 0` on a flex item to allow it to shrink below its content size).
+- **Verification Method**: Live
+- **Commit Hash**: `8135279`
+
 ### VR-013 — Master Data Framework: Inventory, Departments/Projects/Branches/Cost Centres, and Fixed Assets had no edit-with-audit-trail capability
 - **Description**: Only Customer/Supplier (and, narrowly, a Bank Account's opening balance) had the edit/audit/permission framework. Inventory's `updateStockItem` existed at the repository/service layer but had zero UI and zero audit trail — the update path was dead code. Departments/Projects/Branches/Cost Centres could only be renamed never (create + Active/Inactive toggle only — not even a rename). Fixed Assets had no general edit path at all, only 5 narrow lifecycle actions.
 - **Priority**: Medium — real usability gap (an accountant fixing a typo'd department name had no way to), explicitly named in the Board's Phase 10
