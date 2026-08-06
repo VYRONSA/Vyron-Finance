@@ -19,7 +19,22 @@ export type PdfStatementPreview = {
   exceptions: ImportExceptionRecord[];
   validation: StatementValidationResult;
   duplicateOfBatch: ImportBatch | null;
+  expectedTransactionCount: number | null;
 };
+
+function formatMoney(value: number | null): string {
+  if (value === null) return "—";
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function MetadataField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[11px] uppercase tracking-wide text-vf-ink-faint">{label}</span>
+      <span className="text-sm font-medium text-vf-ink">{value}</span>
+    </div>
+  );
+}
 
 const COLUMNS: GridColumn<ParsedBankTransaction>[] = [
   { key: "transactionDate", label: "Date", type: "date", width: "w-32" },
@@ -39,11 +54,12 @@ function statusBadge(status: PdfStatementPreview["pdfDetection"]["status"]) {
 /** Pilot Review Round 1 — PDF Bank Statement Import, Product Review
  * Board's Final Outstanding Requirement. "Display all extracted
  * transactions for user review before import. Allow manual correction
- * of any extracted values before posting." Every named bank still
- * extracts zero transactions today (see `bank-statement-adapter-registry.ts`),
- * so this renders an honest "0 extracted, awaiting validation" state
- * until a real parser lands — the grid, validation banners, and confirm
- * flow are fully wired for that day, not a placeholder. */
+ * of any extracted values before posting." FNB has a real,
+ * implemented-but-unvalidated parser (see
+ * `bank-statement-adapter-registry.ts`); every other named bank still
+ * honestly extracts zero transactions pending a real sample statement —
+ * either way this renders the statement header, every extracted
+ * transaction (editable), and every validation result. */
 export function PdfImportReviewPanel({ companyId, preview, onDiscard }: { companyId: string; preview: PdfStatementPreview; onDiscard: () => void }) {
   const router = useRouter();
   const [transactions, setTransactions] = useState<ParsedBankTransaction[]>(preview.transactions);
@@ -51,7 +67,7 @@ export function PdfImportReviewPanel({ companyId, preview, onDiscard }: { compan
   const [error, setError] = useState<string | null>(null);
   const [confirmedOutcome, setConfirmedOutcome] = useState<{ importedCount: number; duplicateCount: number; rulesAutoAllocated: number } | null>(null);
 
-  const { balanceReconciliation, runningBalanceIssues } = preview.validation;
+  const { balanceReconciliation, runningBalanceIssues, transactionCount, invalidValueIssues } = preview.validation;
 
   async function handleConfirm() {
     setConfirming(true);
@@ -65,6 +81,7 @@ export function PdfImportReviewPanel({ companyId, preview, onDiscard }: { compan
           sourceFilename: preview.sourceFilename,
           metadata: preview.metadata,
           transactions,
+          expectedTransactionCount: preview.expectedTransactionCount,
         }),
       });
       const body = await response.json();
@@ -107,6 +124,17 @@ export function PdfImportReviewPanel({ companyId, preview, onDiscard }: { compan
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 pt-0">
+        <div className="grid grid-cols-2 gap-3 rounded-vf-md border border-vf-paper-border bg-vf-paper-alt p-3 sm:grid-cols-3">
+          <MetadataField label="Account Holder" value={preview.metadata.accountHolder ?? "Not extracted"} />
+          <MetadataField label="Account Number" value={preview.metadata.accountNumber ?? "Not extracted"} />
+          <MetadataField
+            label="Statement Period"
+            value={preview.metadata.statementPeriodStart && preview.metadata.statementPeriodEnd ? `${preview.metadata.statementPeriodStart} to ${preview.metadata.statementPeriodEnd}` : "Not extracted"}
+          />
+          <MetadataField label="Opening Balance" value={formatMoney(preview.metadata.openingBalance)} />
+          <MetadataField label="Closing Balance" value={formatMoney(preview.metadata.closingBalance)} />
+        </div>
+
         <div className="flex flex-wrap gap-2">
           {balanceReconciliation.reconciles === false && (
             <Badge tone="danger">
@@ -116,10 +144,32 @@ export function PdfImportReviewPanel({ companyId, preview, onDiscard }: { compan
           {balanceReconciliation.reconciles === true && <Badge tone="good">Balances reconcile</Badge>}
           {balanceReconciliation.reconciles === null && <Badge tone="muted">Balance reconciliation unavailable — opening/closing balance not extracted</Badge>}
           {runningBalanceIssues.length > 0 && <Badge tone="danger">{runningBalanceIssues.length} row(s) with a running-balance mismatch</Badge>}
+          {transactionCount.reconciles === false && (
+            <Badge tone="danger">
+              Possible missing transactions — statement reports {transactionCount.expectedCount}, {transactionCount.actualCount} extracted
+            </Badge>
+          )}
+          {transactionCount.reconciles === true && <Badge tone="good">Transaction count matches the statement&rsquo;s own total</Badge>}
+          {invalidValueIssues.length > 0 && <Badge tone="danger">{invalidValueIssues.length} row(s) with an invalid value</Badge>}
           {preview.duplicateOfBatch && (
             <Badge tone="warn">Possible duplicate — a statement for this account and period was already imported ({preview.duplicateOfBatch.batchId})</Badge>
           )}
         </div>
+
+        {(runningBalanceIssues.length > 0 || invalidValueIssues.length > 0) && (
+          <ul className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded-vf-md border border-vf-danger/30 bg-vf-danger/5 p-3 text-xs text-vf-danger">
+            {runningBalanceIssues.map((issue) => (
+              <li key={`balance-${issue.rowNumber}`}>
+                Row {issue.rowNumber}: running balance should be {formatMoney(issue.expectedBalance)}, statement shows {formatMoney(issue.statedBalance)}
+              </li>
+            ))}
+            {invalidValueIssues.map((issue) => (
+              <li key={`value-${issue.rowNumber}`}>
+                Row {issue.rowNumber}: {issue.reason}
+              </li>
+            ))}
+          </ul>
+        )}
 
         {preview.exceptions.length > 0 && (
           <ul className="flex flex-col gap-1 rounded-vf-md border border-vf-paper-border bg-vf-paper-alt p-3 text-xs text-vf-ink-faint">

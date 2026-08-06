@@ -115,4 +115,9 @@ export type BankStatementParseResult = {
    * with a field they have nothing real to populate. Only PDF adapters
    * set this. */
   metadata?: BankStatementMetadata;
+  /** The statement's own printed transaction count, when it has one
+   * (e.g. FNB's "Turnover for Statement Period" summary) — powers the
+   * "missing transactions" validation check. `undefined`/`null` for
+   * every format/bank that doesn't print one; never invented. */
+  expectedTransactionCount?: number | null;
 };

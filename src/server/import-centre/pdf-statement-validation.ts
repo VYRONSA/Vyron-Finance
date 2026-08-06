@@ -5,10 +5,10 @@
  * here reads a PDF or knows a single bank's layout, so all of it is
  * buildable and testable today regardless of which/how many banks have
  * a real parser yet. Required checks: opening balance, closing balance,
- * running balances, duplicate statements, duplicate transactions.
- * Duplicate detection against the database lives in
- * `import-repository.ts`/`import-service.ts` — this module is the pure
- * arithmetic core only.
+ * running balances, missing transactions, invalid values, duplicate
+ * statements, duplicate transactions. Duplicate detection against the
+ * database lives in `import-repository.ts`/`import-service.ts` — this
+ * module is the pure arithmetic/shape-checking core only.
  */
 
 import type { BankStatementMetadata, ParsedBankTransaction } from "./types";
@@ -62,14 +62,69 @@ export function validateRunningBalances(openingBalance: number | null, transacti
   return issues;
 }
 
+export type TransactionCountValidation = {
+  /** `null` when the statement's own parser didn't supply an expected
+   * count to check against (most banks won't have one) — never a false
+   * "true". */
+  reconciles: boolean | null;
+  expectedCount: number | null;
+  actualCount: number;
+};
+
+/** Cross-checks the number of transactions actually extracted against
+ * an expected count the statement's own parser may supply (e.g. FNB's
+ * printed "Turnover for Statement Period" transaction counts) — the
+ * "missing transactions" check. Bank-agnostic: the expected count is
+ * just a number handed in, not derived from any bank-specific text
+ * here. */
+export function validateTransactionCount(expectedCount: number | null, transactions: ParsedBankTransaction[]): TransactionCountValidation {
+  const actualCount = transactions.length;
+  if (expectedCount === null) return { reconciles: null, expectedCount: null, actualCount };
+  return { reconciles: actualCount === expectedCount, expectedCount, actualCount };
+}
+
+export type InvalidValueIssue = { rowNumber: number; reason: string };
+
+/** The "invalid values" check — row-shape problems that a balance/
+ * running-balance check wouldn't catch on their own: a missing date, a
+ * row with both a debit and a credit (or neither), or a negative
+ * amount (this codebase's `debit`/`credit` fields are always meant to
+ * be positive magnitudes — direction is which column is populated, not
+ * the sign, matching every other parser in this module). */
+export function validateTransactionValues(transactions: ParsedBankTransaction[]): InvalidValueIssue[] {
+  const issues: InvalidValueIssue[] = [];
+  for (const txn of transactions) {
+    if (!txn.transactionDate) {
+      issues.push({ rowNumber: txn.rowNumber, reason: "Missing or unparseable transaction date" });
+      continue;
+    }
+    if (txn.debit < 0 || txn.credit < 0) {
+      issues.push({ rowNumber: txn.rowNumber, reason: "Negative debit/credit amount" });
+      continue;
+    }
+    if (txn.debit > 0 && txn.credit > 0) {
+      issues.push({ rowNumber: txn.rowNumber, reason: "Both debit and credit populated on the same row" });
+      continue;
+    }
+    if (txn.debit === 0 && txn.credit === 0) {
+      issues.push({ rowNumber: txn.rowNumber, reason: "Zero-value transaction (no debit or credit amount)" });
+    }
+  }
+  return issues;
+}
+
 export type StatementValidationResult = {
   balanceReconciliation: BalanceReconciliationResult;
   runningBalanceIssues: RunningBalanceIssue[];
+  transactionCount: TransactionCountValidation;
+  invalidValueIssues: InvalidValueIssue[];
 };
 
-export function validateStatement(metadata: BankStatementMetadata, transactions: ParsedBankTransaction[]): StatementValidationResult {
+export function validateStatement(metadata: BankStatementMetadata, transactions: ParsedBankTransaction[], expectedTransactionCount: number | null = null): StatementValidationResult {
   return {
     balanceReconciliation: reconcileStatementBalances(metadata, transactions),
     runningBalanceIssues: validateRunningBalances(metadata.openingBalance, transactions),
+    transactionCount: validateTransactionCount(expectedTransactionCount, transactions),
+    invalidValueIssues: validateTransactionValues(transactions),
   };
 }

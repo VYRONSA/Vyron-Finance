@@ -31,12 +31,52 @@ declare global {
 
 globalThis.pdfjsWorker = { WorkerMessageHandler };
 
+/**
+ * PDF Bank Statement Import — Product Review Board's Final Outstanding
+ * Requirement, "Unsupported PDFs" section: a rejected upload must say
+ * *why*, not a bare "Unsupported file type." `reason` is the taxonomy
+ * `import-service.ts` maps onto the Board's own listed explanations.
+ */
+export class PdfExtractionError extends Error {
+  constructor(
+    public reason: "encrypted" | "corrupted" | "scanned-image",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const MIN_EXTRACTABLE_TEXT_LENGTH = 20;
+
 export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   const parser = new PDFParse({ data: Buffer.from(buffer) });
+  let result: { text: string };
   try {
-    const result = await parser.getText();
-    return result.text;
+    result = await parser.getText();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/password|encrypt/i.test(message)) {
+      throw new PdfExtractionError("encrypted", "This PDF is password protected and can't be read. Remove the password and upload it again.");
+    }
+    throw new PdfExtractionError("corrupted", "This PDF could not be read — the file may be corrupted or isn't a valid PDF.");
   } finally {
-    await parser.destroy();
+    try {
+      await parser.destroy();
+    } catch {
+      // Destroying an already-failed parser is best-effort — never let
+      // cleanup mask the real extraction error above.
+    }
   }
+
+  // A text-based statement always has far more than 20 characters of
+  // real text; a scanned/image-only PDF has none at all (pdf-parse only
+  // ever reads an embedded text layer — it doesn't OCR).
+  if (!result.text || result.text.trim().length < MIN_EXTRACTABLE_TEXT_LENGTH) {
+    throw new PdfExtractionError(
+      "scanned-image",
+      "No extractable text was found in this PDF — it appears to be a scanned image rather than a text-based statement, which this importer can't read yet.",
+    );
+  }
+
+  return result.text;
 }

@@ -35,6 +35,8 @@ import { parseBankStatementCsv } from "./bank-statement-parser";
 import { parseBankStatementXlsx } from "./bank-statement-xlsx-parser";
 import { parseOfxStatement } from "./ofx-parser";
 import { parseQifStatement } from "./qif-parser";
+import { extractPdfText } from "./pdf-text-extraction";
+import { extractFnbStatementMetadata, extractFnbTransactions, extractFnbTurnoverSummary } from "./parsers/fnb-bank-statement-parser";
 import { NULL_STATEMENT_METADATA, type BankStatementParseResult } from "./types";
 
 export type BankStatementAdapter = {
@@ -125,11 +127,67 @@ function namedBankPdfAdapter(id: string, bankName: string, markers: string[]): B
   };
 }
 
+/** FNB's real, implemented-but-unvalidated parser — see
+ * `parsers/fnb-bank-statement-parser.ts`'s own module docstring for the
+ * full disclosure (built against a real sample's rendered text, not yet
+ * run against the real PDF bytes through this exact function). Falls
+ * back to the same honest "not yet implemented" result if the statement
+ * text doesn't contain what this parser needs (account number or
+ * statement period genuinely missing/unrecognised) — never guesses. */
+async function parseFnbStatement(buffer: ArrayBuffer, filename: string, importBatch: string): Promise<BankStatementParseResult> {
+  const text = await extractPdfText(buffer);
+  const metadata = extractFnbStatementMetadata(text);
+
+  if (!metadata.accountNumber || !metadata.statementPeriodStart || !metadata.statementPeriodEnd) {
+    return {
+      transactions: [],
+      exceptions: [
+        {
+          sourceFilename: filename,
+          rowNumber: 0,
+          exceptionType: "Invalid Template",
+          description:
+            "FNB was detected, but this statement's account number or statement period couldn't be located in the expected format — this parser is implemented-but-unvalidated (built against one real FNB Platinum Business Account sample) and may not yet cover this statement's exact layout. No transactions were fabricated or guessed.",
+        },
+      ],
+      outcome: { filename, rowsRead: 0, rowsImported: 0, rowsSkipped: 0 },
+      metadata,
+    };
+  }
+
+  const balanceSign = (metadata.openingBalance ?? 0) < 0 ? -1 : 1;
+  const transactions = extractFnbTransactions(
+    text,
+    metadata.accountNumber,
+    metadata.statementPeriodStart,
+    metadata.statementPeriodEnd,
+    filename,
+    importBatch,
+    balanceSign,
+  );
+  const turnover = extractFnbTurnoverSummary(text);
+
+  return {
+    transactions,
+    exceptions: [],
+    outcome: { filename, rowsRead: transactions.length, rowsImported: transactions.length, rowsSkipped: 0 },
+    metadata,
+    expectedTransactionCount: turnover ? turnover.creditTransactionCount + turnover.debitTransactionCount : null,
+  };
+}
+
 /** All 10 named banks from the Board's own directive, each a real,
  * registered adapter — see this file's module docstring for what "real"
  * means here (detection, not extraction) and why. */
 export const PDF_ADAPTERS: BankStatementAdapter[] = [
-  namedBankPdfAdapter("fnb-pdf", "First National Bank (FNB)", ["FIRST NATIONAL BANK", "FNB.CO.ZA", "FNB SOUTH AFRICA"]),
+  {
+    id: "fnb-pdf",
+    label: "First National Bank (FNB) (PDF) — implemented, awaiting second-sample validation",
+    matchesFile: () => false,
+    contentMarkers: ["FIRST NATIONAL BANK", "FNB.CO.ZA", "FNB SOUTH AFRICA"],
+    status: "implemented-unvalidated",
+    parse: parseFnbStatement,
+  },
   namedBankPdfAdapter("absa-pdf", "ABSA", ["ABSA BANK LIMITED", "ABSA.CO.ZA", "ABSA GROUP"]),
   namedBankPdfAdapter("standard-bank-pdf", "Standard Bank", ["STANDARD BANK OF SOUTH AFRICA", "STANDARDBANK.CO.ZA"]),
   namedBankPdfAdapter("nedbank-pdf", "Nedbank", ["NEDBANK LIMITED", "NEDBANK.CO.ZA"]),

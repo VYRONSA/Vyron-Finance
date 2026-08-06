@@ -8,7 +8,7 @@
 import { parseBillsCsv } from "@/server/import-centre/xero-bills-parser";
 import { decodeCsvBuffer } from "@/server/import-centre/csv-utils";
 import { resolveBankStatementAdapter, resolvePdfBankAdapter, SUPPORTED_EXTENSIONS, type PdfBankDetection } from "@/server/import-centre/bank-statement-adapter-registry";
-import { extractPdfText } from "@/server/import-centre/pdf-text-extraction";
+import { extractPdfText, PdfExtractionError } from "@/server/import-centre/pdf-text-extraction";
 import { validateStatement, type StatementValidationResult } from "@/server/import-centre/pdf-statement-validation";
 import { NULL_STATEMENT_METADATA, type BankStatementMetadata, type BankStatementParseResult, type ImportExceptionRecord, type ParsedBankTransaction } from "@/server/import-centre/types";
 import * as importRepo from "@/server/repositories/import-repository";
@@ -209,6 +209,10 @@ export type PdfStatementPreview = {
    * there's nothing to warn about, or when the statement's own account
    * number/period couldn't be determined yet (framework-only banks). */
   duplicateOfBatch: ImportBatch | null;
+  /** Passed through unchanged to `confirmPdfBankStatementImport` so the
+   * same "missing transactions" check can be re-run against whatever
+   * the user ends up confirming. */
+  expectedTransactionCount: number | null;
 };
 
 /** Step 1 of PDF Bank Statement Import's review flow — the Board's own
@@ -217,9 +221,9 @@ export type PdfStatementPreview = {
  * anything to `ae_bank_transactions`/`ae_import_batches`: purely a
  * read-only preview the Import Review Screen renders, lets the user
  * correct, and then either confirms (`confirmPdfBankStatementImport`)
- * or discards. Every named bank still returns zero transactions today
- * (see `bank-statement-adapter-registry.ts`) — this preview step is
- * fully wired and ready for the moment a real parser produces some. */
+ * or discards. FNB has a real, implemented-but-unvalidated parser (see
+ * `bank-statement-adapter-registry.ts`); the other 9 named banks still
+ * honestly return zero transactions pending a real sample statement. */
 export async function previewPdfBankStatement(companyId: string, file: File): Promise<PdfStatementPreview> {
   if (!file.name.toLowerCase().endsWith(".pdf")) {
     throw new ValidationError("previewPdfBankStatement only accepts .pdf files.");
@@ -228,17 +232,29 @@ export async function previewPdfBankStatement(companyId: string, file: File): Pr
   const buffer = await file.arrayBuffer();
   const batchId = generateBatchId();
 
-  const text = await extractPdfText(buffer);
+  let text: string;
+  try {
+    text = await extractPdfText(buffer);
+  } catch (error) {
+    // "Unsupported PDFs" requirement — a rejected upload must explain
+    // *why*, never a bare "Unsupported file type."
+    if (error instanceof PdfExtractionError) {
+      throw new ValidationError(error.message);
+    }
+    throw error;
+  }
+
   const detection: PdfBankDetection | null = resolvePdfBankAdapter(text);
   if (!detection) {
     throw new ValidationError(
-      "Could not identify which bank produced this PDF statement — none of the 10 supported banks' name/domain markers were found in its text. If this is a genuine statement from a supported bank, its letterhead wording may differ from what's currently recognised.",
+      "Bank not yet supported, or statement format not recognised — none of the 10 supported banks' name/domain markers were found in this PDF's text. If this is a genuine statement from a supported bank, its letterhead wording may differ from what's currently recognised.",
     );
   }
 
   const parseResult = await detection.adapter.parse(buffer, file.name, batchId);
   const metadata = parseResult.metadata ?? NULL_STATEMENT_METADATA;
-  const validation = validateStatement(metadata, parseResult.transactions);
+  const expectedTransactionCount = parseResult.expectedTransactionCount ?? null;
+  const validation = validateStatement(metadata, parseResult.transactions, expectedTransactionCount);
 
   let duplicateOfBatch: ImportBatch | null = null;
   if (metadata.accountNumber && metadata.statementPeriodStart && metadata.statementPeriodEnd) {
@@ -262,6 +278,7 @@ export async function previewPdfBankStatement(companyId: string, file: File): Pr
     exceptions: parseResult.exceptions,
     validation,
     duplicateOfBatch,
+    expectedTransactionCount,
   };
 }
 
@@ -272,6 +289,9 @@ export type ConfirmPdfImportInput = {
   /** The transactions from `previewPdfBankStatement`, after any manual
    * correction the user made in the Import Review Screen. */
   transactions: ParsedBankTransaction[];
+  /** Echoed back from the preview response so the "missing transactions"
+   * check can be re-run against whatever the user actually confirms. */
+  expectedTransactionCount?: number | null;
 };
 
 export type ConfirmPdfImportOutcome = {
@@ -283,6 +303,10 @@ export type ConfirmPdfImportOutcome = {
    * with the existing Banking Rules engine so rules can be applied
    * immediately after extraction" requirement. */
   rulesAutoAllocated: number;
+  /** Re-run at confirm time (not just at preview) so a user who edited
+   * the transaction list before confirming still gets an accurate
+   * result — never trusted from the client without re-checking. */
+  validation: StatementValidationResult;
 };
 
 /** Step 2 — commits the (possibly user-corrected) transactions from a
@@ -294,7 +318,7 @@ export type ConfirmPdfImportOutcome = {
  * rule-matching code path for PDF-sourced transactions. */
 export async function confirmPdfBankStatementImport(companyId: string, input: ConfirmPdfImportInput, importedBy = "System"): Promise<ConfirmPdfImportOutcome> {
   const { metadata, transactions } = input;
-  const validation = validateStatement(metadata, transactions);
+  const validation = validateStatement(metadata, transactions, input.expectedTransactionCount ?? null);
 
   const { importedCount, duplicateCount, createdTransactionIds } = await commitBankTransactions(companyId, transactions, input.batchId, input.sourceFilename);
 
@@ -333,7 +357,7 @@ export async function confirmPdfBankStatementImport(companyId: string, input: Co
     rulesAutoAllocated = results.filter((r) => r.autoPosted).length;
   }
 
-  return { batch, importedCount, duplicateCount, rulesAutoAllocated };
+  return { batch, importedCount, duplicateCount, rulesAutoAllocated, validation };
 }
 
 export async function listRecentImports(companyId: string): Promise<ImportBatch[]> {

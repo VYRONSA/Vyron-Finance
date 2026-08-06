@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcileStatementBalances, validateRunningBalances, validateStatement } from "./pdf-statement-validation";
+import { reconcileStatementBalances, validateRunningBalances, validateStatement, validateTransactionCount, validateTransactionValues } from "./pdf-statement-validation";
 import { NULL_STATEMENT_METADATA, type ParsedBankTransaction } from "./types";
 
 function txn(overrides: Partial<ParsedBankTransaction>): ParsedBankTransaction {
@@ -84,12 +84,58 @@ describe("validateRunningBalances", () => {
   });
 });
 
+describe("validateTransactionCount", () => {
+  it("returns null when no expected count was supplied", () => {
+    expect(validateTransactionCount(null, [txn({})])).toEqual({ reconciles: null, expectedCount: null, actualCount: 1 });
+  });
+
+  it("passes when the actual count matches the expected count", () => {
+    expect(validateTransactionCount(2, [txn({ rowNumber: 1 }), txn({ rowNumber: 2 })])).toEqual({ reconciles: true, expectedCount: 2, actualCount: 2 });
+  });
+
+  it("fails and reports both counts when they disagree (the 'missing transactions' case)", () => {
+    expect(validateTransactionCount(5, [txn({})])).toEqual({ reconciles: false, expectedCount: 5, actualCount: 1 });
+  });
+});
+
+describe("validateTransactionValues", () => {
+  it("returns no issues for well-formed rows", () => {
+    expect(validateTransactionValues([txn({ credit: 500 }), txn({ debit: 200, rowNumber: 2 })])).toEqual([]);
+  });
+
+  it("flags a missing/unparseable date", () => {
+    const issues = validateTransactionValues([txn({ transactionDate: null, credit: 100 })]);
+    expect(issues).toEqual([{ rowNumber: 1, reason: "Missing or unparseable transaction date" }]);
+  });
+
+  it("flags a negative debit or credit", () => {
+    expect(validateTransactionValues([txn({ debit: -50 })])).toEqual([{ rowNumber: 1, reason: "Negative debit/credit amount" }]);
+    expect(validateTransactionValues([txn({ credit: -50 })])).toEqual([{ rowNumber: 1, reason: "Negative debit/credit amount" }]);
+  });
+
+  it("flags a row with both debit and credit populated", () => {
+    expect(validateTransactionValues([txn({ debit: 100, credit: 50 })])).toEqual([{ rowNumber: 1, reason: "Both debit and credit populated on the same row" }]);
+  });
+
+  it("flags a zero-value row with neither debit nor credit", () => {
+    expect(validateTransactionValues([txn({ debit: 0, credit: 0 })])).toEqual([{ rowNumber: 1, reason: "Zero-value transaction (no debit or credit amount)" }]);
+  });
+});
+
 describe("validateStatement", () => {
-  it("composes both checks", () => {
+  it("composes all four checks", () => {
     const metadata = { ...NULL_STATEMENT_METADATA, openingBalance: 1000, closingBalance: 1500 };
     const transactions = [txn({ credit: 500, balance: 1500, rowNumber: 1 })];
-    const result = validateStatement(metadata, transactions);
+    const result = validateStatement(metadata, transactions, 1);
     expect(result.balanceReconciliation.reconciles).toBe(true);
     expect(result.runningBalanceIssues).toEqual([]);
+    expect(result.transactionCount).toEqual({ reconciles: true, expectedCount: 1, actualCount: 1 });
+    expect(result.invalidValueIssues).toEqual([]);
+  });
+
+  it("defaults expectedTransactionCount to null when not supplied", () => {
+    const metadata = { ...NULL_STATEMENT_METADATA, openingBalance: 1000, closingBalance: 1500 };
+    const result = validateStatement(metadata, [txn({ credit: 500, balance: 1500 })]);
+    expect(result.transactionCount.reconciles).toBeNull();
   });
 });
