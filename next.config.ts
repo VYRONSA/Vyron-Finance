@@ -8,21 +8,23 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
-  // Deliberately NOT using `serverExternalPackages` for `pdfjs-dist` —
-  // see `pdf-text-extraction.ts`'s own docstring for the full
-  // "DOMMatrix is not defined" story. It was tried first and made
-  // things worse: Turbopack's own runtime loader for
-  // `serverExternalPackages`-listed packages (its "externalImport"/
-  // "externalRequire" mechanism) crashed with the exact same error on
-  // Vercel specifically, for both `pdf-parse` (an ambiguous package.json
-  // "exports" map) AND `pdfjs-dist`'s own deep `legacy/build/pdf.mjs`
-  // path (which has no "exports" field at all, ruling out condition
-  // ambiguity as the cause) — confirmed live against the actual
-  // deployed API. Letting Turbopack bundle `pdfjs-dist` normally
-  // instead (this module's own lazy `import()` calls mean it's still
-  // only loaded on-demand, as a genuine code-split chunk, not eagerly
-  // pulled into every page that imports this file transitively) is
-  // what actually works.
+  // `pdfjs-dist` — see `pdf-text-extraction.ts`'s own docstring for the
+  // full "DOMMatrix is not defined" story (three distinct failure modes
+  // this round, each confirmed live against the actual deployed API,
+  // not guessed). This option is required TOGETHER WITH that file's
+  // non-literal import specifiers, not as an alternative to them:
+  // `serverExternalPackages` is what makes Vercel's own deployment
+  // tracing actually include `pdfjs-dist`'s files in the deployed
+  // function at all (confirmed: without it, a non-literal specifier
+  // resolves to a bare "Cannot find package 'pdfjs-dist'" at runtime,
+  // since Vercel's file-tracing can no longer statically discover the
+  // dependency once the specifier isn't a literal string) — while the
+  // non-literal specifiers are what avoid Turbopack's own bundling
+  // transformation of `pdfjs-dist`'s content crashing at module-
+  // evaluation time (a real bug in that transformation, not in this
+  // package or this codebase — the exact same file imports cleanly in
+  // plain Node.js every time).
+  serverExternalPackages: ["pdfjs-dist"],
 };
 
 export default nextConfig;
