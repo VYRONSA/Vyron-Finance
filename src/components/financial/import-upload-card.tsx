@@ -8,9 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ImportBatch } from "@/server/accounting/types";
 import type { ImportExceptionRecord } from "@/server/import-centre/types";
+import { PdfImportReviewPanel, type PdfStatementPreview } from "@/components/financial/import-centre/pdf-import-review-panel";
 
-type PdfDetection = { bankId: string; bankName: string; confidence: number; status: "validated" | "awaiting-validation" } | null;
-type UploadResult = { batch: ImportBatch; exceptions: ImportExceptionRecord[]; pdfDetection?: PdfDetection };
+type UploadResult = { batch: ImportBatch; exceptions: ImportExceptionRecord[] };
 
 /** Pilot Review Round 1, Phase 9 — "PDF Upload, Drag & Drop, Validation,
  * Progress, Detection." Upload progress uses `XMLHttpRequest` rather than
@@ -61,6 +61,7 @@ export function ImportUploadCard({
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<PdfStatementPreview | null>(null);
 
   const acceptString = kind === "bank-transactions" ? ".csv,.xlsx,.ofx,.qif,.pdf" : ".csv";
 
@@ -71,12 +72,20 @@ export function ImportUploadCard({
     setError(null);
   }
 
+  function discardPreview() {
+    setPdfPreview(null);
+    setFileName(null);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
   async function handleUpload() {
     const file = pendingFile;
     if (!file) {
       setError(kind === "bank-transactions" ? "Choose or drop a .csv, .xlsx, .ofx, .qif, or .pdf file first." : "Choose a .csv file first.");
       return;
     }
+
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
 
     setLoading(true);
     setProgress(0);
@@ -85,16 +94,26 @@ export function ImportUploadCard({
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const { status, body } = await uploadWithProgress(`/api/companies/${companyId}/import-centre/${kind}`, formData, setProgress);
-      const parsed = body as UploadResult & { error?: string };
+      // PDF Bank Statement Import — Product Review Board's Final
+      // Outstanding Requirement: "Display all extracted transactions for
+      // user review before import." PDFs go through a read-only preview
+      // endpoint; every other format still commits in one shot below.
+      const endpoint = isPdf
+        ? `/api/companies/${companyId}/import-centre/bank-transactions/preview`
+        : `/api/companies/${companyId}/import-centre/${kind}`;
+      const { status, body } = await uploadWithProgress(endpoint, formData, setProgress);
       if (status < 200 || status >= 300) {
-        setError(parsed.error ?? `Request failed (${status})`);
+        setError((body as { error?: string }).error ?? `Request failed (${status})`);
         return;
       }
-      setResult(parsed);
+      if (isPdf) {
+        setPdfPreview(body as PdfStatementPreview);
+      } else {
+        setResult(body as UploadResult);
+        router.refresh();
+      }
       if (inputRef.current) inputRef.current.value = "";
-      selectFile(null);
-      router.refresh();
+      setPendingFile(null);
     } catch {
       setError("Couldn't reach the API. Check the dev server is running.");
     } finally {
@@ -118,6 +137,8 @@ export function ImportUploadCard({
             </Button>
             <p className="text-xs text-vf-ink-faint">Imports run against real data once Supabase is configured.</p>
           </div>
+        ) : pdfPreview ? (
+          <PdfImportReviewPanel companyId={companyId} preview={pdfPreview} onDiscard={discardPreview} />
         ) : (
           <>
             <div
@@ -174,21 +195,6 @@ export function ImportUploadCard({
 
             {result && (
               <div role="status" aria-live="polite" className="flex flex-col gap-2 rounded-vf-md border border-vf-paper-border bg-vf-paper-alt p-3">
-                {result.pdfDetection !== undefined && (
-                  <p className="text-sm text-vf-ink-soft">
-                    {result.pdfDetection ? (
-                      <>
-                        Detected <span className="font-medium text-vf-ink">{result.pdfDetection.bankName}</span> ({Math.round(result.pdfDetection.confidence * 100)}% confidence)
-                        {" — "}
-                        <Badge tone={result.pdfDetection.status === "validated" ? "good" : "warn"}>
-                          {result.pdfDetection.status === "validated" ? "Validated parser" : "Awaiting validation"}
-                        </Badge>
-                      </>
-                    ) : (
-                      "No known bank detected in this PDF."
-                    )}
-                  </p>
-                )}
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge tone="good">{result.batch.importedCount} imported</Badge>
                   {result.batch.duplicateCount > 0 && <Badge tone="muted">{result.batch.duplicateCount} already on file</Badge>}

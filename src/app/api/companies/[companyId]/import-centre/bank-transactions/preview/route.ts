@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/server/auth/require-session";
-import { importBankStatement, ValidationError } from "@/server/services/import-service";
+import { previewPdfBankStatement, ValidationError } from "@/server/services/import-service";
 import { requirePermission } from "@/server/services/permission-service";
 
+/** Step 1 of the PDF Bank Statement Import review flow — parses and
+ * validates a PDF statement without committing anything, so the Import
+ * Review Screen has real data (or a real, honest "0 extracted, awaiting
+ * validation" result) to render before the user can correct and confirm. */
 export async function POST(request: Request, { params }: { params: Promise<{ companyId: string }> }) {
   const session = await requireSession();
   if (!session.ok) return session.response;
@@ -19,8 +23,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
   }
 
   try {
-    const { batch, exceptions } = await importBankStatement(companyId, file);
-    return NextResponse.json({ batch, exceptions }, { status: 201 });
+    const preview = await previewPdfBankStatement(companyId, file);
+    return NextResponse.json(preview, { status: 200 });
   } catch (error) {
     if (error instanceof ValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });

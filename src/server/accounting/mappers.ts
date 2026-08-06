@@ -302,6 +302,14 @@ export type ImportBatchRow = {
   exception_count: number;
   imported_by: string;
   created_at: string;
+  bank_account_id: number | null;
+  statement_account_holder: string | null;
+  statement_account_number: string | null;
+  statement_period_start: string | null;
+  statement_period_end: string | null;
+  statement_opening_balance: number | null;
+  statement_closing_balance: number | null;
+  balance_reconciles: boolean | null;
 };
 
 export function importBatchFromRow(row: ImportBatchRow): ImportBatch {
@@ -317,6 +325,14 @@ export function importBatchFromRow(row: ImportBatchRow): ImportBatch {
     exceptionCount: row.exception_count,
     importedBy: row.imported_by,
     createdAt: row.created_at,
+    bankAccountId: row.bank_account_id,
+    statementAccountHolder: row.statement_account_holder,
+    statementAccountNumber: row.statement_account_number,
+    statementPeriodStart: row.statement_period_start,
+    statementPeriodEnd: row.statement_period_end,
+    statementOpeningBalance: row.statement_opening_balance,
+    statementClosingBalance: row.statement_closing_balance,
+    balanceReconciles: row.balance_reconciles,
   };
 }
 

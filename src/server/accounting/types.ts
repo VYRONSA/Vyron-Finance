@@ -229,6 +229,17 @@ export type ImportBatch = {
   exceptionCount: number;
   importedBy: string;
   createdAt: string;
+  /** Pilot Review Round 1 — PDF Bank Statement Import. Populated only
+   * for a PDF bank-statement batch; `null` for every other import type
+   * and format, which don't carry statement-level facts. */
+  bankAccountId: number | null;
+  statementAccountHolder: string | null;
+  statementAccountNumber: string | null;
+  statementPeriodStart: string | null;
+  statementPeriodEnd: string | null;
+  statementOpeningBalance: number | null;
+  statementClosingBalance: number | null;
+  balanceReconciles: boolean | null;
 };
 
 /** Ported from `BankAccountSummary` — the aggregate figures computed

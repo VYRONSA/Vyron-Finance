@@ -22,6 +22,18 @@ export type NewImportBatch = {
   duplicateCount: number;
   exceptionCount: number;
   importedBy?: string;
+  /** PDF Bank Statement Import only — see `ae_import_batches`'s own
+   * migration comment (0058) for why this is nullable/optional. */
+  statement?: {
+    bankAccountId: number | null;
+    accountHolder: string | null;
+    accountNumber: string | null;
+    periodStart: string | null;
+    periodEnd: string | null;
+    openingBalance: number | null;
+    closingBalance: number | null;
+    balanceReconciles: boolean | null;
+  };
 };
 
 export async function insertImportBatch(companyId: string, batch: NewImportBatch): Promise<ImportBatch> {
@@ -38,11 +50,46 @@ export async function insertImportBatch(companyId: string, batch: NewImportBatch
       duplicate_count: batch.duplicateCount,
       exception_count: batch.exceptionCount,
       imported_by: batch.importedBy ?? "System",
+      bank_account_id: batch.statement?.bankAccountId ?? null,
+      statement_account_holder: batch.statement?.accountHolder ?? null,
+      statement_account_number: batch.statement?.accountNumber ?? null,
+      statement_period_start: batch.statement?.periodStart ?? null,
+      statement_period_end: batch.statement?.periodEnd ?? null,
+      statement_opening_balance: batch.statement?.openingBalance ?? null,
+      statement_closing_balance: batch.statement?.closingBalance ?? null,
+      balance_reconciles: batch.statement?.balanceReconciles ?? null,
     })
     .select("*")
     .single<ImportBatchRow>();
   if (error) throw error;
   return importBatchFromRow(data);
+}
+
+/** Duplicate-statement check for PDF Bank Statement Import — "has this
+ * exact statement (same bank account, same period) already been
+ * imported?" — surfaced to the user as a warning *before* they commit a
+ * re-upload, rather than relying solely on the existing per-transaction
+ * natural-key constraint (0004_import_centre.sql) catching it one row
+ * at a time after the fact. */
+export async function findMatchingStatementBatch(
+  companyId: string,
+  bankAccountId: number,
+  periodStart: string,
+  periodEnd: string,
+): Promise<ImportBatch | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ae_import_batches")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("bank_account_id", bankAccountId)
+    .eq("statement_period_start", periodStart)
+    .eq("statement_period_end", periodEnd)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .returns<ImportBatchRow[]>();
+  if (error) throw error;
+  return data.length > 0 ? importBatchFromRow(data[0]) : null;
 }
 
 /** Deletes every transaction imported under one batch plus the batch

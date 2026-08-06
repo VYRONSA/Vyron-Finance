@@ -22,8 +22,12 @@
  * `resolvePdfBankAdapter(extractedText)`, a second, additive resolution
  * path alongside (not replacing) `resolveBankStatementAdapter(filename)`.
  * When a real sample statement is supplied for a bank, only that bank's
- * `parse()` needs to change — the detection, registration, upload, and
- * review-screen plumbing around it already work end-to-end today.
+ * `parse()` needs to change — the detection, registration, upload,
+ * statement-balance/duplicate validation, and Import Review Screen
+ * plumbing around it already work end-to-end today (see
+ * `pdf-statement-validation.ts` and `import-service.ts`'s
+ * `previewPdfBankStatement`/`confirmPdfBankStatementImport`). See
+ * `REQUIRED_SAMPLE_STATEMENTS` below for exactly what's needed per bank.
  */
 
 import { decodeCsvBuffer } from "./csv-utils";
@@ -31,7 +35,7 @@ import { parseBankStatementCsv } from "./bank-statement-parser";
 import { parseBankStatementXlsx } from "./bank-statement-xlsx-parser";
 import { parseOfxStatement } from "./ofx-parser";
 import { parseQifStatement } from "./qif-parser";
-import type { BankStatementParseResult } from "./types";
+import { NULL_STATEMENT_METADATA, type BankStatementParseResult } from "./types";
 
 export type BankStatementAdapter = {
   /** Stable id, e.g. "standard-csv", "standard-xlsx", "ofx", "qif", or
@@ -44,11 +48,19 @@ export type BankStatementAdapter = {
    * in the statement's own extracted text to identify which bank issued
    * it. Absent for every non-PDF adapter. */
   contentMarkers?: string[];
-  /** PDF adapters only — real, human-readable status. Every named bank
-   * starts `"awaiting-validation"`; flips to `"validated"` only once a
-   * real sample statement has been used to build and check that bank's
-   * actual column layout. */
-  status?: "validated" | "awaiting-validation";
+  /** PDF adapters only — real, human-readable status, three-tier per the
+   * Board's Final Outstanding Requirement:
+   *   "awaiting-validation" — detection works, but `parse()` extracts no
+   *     transactions; a real sample statement is needed before column
+   *     extraction can be written at all (every bank starts here).
+   *   "implemented-unvalidated" — a real, bank-specific extraction
+   *     implementation exists (built against at least one real sample),
+   *     but has not yet been cross-checked against a second/third real
+   *     statement to confirm it generalises across statement variants
+   *     (different account types, date ranges, transaction volumes).
+   *   "validated" — extraction has been confirmed correct against
+   *     multiple real statements for this bank; production-ready. */
+  status?: "validated" | "implemented-unvalidated" | "awaiting-validation";
 };
 
 function extensionOf(filename: string): string {
@@ -98,6 +110,7 @@ function pdfNotYetImplemented(bankName: string, filename: string): BankStatement
       },
     ],
     outcome: { filename, rowsRead: 0, rowsImported: 0, rowsSkipped: 0 },
+    metadata: NULL_STATEMENT_METADATA,
   };
 }
 
@@ -127,6 +140,19 @@ export const PDF_ADAPTERS: BankStatementAdapter[] = [
   namedBankPdfAdapter("mercantile-pdf", "Mercantile Bank", ["MERCANTILE BANK LIMITED", "MERCANTILE BANK"]),
   namedBankPdfAdapter("tymebank-pdf", "TymeBank", ["TYMEBANK", "TYME BANK LIMITED"]),
 ];
+
+export type SampleStatementRequirement = { bankId: string; bankName: string; requirement: string };
+
+/** The Board's own Final Outstanding Requirement: "If sample statements
+ * are unavailable... provide a list of the sample documents required."
+ * One source of truth, surfaced in both the PDF import UI (see
+ * `import-upload-card.tsx`) and the Pilot Review documentation. */
+export const REQUIRED_SAMPLE_STATEMENTS: SampleStatementRequirement[] = PDF_ADAPTERS.map((adapter) => ({
+  bankId: adapter.id,
+  bankName: adapter.label.replace(/ \(PDF\).*/, ""),
+  requirement:
+    "One real, redacted PDF statement — account/personal details may be blacked out, but the account holder line, account number line, statement period, opening balance, closing balance, and at least 10-15 real transaction rows covering a mix of EFT, debit order, card purchase, cash deposit, interest, and bank fee entries must remain intact and legible.",
+}));
 
 export function resolveBankStatementAdapter(filename: string): BankStatementAdapter | null {
   return (

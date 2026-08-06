@@ -1,10 +1,10 @@
 /**
  * Domain types for the Import Centre module (Migration Roadmap Module 3) —
- * ported from `import_centre/models.py` and `bank_import/models.py`. Only
- * the CSV-only, Standard-Template import path is in scope: Xero-style
- * Bills/Credit Notes CSV and the VYRON Standard Bank Import Template CSV.
- * The reference app's PDF bank-statement parsers and legacy .xlsx-only
- * `importer/` package are explicitly out of scope.
+ * ported from `import_centre/models.py` and `bank_import/models.py`.
+ * Originally CSV-only; Pilot Review Round 1 added real XLSX/OFX/QIF
+ * parsers and the PDF bank-statement framework (see
+ * `bank-statement-adapter-registry.ts`'s own docstring for what "real" vs
+ * "framework-only" means for PDF specifically).
  */
 
 export type DocumentType = "Bill" | "Credit Note";
@@ -80,8 +80,39 @@ export type BillsParseResult = {
   outcome: FileImportOutcome;
 };
 
+/** Statement-level facts, distinct from any one transaction row — the
+ * PDF Bank Statement Import requirement's own field list (account
+ * holder, account number, statement period, opening/closing balance).
+ * Every field is nullable: CSV/XLSX/OFX/QIF statements don't carry this
+ * information at all (null throughout, not fabricated), and a PDF
+ * adapter that can't find a given field in the statement's text reports
+ * it as null rather than guessing. */
+export type BankStatementMetadata = {
+  accountHolder: string | null;
+  accountNumber: string | null;
+  statementPeriodStart: string | null;
+  statementPeriodEnd: string | null;
+  openingBalance: number | null;
+  closingBalance: number | null;
+};
+
+export const NULL_STATEMENT_METADATA: BankStatementMetadata = {
+  accountHolder: null,
+  accountNumber: null,
+  statementPeriodStart: null,
+  statementPeriodEnd: null,
+  openingBalance: null,
+  closingBalance: null,
+};
+
 export type BankStatementParseResult = {
   transactions: ParsedBankTransaction[];
   exceptions: ImportExceptionRecord[];
   outcome: BankFileImportOutcome;
+  /** Absent (treated as `NULL_STATEMENT_METADATA`) for every format that
+   * doesn't carry statement-level facts — the existing CSV/XLSX/OFX/QIF
+   * parsers were deliberately left unchanged rather than each threaded
+   * with a field they have nothing real to populate. Only PDF adapters
+   * set this. */
+  metadata?: BankStatementMetadata;
 };
