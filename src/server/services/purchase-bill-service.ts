@@ -33,6 +33,7 @@ import type { NewJournalLine } from "@/server/repositories/journal-repository";
 import type { PostingRuleAmountSource } from "@/server/general-ledger/types";
 import { computeLineAmounts } from "@/server/purchasing/line-amounts";
 import type { BillPostingStatus, ImportedBill, PurchaseBillLine } from "@/server/accounting/types";
+import type { VatTreatment } from "@/server/company-management/types";
 
 /** Every bill company-wide, regardless of `origin` — Supplier Payments'
  * allocation UI needs the full set (imported or Purchasing-entered) to
@@ -118,6 +119,48 @@ export function computeBillLine(line: BillLineInput, vatRatePercent: number): Co
   return { ...line, discount, netAmount, vatAmount, lineTotal };
 }
 
+/** Shared between `createPurchaseBill` and `updateBillLines` — computes
+ * every line, the header roll-up totals, and the header
+ * `glAccount`/`vatCode` summary (a real value when every line agrees,
+ * an honest "(Multiple)" placeholder otherwise — never fabricated to
+ * look like a single value). */
+function summarizeBillLines(lines: BillLineInput[], vatTreatments: VatTreatment[]) {
+  const computedLines = lines.map((line) => {
+    if (!line.vatCode) throw new ValidationError("Every line needs a VAT code.");
+    const treatment = vatTreatments.find((t) => t.code === line.vatCode);
+    if (!treatment) throw new ValidationError(`Unknown VAT treatment "${line.vatCode}".`);
+    return computeBillLine(line, treatment.rate);
+  });
+
+  const subtotal = round2(computedLines.reduce((sum, l) => sum + l.netAmount, 0));
+  const vat = round2(computedLines.reduce((sum, l) => sum + l.vatAmount, 0));
+  const total = round2(subtotal + vat);
+  const distinctAccounts = [...new Set(computedLines.map((l) => l.glAccount))];
+  const distinctVatCodes = [...new Set(computedLines.map((l) => l.vatCode))];
+
+  return {
+    subtotal,
+    vat,
+    total,
+    glAccount: distinctAccounts.length === 1 ? distinctAccounts[0] : "(Multiple)",
+    vatCode: distinctVatCodes.length === 1 ? distinctVatCodes[0] : "(Multiple)",
+    repoLines: computedLines.map((l) => ({
+      description: l.description,
+      glAccount: l.glAccount,
+      vatCode: l.vatCode,
+      costCentreId: l.costCentreId ?? null,
+      projectId: l.projectId ?? null,
+      departmentId: l.departmentId ?? null,
+      quantity: l.quantity,
+      unitCost: l.unitCost,
+      discount: l.discount,
+      netAmount: l.netAmount,
+      vatAmount: l.vatAmount,
+      lineTotal: l.lineTotal,
+    })),
+  };
+}
+
 export async function createPurchaseBill(companyId: string, input: CreatePurchaseBillInput): Promise<ImportedBill> {
   if (!input.supplierId) throw new ValidationError("Supplier is required.");
   if (!input.invoiceNumber?.trim()) throw new ValidationError("Invoice number is required.");
@@ -129,19 +172,7 @@ export async function createPurchaseBill(companyId: string, input: CreatePurchas
   const vatTreatments = await listVatTreatments(companyId);
 
   if (input.lines && input.lines.length > 0) {
-    const computedLines = input.lines.map((line) => {
-      if (!line.vatCode) throw new ValidationError("Every line needs a VAT code.");
-      const treatment = vatTreatments.find((t) => t.code === line.vatCode);
-      if (!treatment) throw new ValidationError(`Unknown VAT treatment "${line.vatCode}".`);
-      return computeBillLine(line, treatment.rate);
-    });
-
-    const subtotal = round2(computedLines.reduce((sum, l) => sum + l.netAmount, 0));
-    const vat = round2(computedLines.reduce((sum, l) => sum + l.vatAmount, 0));
-    const total = round2(subtotal + vat);
-    const distinctAccounts = [...new Set(computedLines.map((l) => l.glAccount))];
-    const distinctVatCodes = [...new Set(computedLines.map((l) => l.vatCode))];
-
+    const summary = summarizeBillLines(input.lines, vatTreatments);
     const { bill } = await repo.createPurchaseBillWithLines(
       companyId,
       {
@@ -153,28 +184,12 @@ export async function createPurchaseBill(companyId: string, input: CreatePurchas
         dueDate: input.dueDate,
         purchaseOrderId: input.purchaseOrderId,
         goodsReceivedNoteId: input.goodsReceivedNoteId,
-        // Header gl_account/vat_code stay real values when every line
-        // agrees, and an honest "(Multiple)" placeholder otherwise —
-        // never fabricated to look like a single value.
-        glAccount: distinctAccounts.length === 1 ? distinctAccounts[0] : "(Multiple)",
-        vatCode: distinctVatCodes.length === 1 ? distinctVatCodes[0] : "(Multiple)",
+        glAccount: summary.glAccount,
+        vatCode: summary.vatCode,
       },
-      vat,
-      total,
-      computedLines.map((l) => ({
-        description: l.description,
-        glAccount: l.glAccount,
-        vatCode: l.vatCode,
-        costCentreId: l.costCentreId ?? null,
-        projectId: l.projectId ?? null,
-        departmentId: l.departmentId ?? null,
-        quantity: l.quantity,
-        unitCost: l.unitCost,
-        discount: l.discount,
-        netAmount: l.netAmount,
-        vatAmount: l.vatAmount,
-        lineTotal: l.lineTotal,
-      })),
+      summary.vat,
+      summary.total,
+      summary.repoLines,
     );
     return bill;
   }
@@ -190,6 +205,36 @@ export async function createPurchaseBill(companyId: string, input: CreatePurchas
     input.subtotal!,
     treatment.rate,
   );
+}
+
+/** Product Review Board certification — "Correct editing." Only a Draft
+ * bill can be edited: once Submitted it's in the approval workflow, and
+ * once Approved/Posted a real journal (and possibly a payment
+ * allocation) already exists against it — editing those would silently
+ * desynchronise the GL from what the accountant sees, exactly the
+ * failure mode this codebase's posted-history-is-immutable rule exists
+ * to prevent everywhere else. Replaces the whole line set (see
+ * `replacePurchaseBillLines`'s own comment for why that's safe for a
+ * Draft) and recomputes the header roll-up from scratch — never a
+ * partial patch that could drift from the lines' own real totals. */
+export async function updateBillLines(companyId: string, billId: number, lines: BillLineInput[]): Promise<ImportedBill> {
+  const bill = await requireBill(companyId, billId);
+  const status = requirePostingStatus(bill);
+  if (status !== "Draft") {
+    throw new ValidationError(`Only a Draft ${bill.documentType.toLowerCase()} can be edited (current status: ${status}).`);
+  }
+  if (lines.length === 0) throw new ValidationError("A bill needs at least one line.");
+
+  const vatTreatments = await listVatTreatments(companyId);
+  const summary = summarizeBillLines(lines, vatTreatments);
+
+  const { bill: updated } = await repo.replacePurchaseBillLines(
+    companyId,
+    billId,
+    { vat: summary.vat, total: summary.total, glAccount: summary.glAccount, vatCode: summary.vatCode },
+    summary.repoLines,
+  );
+  return updated;
 }
 
 const ALLOWED_TRANSITIONS: Record<BillPostingStatus, BillPostingStatus[]> = {

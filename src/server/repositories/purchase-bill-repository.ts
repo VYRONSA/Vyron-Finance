@@ -222,6 +222,62 @@ export async function listPurchaseBillLines(companyId: string, billId: number): 
   return data.map(purchaseBillLineFromRow);
 }
 
+/** Editing a Draft bill's lines — deletes the old set and inserts the
+ * new one rather than diffing row-by-row (a Draft has no journal, no
+ * payments allocated against it, and no audit-trail expectation yet —
+ * the same "safe to fully replace" reasoning `bulkUpsertGlOpeningBalances`
+ * documented for Opening Balances), then updates the header's own
+ * roll-up fields (`vat`/`total`/`outstanding`/`gl_account`/`vat_code`)
+ * to match. `outstanding` is reset to the new `total` — a Draft bill has
+ * never had a payment allocated against it (only Posted bills can be
+ * paid), so there is no partial-payment state to preserve. */
+export async function replacePurchaseBillLines(
+  companyId: string,
+  billId: number,
+  header: { vat: number; total: number; glAccount: string; vatCode: string },
+  lines: NewPurchaseBillLine[],
+): Promise<{ bill: ImportedBill; lines: PurchaseBillLine[] }> {
+  const supabase = await createClient();
+
+  const { error: deleteError } = await supabase.from("ae_purchase_bill_lines").delete().eq("company_id", companyId).eq("bill_id", billId);
+  if (deleteError) throw deleteError;
+
+  const { data: lineRows, error: linesError } = await supabase
+    .from("ae_purchase_bill_lines")
+    .insert(
+      lines.map((line, index) => ({
+        company_id: companyId,
+        bill_id: billId,
+        line_order: index,
+        description: line.description,
+        gl_account: line.glAccount,
+        vat_code: line.vatCode,
+        cost_centre_id: line.costCentreId,
+        project_id: line.projectId,
+        department_id: line.departmentId,
+        quantity: line.quantity,
+        unit_cost: line.unitCost,
+        discount: line.discount,
+        net_amount: line.netAmount,
+        vat_amount: line.vatAmount,
+        line_total: line.lineTotal,
+      })),
+    )
+    .select("*")
+    .returns<PurchaseBillLineRow[]>();
+  if (linesError) throw linesError;
+
+  const bill = await setBillFields(companyId, billId, {
+    vat: header.vat,
+    total: header.total,
+    outstanding: header.total,
+    gl_account: header.glAccount,
+    vat_code: header.vatCode,
+  });
+
+  return { bill, lines: lineRows.map(purchaseBillLineFromRow) };
+}
+
 async function setBillFields(companyId: string, billId: number, fields: Record<string, unknown>): Promise<ImportedBill> {
   const supabase = await createClient();
   const { error } = await supabase.from("ae_imported_bills").update(fields).eq("company_id", companyId).eq("id", billId);

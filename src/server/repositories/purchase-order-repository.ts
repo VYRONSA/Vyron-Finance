@@ -89,6 +89,32 @@ export type NewPurchaseOrder = {
   lines: NewPurchaseOrderLine[];
 };
 
+function toOrderLineRow(orderId: number, line: NewPurchaseOrderLine, index: number) {
+  const discount = line.discount ?? 0;
+  // Falls back to exactly today's arithmetic (no VAT concept) when a
+  // caller doesn't supply netAmount/vatAmount — see
+  // NewPurchaseOrderLine's own comment.
+  const netAmount = line.netAmount ?? Math.round((line.quantity * line.unitPrice - discount) * 100) / 100;
+  const vatAmount = line.vatAmount ?? 0;
+  return {
+    order_id: orderId,
+    line_order: index,
+    description: line.description,
+    quantity: line.quantity,
+    unit_price: line.unitPrice,
+    line_total: Math.round((netAmount + vatAmount) * 100) / 100,
+    stock_item_id: line.stockItemId ?? null,
+    gl_account: line.glAccount ?? null,
+    vat_code: line.vatCode ?? null,
+    cost_centre_id: line.costCentreId ?? null,
+    project_id: line.projectId ?? null,
+    department_id: line.departmentId ?? null,
+    discount,
+    net_amount: netAmount,
+    vat_amount: vatAmount,
+  };
+}
+
 export async function createPurchaseOrder(companyId: string, input: NewPurchaseOrder): Promise<PurchaseOrder> {
   const supabase = await createClient();
   const orderNumber = input.orderNumber ?? (await nextOrderNumber(companyId));
@@ -109,37 +135,31 @@ export async function createPurchaseOrder(companyId: string, input: NewPurchaseO
 
   const { data: lineRows, error: linesError } = await supabase
     .from("purchase_order_lines")
-    .insert(
-      input.lines.map((line, index) => {
-        const discount = line.discount ?? 0;
-        // Falls back to exactly today's arithmetic (no VAT concept)
-        // when a caller doesn't supply netAmount/vatAmount — see
-        // NewPurchaseOrderLine's own comment.
-        const netAmount = line.netAmount ?? Math.round((line.quantity * line.unitPrice - discount) * 100) / 100;
-        const vatAmount = line.vatAmount ?? 0;
-        return {
-          order_id: orderRow.id,
-          line_order: index,
-          description: line.description,
-          quantity: line.quantity,
-          unit_price: line.unitPrice,
-          line_total: Math.round((netAmount + vatAmount) * 100) / 100,
-          stock_item_id: line.stockItemId ?? null,
-          gl_account: line.glAccount ?? null,
-          vat_code: line.vatCode ?? null,
-          cost_centre_id: line.costCentreId ?? null,
-          project_id: line.projectId ?? null,
-          department_id: line.departmentId ?? null,
-          discount,
-          net_amount: netAmount,
-          vat_amount: vatAmount,
-        };
-      }),
-    )
+    .insert(input.lines.map((line, index) => toOrderLineRow(orderRow.id, line, index)))
     .select("*");
   if (linesError) throw linesError;
 
   return purchaseOrderFromRow({ ...orderRow, purchase_order_lines: lineRows });
+}
+
+/** Editing a Draft order's lines — same "safe to fully replace"
+ * reasoning as `purchase-bill-repository.ts::replacePurchaseBillLines`:
+ * a Draft order has no GRN, no Bill, and no received/billed quantities
+ * yet, so deleting and re-inserting the line set (rather than diffing
+ * row-by-row) can't silently drop fulfillment history that doesn't
+ * exist yet. */
+export async function replaceOrderLines(companyId: string, orderId: number, lines: NewPurchaseOrderLine[]): Promise<PurchaseOrder> {
+  const supabase = await createClient();
+
+  const { error: deleteError } = await supabase.from("purchase_order_lines").delete().eq("order_id", orderId);
+  if (deleteError) throw deleteError;
+
+  const { error: linesError } = await supabase.from("purchase_order_lines").insert(lines.map((line, index) => toOrderLineRow(orderId, line, index)));
+  if (linesError) throw linesError;
+
+  const order = await getPurchaseOrder(companyId, orderId);
+  if (!order) throw new Error(`No purchase order with id ${orderId}`);
+  return order;
 }
 
 export async function setOrderStatus(companyId: string, orderId: number, status: PurchaseOrderStatus): Promise<PurchaseOrder> {

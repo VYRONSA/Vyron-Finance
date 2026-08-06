@@ -7,6 +7,7 @@ import {
   NotFoundError,
   rejectOrder,
   submitOrder,
+  updateOrderLines,
   ValidationError,
 } from "@/server/services/purchase-order-service";
 import { requireApproval, requirePermission } from "@/server/services/permission-service";
@@ -56,6 +57,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
         const cancelCheck = await requirePermission(companyId, "Purchasing:Edit");
         if (!cancelCheck.ok) return cancelCheck.response;
         const order = await cancelOrder(companyId, id);
+        return NextResponse.json({ order });
+      }
+      case "update-lines": {
+        const editCheck = await requirePermission(companyId, "Purchasing:Edit");
+        if (!editCheck.ok) return editCheck.response;
+        const order = await updateOrderLines(companyId, id, body.lines ?? []);
         return NextResponse.json({ order });
       }
       default:

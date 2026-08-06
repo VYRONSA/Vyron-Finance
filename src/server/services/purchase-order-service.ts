@@ -54,21 +54,43 @@ export function computeOrderLine<T extends { quantity: number; unitPrice: number
   return { ...line, discount, netAmount, vatAmount };
 }
 
-export async function createPurchaseOrder(companyId: string, input: repo.NewPurchaseOrder): Promise<PurchaseOrder> {
-  if (!input.supplierId) throw new ValidationError("Supplier is required.");
-  if (!input.orderDate) throw new ValidationError("Order date is required.");
-  validateOrderLines(input.lines);
-
+async function computeOrderLines(companyId: string, lines: repo.NewPurchaseOrderLine[]) {
   const vatTreatments = await listVatTreatments(companyId);
-  const computedLines = input.lines.map((line) => {
+  return lines.map((line) => {
     if (line.vatCode && !vatTreatments.some((t) => t.code === line.vatCode)) {
       throw new ValidationError(`Unknown VAT treatment "${line.vatCode}".`);
     }
     const rate = line.vatCode ? (vatTreatments.find((t) => t.code === line.vatCode)?.rate ?? 0) : 0;
     return computeOrderLine(line, rate);
   });
+}
 
+export async function createPurchaseOrder(companyId: string, input: repo.NewPurchaseOrder): Promise<PurchaseOrder> {
+  if (!input.supplierId) throw new ValidationError("Supplier is required.");
+  if (!input.orderDate) throw new ValidationError("Order date is required.");
+  validateOrderLines(input.lines);
+
+  const computedLines = await computeOrderLines(companyId, input.lines);
   return repo.createPurchaseOrder(companyId, { ...input, lines: computedLines });
+}
+
+/** Product Review Board certification — "Correct editing," parity with
+ * `purchase-bill-service.ts::updateBillLines`. Only a Draft order can
+ * be edited: Submitted is already in the approval workflow, and once
+ * Approved/Received a GRN or Bill may already reference the order's
+ * lines by id (`goods_received_note_lines.order_line_id`,
+ * `received_quantity`/`billed_quantity`) — replacing the line set past
+ * that point would orphan or silently reset real fulfillment history. */
+export async function updateOrderLines(companyId: string, orderId: number, lines: repo.NewPurchaseOrderLine[]): Promise<PurchaseOrder> {
+  const order = await repo.getPurchaseOrder(companyId, orderId);
+  if (!order) throw new NotFoundError(`No purchase order with id ${orderId}.`);
+  if (order.status !== "Draft") {
+    throw new ValidationError(`Only a Draft order can be edited (current status: ${order.status}).`);
+  }
+  validateOrderLines(lines);
+
+  const computedLines = await computeOrderLines(companyId, lines);
+  return repo.replaceOrderLines(companyId, orderId, computedLines);
 }
 
 /** Real conversion — copies the requisition's own lines (estimated

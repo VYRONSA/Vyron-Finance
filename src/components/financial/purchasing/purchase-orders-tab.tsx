@@ -13,7 +13,7 @@ import { SendCommunicationButton } from "@/components/financial/communications/s
 import { CommunicationHistoryPanel } from "@/components/financial/communications/communication-history-panel";
 import { BatchEntryGrid, type GridColumn } from "@/components/financial/shared/batch-entry-grid";
 import type { Supplier } from "@/server/accounting/types";
-import type { PurchaseOrder, PurchaseOrderStatus } from "@/server/purchasing/types";
+import type { PurchaseOrder, PurchaseOrderLine, PurchaseOrderStatus } from "@/server/purchasing/types";
 import type { CostCentre, Department, Project, VatTreatment } from "@/server/company-management/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 
@@ -214,6 +214,139 @@ function OrderFormPanel({
   );
 }
 
+function orderLineToRow(line: PurchaseOrderLine): OrderLineRow {
+  return {
+    rowId: `existing-${line.id}`,
+    description: line.description,
+    glAccount: line.glAccount ?? "",
+    vatCode: line.vatCode ?? "",
+    costCentreId: line.costCentreId !== null ? String(line.costCentreId) : "",
+    projectId: line.projectId !== null ? String(line.projectId) : "",
+    departmentId: line.departmentId !== null ? String(line.departmentId) : "",
+    quantity: line.quantity,
+    unitPrice: line.unitPrice,
+    discount: line.discount,
+  };
+}
+
+/** Product Review Board certification — "Correct editing," parity with
+ * `bills-tab.tsx::EditBillLinesPanel`. Only ever rendered for a Draft
+ * order (see `PurchaseOrdersTab`'s own gating) — `order.lines` is
+ * already embedded in the list response (unlike Bills, no separate
+ * fetch needed), so this opens straight from what's already on screen. */
+function EditOrderLinesPanel({
+  companyId,
+  order,
+  vatTreatments,
+  chartOfAccounts,
+  costCentres,
+  projects,
+  departments,
+  onDone,
+  onCancel,
+}: {
+  companyId: string;
+  order: PurchaseOrder;
+  vatTreatments: VatTreatment[];
+  chartOfAccounts: ChartOfAccount[];
+  costCentres: CostCentre[];
+  projects: Project[];
+  departments: Department[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [lines, setLines] = useState<OrderLineRow[]>(() => (order.lines.length > 0 ? order.lines.map(orderLineToRow) : [createEmptyOrderLineRow()]));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const glOptions = useMemo(() => chartOfAccounts.filter((a) => a.isActive).map((a) => ({ value: a.accountCode, label: `${a.accountCode} — ${a.description}` })), [chartOfAccounts]);
+  const vatOptions = useMemo(() => vatTreatments.map((v) => ({ value: v.code, label: `${v.name} (${v.rate}%)` })), [vatTreatments]);
+  const costCentreOptions = useMemo(() => costCentres.filter((c) => c.isActive).map((c) => ({ value: String(c.id), label: c.name })), [costCentres]);
+  const projectOptions = useMemo(() => projects.filter((p) => p.isActive).map((p) => ({ value: String(p.id), label: p.name })), [projects]);
+  const departmentOptions = useMemo(() => departments.filter((d) => d.isActive).map((d) => ({ value: String(d.id), label: d.name })), [departments]);
+
+  const columns: GridColumn<OrderLineRow>[] = [
+    { key: "description", label: "Description", type: "text" },
+    { key: "glAccount", label: "GL Account", type: "select", options: glOptions, placeholder: "None" },
+    { key: "vatCode", label: "VAT Code", type: "select", options: vatOptions, placeholder: "None", width: "w-40" },
+    { key: "costCentreId", label: "Cost Centre", type: "select", options: costCentreOptions, placeholder: "None", width: "w-36" },
+    { key: "projectId", label: "Project", type: "select", options: projectOptions, placeholder: "None", width: "w-36" },
+    { key: "departmentId", label: "Department", type: "select", options: departmentOptions, placeholder: "None", width: "w-36" },
+    { key: "quantity", label: "Qty", type: "number", align: "right", width: "w-20" },
+    { key: "unitPrice", label: "Unit Price", type: "number", align: "right", width: "w-28" },
+    { key: "discount", label: "Discount", type: "number", align: "right", width: "w-28" },
+  ];
+
+  const computedLines = useMemo(() => lines.map((row) => ({ row, ...computeOrderLineTotals(row, vatTreatments) })), [lines, vatTreatments]);
+  const validLines = computedLines.filter((l) => l.row.description.trim() && l.net > 0);
+  const subtotal = Math.round(validLines.reduce((s, l) => s + l.net, 0) * 100) / 100;
+  const vatTotal = Math.round(validLines.reduce((s, l) => s + l.vat, 0) * 100) / 100;
+  const grandTotal = Math.round((subtotal + vatTotal) * 100) / 100;
+
+  async function save() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/purchasing/orders/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update-lines",
+          lines: validLines.map(({ row }) => ({
+            description: row.description,
+            glAccount: row.glAccount || null,
+            vatCode: row.vatCode || null,
+            costCentreId: row.costCentreId ? Number(row.costCentreId) : null,
+            projectId: row.projectId ? Number(row.projectId) : null,
+            departmentId: row.departmentId ? Number(row.departmentId) : null,
+            quantity: row.quantity,
+            unitPrice: row.unitPrice,
+            discount: row.discount,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      onDone();
+    } catch {
+      setError("Couldn't reach the API. Check the dev server is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-vf-md border border-vf-paper-border p-4">
+      <p className="mb-3 text-sm font-semibold text-vf-ink">Editing {order.orderNumber}</p>
+      <BatchEntryGrid
+        columns={columns}
+        rows={lines}
+        onRowsChange={setLines}
+        createEmptyRow={createEmptyOrderLineRow}
+        getRowId={(row) => row.rowId}
+        emptyLabel="Add at least one line."
+      />
+      <div className="mt-3 flex flex-wrap items-center gap-4 rounded-vf-md bg-vf-paper-alt px-3 py-2 text-sm">
+        <span>Subtotal <span className="font-mono font-medium tabular-nums">{money(subtotal)}</span></span>
+        <span>VAT <span className="font-mono font-medium tabular-nums">{money(vatTotal)}</span></span>
+        <span>Total <span className="font-mono font-semibold tabular-nums">{money(grandTotal)}</span></span>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button variant="primary" size="sm" disabled={loading || validLines.length === 0} onClick={save}>
+          Save Changes
+        </Button>
+        <Button variant="subtle" size="sm" onClick={onCancel} disabled={loading}>
+          Cancel
+        </Button>
+      </div>
+      {error && <p className="mt-2 text-sm text-vf-danger">{error}</p>}
+    </div>
+  );
+}
+
 function CreateBillPanel({
   companyId,
   order,
@@ -303,6 +436,7 @@ export function PurchaseOrdersTab({
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [billingId, setBillingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -410,6 +544,9 @@ export function PurchaseOrdersTab({
                       <div className="flex flex-wrap justify-end gap-1.5">
                         {o.status === "Draft" && (
                           <>
+                            <Button variant="subtle" size="sm" disabled={previewMode || loadingId === o.id} title={disabledTitle} onClick={() => setEditingId(editingId === o.id ? null : o.id)}>
+                              Edit
+                            </Button>
                             <Button variant="subtle" size="sm" disabled={previewMode || loadingId === o.id} title={disabledTitle} onClick={() => runAction(o.id, "submit")}>
                               Submit
                             </Button>
@@ -445,6 +582,23 @@ export function PurchaseOrdersTab({
                     <TableRow>
                       <TableCell colSpan={7} className="bg-vf-paper-alt/40">
                         <CreateBillPanel companyId={companyId} order={o} defaultVatCode={defaultVatCode} onDone={() => { setBillingId(null); router.refresh(); }} onCancel={() => setBillingId(null)} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {editingId === o.id && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="bg-vf-paper-alt/40">
+                        <EditOrderLinesPanel
+                          companyId={companyId}
+                          order={o}
+                          vatTreatments={vatTreatments}
+                          chartOfAccounts={chartOfAccounts}
+                          costCentres={costCentres}
+                          projects={projects}
+                          departments={departments}
+                          onDone={() => { setEditingId(null); router.refresh(); }}
+                          onCancel={() => setEditingId(null)}
+                        />
                       </TableCell>
                     </TableRow>
                   )}

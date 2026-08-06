@@ -4,9 +4,11 @@ import {
   approveAndPostBill,
   cancelBill,
   getPurchaseBill,
+  listBillLines,
   NotFoundError,
   retryPostBill,
   submitBill,
+  updateBillLines,
   ValidationError,
 } from "@/server/services/purchase-bill-service";
 import { requireApproval, requirePermission } from "@/server/services/permission-service";
@@ -16,9 +18,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
   if (!session.ok) return session.response;
 
   const { companyId, billId } = await params;
-  const bill = await getPurchaseBill(companyId, Number(billId));
+  const id = Number(billId);
+  const bill = await getPurchaseBill(companyId, id);
   if (!bill) return NextResponse.json({ error: "Bill not found." }, { status: 404 });
-  return NextResponse.json({ bill });
+  const lines = await listBillLines(companyId, id);
+  return NextResponse.json({ bill, lines });
 }
 
 /** `approve` performs the real, automatic Approve -> Posting Rule ->
@@ -58,6 +62,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
         const cancelCheck = await requirePermission(companyId, "Purchasing:Edit");
         if (!cancelCheck.ok) return cancelCheck.response;
         const bill = await cancelBill(companyId, id);
+        return NextResponse.json({ bill });
+      }
+      case "update-lines": {
+        const editCheck = await requirePermission(companyId, "Purchasing:Edit");
+        if (!editCheck.ok) return editCheck.response;
+        const bill = await updateBillLines(companyId, id, body.lines ?? []);
         return NextResponse.json({ bill });
       }
       default:
