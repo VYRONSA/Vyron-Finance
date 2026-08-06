@@ -8,16 +8,21 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
-  // Keeps `pdfjs-dist` out of Next's Server Components bundling
-  // entirely, so it resolves via native Node module loading instead of
-  // being pulled into the build output of any page that merely imports
-  // `pdf-text-extraction.ts` transitively (e.g. the Company Dashboard,
-  // via `import-service.ts`'s `listRecentImports`) — see that file's
-  // own docstring for the full "DOMMatrix is not defined" story and why
-  // `pdf-parse` itself was dropped entirely (its own package resolution
-  // proved unreliable specifically on Vercel; `pdfjs-dist`'s deep,
-  // unambiguous import paths have been reliable throughout).
-  serverExternalPackages: ["pdfjs-dist"],
+  // Deliberately NOT using `serverExternalPackages` for `pdfjs-dist` —
+  // see `pdf-text-extraction.ts`'s own docstring for the full
+  // "DOMMatrix is not defined" story. It was tried first and made
+  // things worse: Turbopack's own runtime loader for
+  // `serverExternalPackages`-listed packages (its "externalImport"/
+  // "externalRequire" mechanism) crashed with the exact same error on
+  // Vercel specifically, for both `pdf-parse` (an ambiguous package.json
+  // "exports" map) AND `pdfjs-dist`'s own deep `legacy/build/pdf.mjs`
+  // path (which has no "exports" field at all, ruling out condition
+  // ambiguity as the cause) — confirmed live against the actual
+  // deployed API. Letting Turbopack bundle `pdfjs-dist` normally
+  // instead (this module's own lazy `import()` calls mean it's still
+  // only loaded on-demand, as a genuine code-split chunk, not eagerly
+  // pulled into every page that imports this file transitively) is
+  // what actually works.
 };
 
 export default nextConfig;

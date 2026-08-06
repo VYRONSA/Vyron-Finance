@@ -146,9 +146,19 @@ export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   await ensurePdfjsWorker();
   const { getDocument, VerbosityLevel } = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
+  // `getDocument` detaches the underlying `ArrayBuffer` it's handed (its
+  // fake-worker transfer simulation) — real, confirmed bug: this
+  // function is called twice per import request with the SAME buffer
+  // (once for bank detection, once inside the resolved adapter's own
+  // `parse()`), and the second call failed with "Cannot perform
+  // Construct on a detached ArrayBuffer" once the first had already
+  // consumed it. `.slice(0)` makes an independent copy from the
+  // still-intact caller-owned buffer before handing it off, so the
+  // caller's own `buffer` is never touched regardless of how many times
+  // this function is called with it.
   let doc: Awaited<ReturnType<typeof getDocument>["promise"]>;
   try {
-    doc = await getDocument({ data: new Uint8Array(buffer), verbosity: VerbosityLevel.ERRORS }).promise;
+    doc = await getDocument({ data: new Uint8Array(buffer.slice(0)), verbosity: VerbosityLevel.ERRORS }).promise;
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
     const message = error instanceof Error ? error.message : String(error);
