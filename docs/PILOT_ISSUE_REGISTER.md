@@ -27,7 +27,7 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Date Fixed**: 2026-08-05
 - **Verified By**: Live certification (fresh test company, real bank account, real posted journal — bank `current_balance`/`opening_balance` confirmed updated by exactly the posted delta)
 - **Verification Method**: Live
-- **Commit Hash**: Pending (Commit 2)
+- **Commit Hash**: `e2a4ea4`
 
 ### VR-002 — Company creation: a genuinely new user (no pre-existing platform-scope role) receives a 500 creating their first company
 - **Description**: `createCompany`'s role-bootstrap step read the newly-seeded `company_owner` role via a plain client-side `SELECT` on `permission_roles`, then called `assign_company_role` — both independently require the caller to already have access to/a permission on a company that, by definition at that exact moment, has zero role assignments yet. A chicken-and-egg RLS problem, masked in every prior round of live verification because the test accounts used already held a platform-scope role that unconditionally satisfies both checks. A real first-time self-service signup — the product's actual onboarding path — would 500.
@@ -38,7 +38,7 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Date Fixed**: 2026-08-05
 - **Verified By**: Live certification (fresh throwaway user with zero platform-scope role, real `POST /api/companies` — company created, `company_owner` role assignment confirmed in `user_role_assignments`)
 - **Verification Method**: Live
-- **Commit Hash**: Pending (Commit 2)
+- **Commit Hash**: `e2a4ea4`
 
 ### VR-008 — Editable Bank Opening Balances didn't correct a previously-posted GL journal
 - **Description**: Amending a bank account's opening balance after it had already been posted via the Opening Balances Centre updated the cached balance and audit trail correctly, but never touched the General Ledger — the originally-posted journal stayed exactly as it was, silently diverging from the new, corrected balance. Found while implementing the Board's explicit "Update the Bank Account balance. Update the Opening Balance Journal. Update the General Ledger... Preserve double-entry accounting integrity" requirement.
@@ -49,7 +49,7 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Date Fixed**: 2026-08-05
 - **Verified By**: Unit-level via `tsc`/build; the correcting-journal path itself (`correctPostedBankOpeningBalanceIfNeeded`) is code-complete and exercised indirectly by the live opening-balance-edit tests, but a dedicated live test of editing an *already-posted* balance was not separately run this round — disclosed as a real gap, see the Completion Report
 - **Verification Method**: Build/Unit (not independently Live-verified this round)
-- **Commit Hash**: Pending (Commit 2)
+- **Commit Hash**: `e2a4ea4`
 
 ### VR-009 — New companies had zero Financial Years, blocking all Cashbook/Journal posting from day one
 - **Description**: `financial_years` has always been a purely manual table — nothing in company creation ever seeded one. `validatePostingDate` correctly refused every Cashbook and Journal posting with "No financial year covers `<date>`" for a genuinely new company, discovered live while verifying Phase 4's new Cashbook batch-posting flow. Opening Balances posting never surfaced this because `postApprovedJournals` doesn't call `validatePostingDate` at all — a separate, disclosed inconsistency between modules, left as-is (out of this round's scope to reconcile).
@@ -60,7 +60,7 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Date Fixed**: 2026-08-05
 - **Verified By**: Live certification — reproduced (Cashbook batch post failed with the exact error above), fixed by seeding the current financial year on company creation via the existing `suggestFinancialYear`/`createFinancialYear`/`setCurrentFinancialYear` functions (no new date logic), re-verified live (same batch posts successfully)
 - **Verification Method**: Live
-- **Commit Hash**: Pending (Commit 2)
+- **Commit Hash**: `e2a4ea4`
 
 ### VR-010 — `pdf-parse`'s worker setup fails under Next.js's server bundler
 - **Description**: `pdfjs-dist` (wrapped by `pdf-parse`) always runs a Node.js "fake worker" that dynamically `import()`s its own `WorkerMessageHandler` at runtime with a webpack/vite-ignore comment; Next.js's server bundler doesn't honour that comment, so every real PDF upload 500'd with "Setting up fake worker failed." Found live on the very first PDF upload test.
@@ -71,29 +71,40 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Date Fixed**: 2026-08-05
 - **Verified By**: Live certification — reproduced, fixed by statically importing the worker module and assigning it to `globalThis.pdfjsWorker` (pdfjs-dist's own documented escape hatch, which skips the dynamic import entirely), re-verified live with a real PDF upload (correct bank detection, honest "awaiting validation" result, zero fabricated transactions)
 - **Verification Method**: Live
-- **Commit Hash**: Pending (Commit 2)
+- **Commit Hash**: `e2a4ea4`
 
 ### VR-011 — Banking Rule "Delete" was entirely missing at every layer
 - **Description**: No delete capability existed in the repository, service, API route, or UI for Banking Rules — only Enable/Disable. The Board's Phase 8 explicitly requires it.
 - **Priority**: Medium
-- **Status**: Complete (code) — pending live certification, blocked on migration `0057` (adds `banking_rules.is_deleted`) being applied
+- **Status**: Complete
 - **Version Target**: 1.0 (Pilot Round 1)
 - **Date Found**: 2026-08-05
 - **Date Fixed**: 2026-08-05
-- **Verified By**: Pending live certification once migration `0057` is applied
-- **Verification Method**: Build/Unit confirmed; Live pending
-- **Commit Hash**: Pending (Commit 2)
+- **Verified By**: Live certification (migration `0057` applied 2026-08-06) — a real rule deleted via `DELETE /banking-rules/[ruleId]`, confirmed `is_deleted=true` in the database (not hard-deleted), confirmed it no longer appears in the management list, confirmed its version history survives intact
+- **Verification Method**: Live
+- **Commit Hash**: `e2a4ea4`
 
 ### VR-012 — Banking Rule Conflict Detection did not exist anywhere in the codebase
 - **Description**: Confirmed via exhaustive search: no type, function, or even a stub existed for detecting two rules that could both match the same transaction with disagreeing actions — only unrelated marketing-copy mentions of the phrase. The Board's Phase 8 explicitly requires it.
 - **Priority**: Medium
-- **Status**: Complete (code) — pending live certification, blocked on migration `0057`
+- **Status**: Complete
 - **Version Target**: 1.0 (Pilot Round 1)
 - **Date Found**: 2026-08-05
 - **Date Fixed**: 2026-08-05
-- **Verified By**: Unit tests (10 cases covering overlap heuristics, action-agreement, active/inactive, pairwise counting); Live pending migration `0057`
-- **Verification Method**: Unit Test; Live pending
-- **Commit Hash**: Pending (Commit 2)
+- **Verified By**: Unit tests (10 cases) plus live certification (migration `0057` applied 2026-08-06) — two real overlapping rules created live, `GET /banking-rules/conflicts` correctly flagged them, and correctly stopped flagging them once one was deleted
+- **Verification Method**: Live + Unit Test
+- **Commit Hash**: `e2a4ea4`
+
+### VR-014 — `applyRuleActions` never populated `ae_allocation_history.new_status`, a NOT NULL column — breaking every successful automatic rule match
+- **Description**: Found live while certifying Phase 6's scan-and-apply flow, but pre-existing in already-shipped code, not introduced this round: the Rule Engine's own transaction-resolution path (`processTransaction` → `explorerRepo.applyRuleActions`) has never set `new_status` on its `ae_allocation_history` insert. Every time a rule successfully resolved a transaction with no separate supplier/customer match already in place (i.e. a genuine GL-only rule match — exactly what Phase 5/6's new inline-rule-creation flow produces), the insert violated the column's NOT NULL constraint and the whole operation threw. This is not limited to this round's new code: the pre-existing "Apply Rule" bulk action and "Run Rule Engine Now" button in Banking Rules share the exact same code path and were equally broken for this case — masked in every prior round of testing because those tests only ever exercised rules against transactions that already had a Matching-Engine-assigned supplier (a separate, working code path).
+- **Priority**: Critical — silently broke a core, pre-existing, heavily-relied-on feature (automatic rule resolution) for a whole class of real transactions
+- **Status**: Complete
+- **Version Target**: 1.0 (Pilot Round 1)
+- **Date Found**: 2026-08-06
+- **Date Fixed**: 2026-08-06
+- **Verified By**: Live certification — reproduced (a fresh, genuinely GL-only rule match threw exactly this constraint violation), fixed by populating `new_status` from the same `allocationStatus` value the function already computes and writes to `ae_bank_transactions`, re-verified live (scan-and-apply now correctly auto-allocates the rest of a statement)
+- **Verification Method**: Live
+- **Commit Hash**: Pending (this commit)
 
 ### VR-013 — Master Data Framework: Inventory, Departments/Projects/Branches/Cost Centres, and Fixed Assets had no edit-with-audit-trail capability
 - **Description**: Only Customer/Supplier (and, narrowly, a Bank Account's opening balance) had the edit/audit/permission framework. Inventory's `updateStockItem` existed at the repository/service layer but had zero UI and zero audit trail — the update path was dead code. Departments/Projects/Branches/Cost Centres could only be renamed never (create + Active/Inactive toggle only — not even a rename). Fixed Assets had no general edit path at all, only 5 narrow lifecycle actions.
@@ -104,4 +115,4 @@ Maintain strict separation between pilot rounds: a round is certified and frozen
 - **Date Fixed**: 2026-08-05
 - **Verified By**: Live certification — Bank Account (non-opening-balance fields), Stock Item (including the `Inventory:Approve`-gated `costPrice`), Department rename, and Fixed Asset (including the `Assets:Approve`-gated `usefulLifeMonths`) edits all confirmed live with real `permission_audit_log` rows for every changed field
 - **Verification Method**: Live
-- **Commit Hash**: Pending (Commit 2)
+- **Commit Hash**: `e2a4ea4`

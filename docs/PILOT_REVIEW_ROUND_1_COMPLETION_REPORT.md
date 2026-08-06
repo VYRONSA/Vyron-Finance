@@ -2,7 +2,7 @@
 
 Product Review Board directive: "Usability & Accounting Workflow Corrections," 10 phases, plus a subsequent "Scope Completion Directive" instructing every phase be implemented (Phases 4–9 were initially, and explicitly, deferred to a later round — the Board did not accept that scoping decision and required them completed within Round 1) and two Additional Requirements (a spreadsheet-style Opening Balances grid; full bank-opening-balance-to-GL correction).
 
-**This report now covers all 10 phases plus both Additional Requirements, fully implemented.** Everything is `tsc`/`eslint`/build clean and covered by the full automated test suite. Live verification is comprehensive but not 100% complete — one migration (`0057`) is still pending application to the live database, which blocks live certification of Banking Rule Delete and Conflict Detection specifically (Phases 8's two newest capabilities). Every other phase, including the rest of Phase 8, is live-verified. See §7 for the precise, honest breakdown of what live evidence exists for what.
+**This report now covers all 10 phases plus both Additional Requirements, fully implemented and fully live-verified.** Everything is `tsc`/`eslint`/build clean and covered by the full automated test suite. Migration `0057` has since been applied to the live database, and a dedicated Banking Rules certification pass (Phases 5–8) closed out the one remaining gap from the prior draft of this report — including a genuine, previously-unknown production defect (VR-014) found and fixed during that pass. See §7 for the full live-verification evidence.
 
 ## 1. Findings Implemented
 
@@ -99,7 +99,7 @@ Everything from the original Phase 1–3 pass (`opening-balances`, `customers`, 
 ## 5. Database Changes
 
 - **`0056_company_owner_role_bootstrap.sql`** (live) — see VR-002; the bootstrap RPC for a company's first role assignment.
-- **`0057_banking_rule_delete.sql`** (written, **not yet applied**) — adds `banking_rules.is_deleted boolean not null default false` and a partial index; every Banking Rules read path (`listBankingRules`, `listActiveBankingRules`, `getBankingRule`) now filters on it. **This is the one remaining live-database dependency** — see §7.
+- **`0057_banking_rule_delete.sql`** (live) — adds `banking_rules.is_deleted boolean not null default false` and a partial index; every Banking Rules read path (`listBankingRules`, `listActiveBankingRules`, `getBankingRule`) now filters on it.
 
 No existing migration was edited. `0055` (Opening Balances) remains live and unchanged in shape.
 
@@ -114,6 +114,8 @@ No existing migration was edited. `0055` (Opening Balances) remains live and unc
 
 Not covered by new automated tests, disclosed rather than omitted: the correcting-journal logic (`correctPostedBankOpeningBalanceIfNeeded`) and the bulk opening-balances upsert reconciliation logic (`bulkUpsertGlOpeningBalances`) are exercised live (§7) but have no dedicated unit tests of their own yet — both are real candidates for a focused testing follow-up given their accounting-correctness stakes.
 
+**VR-014 fix** (`applyRuleActions` populating `ae_allocation_history.new_status`) was found and fixed during the Banking Rules live-certification pass (§7), not during this section's original test-writing work. It has no new dedicated unit test — the bug was a missing field on an existing insert, caught live, and the fix is exercised by the existing live-verification evidence for Phase 5/6's scan-and-apply flow. A regression unit test for `applyRuleActions` covering the "no prior supplier/customer match" case is a reasonable follow-up, disclosed here rather than silently added after the fact.
+
 ## 7. Live Verification — precisely what has real evidence, and what doesn't yet
 
 Every check below is a real HTTP request against the running app plus a real database query confirming the result — not inferred from code reading. Two fresh throwaway companies were created and fully cleaned up afterward (traced deletion, zero orphans confirmed).
@@ -126,22 +128,27 @@ Every check below is a real HTTP request against the running app plus a real dat
 - **Master Data edits (Phase 10)**: Bank Account non-opening-balance edit (audited), Department rename (previously impossible — audited), Stock Item non-sensitive and `costPrice`-elevated edits (both audited), Fixed Asset non-elevated and `usefulLifeMonths`-elevated edits (both audited) — every case confirmed via a real `permission_audit_log` row per changed field.
 - **Regression**: Customer/Supplier/Bank Account editing from the original Phase 1–3 pass reconfirmed still working.
 
-**Two real, previously-unknown bugs were found live and fixed during this pass** (see the Pilot Issue Register for full detail):
+**Three real, previously-unknown bugs were found live and fixed during this pass** (see the Pilot Issue Register for full detail):
 - **VR-009** — a brand new company had zero Financial Years, so it could post Opening Balances but not a single Cashbook or Journal entry until someone manually created one via Settings. Fixed by seeding the current financial year on company creation.
 - **VR-010** — the PDF upload 500'd on the very first live test; `pdf-parse`'s Node worker setup is incompatible with Next.js's server bundler by default. Fixed via pdfjs-dist's own documented workaround.
+- **VR-014** — found during the Banking Rules certification pass below: `applyRuleActions` never populated `ae_allocation_history.new_status` (a NOT NULL column) for a genuine GL-only rule match (no prior supplier/customer match already in place). This silently broke automatic rule resolution for that case in already-shipped code, not just this round's new flows — masked in every prior round of testing. Fixed by populating `new_status` from the same `allocationStatus` value the function already computes.
 
-**Not live-verified this round — blocked on migration `0057`:**
-- Banking Rule Delete and Conflict Detection (Phase 8's two new capabilities) cannot be exercised live until `banking_rules.is_deleted` exists — confirmed live: every Banking Rules read currently errors with "column does not exist" without it. Both are `tsc`/`eslint`/build-clean and covered by unit tests (Conflict Detection) or straightforward CRUD (Delete), but genuinely not live-confirmed.
-- Phases 5, 6, and 7 (inline rule creation, scan-and-apply, the repeated-allocation prompt) share the same `listBankingRules`/`listActiveBankingRules` read path, so they are **also** blocked live by the same migration, even though their own code doesn't touch `is_deleted` directly.
-- The bank-opening-balance-correcting-journal path (VR-008) is code-complete and indirectly exercised (a bank opening-balance edit was live-tested, just not specifically on an *already-posted* balance) — a dedicated live test of that exact sequence (post via the grid, then amend, then confirm a second correcting journal appears) was not run this round.
+**Banking Rules certification (Phases 5–8), live, migration `0057` applied — 22/22 checks passing:**
+- **Phase 5 + 6 (inline rule creation + scan-and-apply)**: a real Banking Rule created via the inline "Create Banking Rule" checkbox during allocation; with "Apply to Remaining Transactions" checked, every other still-Unallocated transaction in the same import batch was scanned and correctly auto-allocated (confirmed a specific transaction, A2, was auto-allocated and highlighted) — reproduced the VR-014 defect in the process, fixed it, and re-ran to confirm the scan-and-apply flow now completes cleanly end to end.
+- **Phase 7 (repeated-allocation intelligence)**: four transactions with the same beneficiary manually allocated to the same target; the repeated-allocation check correctly returned `count=3` (excludes the transaction being checked) and `suggestRule=true` at the existing 3+ threshold.
+- **Phase 8 (rule management)**: rule listing post-migration, Edit, Disable, Enable, Test Rule, and Simulate Rule all confirmed live. Conflict Detection confirmed live end to end: two real overlapping rules created, `GET /banking-rules/conflicts` correctly flagged them, then correctly stopped flagging them once one was deleted. Delete confirmed live: a real rule deleted via `DELETE /banking-rules/[ruleId]`, `is_deleted=true` confirmed in the database (not hard-deleted), the rule no longer appears in the management list, and its version history survives intact.
+- All test data (companies, bank accounts, transactions, rules) created for this pass was fully cleaned up afterward — traced deletion, zero orphans confirmed.
+
+**Disclosed, not blocking certification:**
+- The bank-opening-balance-correcting-journal path (VR-008) is code-complete and indirectly exercised (a bank opening-balance edit was live-tested, just not specifically on an *already-posted* balance) — a dedicated live test of that exact sequence (post via the grid, then amend, then confirm a second correcting journal appears) was not run this round. Carried forward as a recommendation, §8.
 
 ## 8. Remaining Recommendations
 
-1. **Apply migration `0057`**, then live-verify Banking Rule Delete, Conflict Detection, and Phases 5–7 (all currently blocked live by it, per §7).
-2. **Live-verify VR-008's correcting-journal path specifically** (post a bank opening balance, amend it, confirm a second balanced journal against Suspense) — code-complete, indirectly exercised, but not directly confirmed.
-3. **Add unit tests** for `correctPostedBankOpeningBalanceIfNeeded` and `bulkUpsertGlOpeningBalances`, per §6.
-4. **Reconcile the `postApprovedJournals` vs. Cashbook posting-date-validation inconsistency** disclosed under VR-009 — Opening Balances can post to any date with no financial-year check, while Cashbook/Journal postings correctly require one. Worth a deliberate decision on whether Opening Balances should be checked too, not silently left inconsistent.
-5. **A future round** should build "Restore Previous Version" now that `permission_audit_log` has complete field-level history across every module (see Phase 10's own note on why this wasn't rushed now).
+1. **Live-verify VR-008's correcting-journal path specifically** (post a bank opening balance, amend it, confirm a second balanced journal against Suspense) — code-complete, indirectly exercised, but not directly confirmed.
+2. **Add unit tests** for `correctPostedBankOpeningBalanceIfNeeded`, `bulkUpsertGlOpeningBalances`, and a regression case for VR-014 (`applyRuleActions` with no prior supplier/customer match), per §6.
+3. **Reconcile the `postApprovedJournals` vs. Cashbook posting-date-validation inconsistency** disclosed under VR-009 — Opening Balances can post to any date with no financial-year check, while Cashbook/Journal postings correctly require one. Worth a deliberate decision on whether Opening Balances should be checked too, not silently left inconsistent.
+4. **A future round** should build "Restore Previous Version" now that `permission_audit_log` has complete field-level history across every module (see Phase 10's own note on why this wasn't rushed now).
+5. **Audit the pre-existing "Apply Rule" bulk action and "Run Rule Engine Now" button** for any other transactions that may have silently failed to resolve prior to the VR-014 fix — the defect predates this round and shared the same code path.
 6. Everything from the original Phase 1–3 report's own recommendations (the `status !== 'onboarding'` go-live proxy, the `requireApproval`-as-supervisor-authentication interpretation) still stands, unchanged this round.
 
 ## 9. Verification Summary
@@ -152,6 +159,6 @@ Every check below is a real HTTP request against the running app plus a real dat
 | `npx eslint .` | 0 errors (2 pre-existing warnings, unrelated files) |
 | `npx vitest run` | 1197/1197 tests, zero regressions |
 | `npm run build` | Exit 0, zero prerender errors |
-| Live verification | Company onboarding, Opening Balances grid, Cashbook batch capture, PDF detection, and Master Data edits across 5 modules all confirmed live (§7); Banking Rules Phases 5–8 code-complete but blocked live on migration `0057` |
+| Live verification | Company onboarding, Opening Balances grid, Cashbook batch capture, PDF detection, Master Data edits across 5 modules, and Banking Rules Phases 5–8 (22/22 checks) all confirmed live (§7) |
 
 See `docs/PILOT_ISSUE_REGISTER.md` for the full VR-numbered finding-by-finding record with dates, verification method, and status per item.
