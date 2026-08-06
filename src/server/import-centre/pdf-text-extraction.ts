@@ -57,11 +57,29 @@ declare global {
   var pdfjsWorker: { WorkerMessageHandler: unknown } | undefined;
 }
 
+// Both deep pdfjs-dist paths are imported via a NON-LITERAL specifier
+// (built at runtime, not written as a plain string) — confirmed
+// necessary live, in production, on Vercel specifically: Turbopack's
+// own bundling of a plain `import("pdfjs-dist/legacy/build/pdf.mjs")`
+// literal crashes at module-evaluation time with "DOMMatrix is not
+// defined" (a THIRD distinct failure mode this round, after the same
+// crash via its "externalImport"/"externalRequire" mechanisms for
+// `serverExternalPackages`-listed packages) — even though this exact
+// file imports cleanly, with no error, in plain Node, and even though
+// merely BUILDING that non-literal specifier at runtime from two
+// concatenated strings is enough to make Turbopack skip its own
+// static analysis/transformation of the import entirely, falling
+// through to a genuine Node `import()` at runtime — which works, has
+// been directly confirmed live against the deployed API.
+function pdfjsPath(...segments: string[]): string {
+  return ["pdfjs-dist", ...segments].join("/");
+}
+
 let workerReady: Promise<void> | null = null;
 
 function ensurePdfjsWorker(): Promise<void> {
   if (!workerReady) {
-    workerReady = import("pdfjs-dist/legacy/build/pdf.worker.mjs").then(({ WorkerMessageHandler }) => {
+    workerReady = import(/* webpackIgnore: true */ pdfjsPath("legacy", "build", "pdf.worker.mjs")).then(({ WorkerMessageHandler }) => {
       globalThis.pdfjsWorker = { WorkerMessageHandler };
     });
   }
@@ -144,7 +162,12 @@ function joinPageText(items: PdfjsTextItem[], viewport: PdfjsViewport): string {
 
 export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   await ensurePdfjsWorker();
-  const { getDocument, VerbosityLevel } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  // Typed against the real module via `import type` (erased at compile
+  // time, so it can safely reference the literal path) — the runtime
+  // `import()` itself must stay non-literal; see `pdfjsPath`'s docstring.
+  const { getDocument, VerbosityLevel } = (await import(
+    /* webpackIgnore: true */ pdfjsPath("legacy", "build", "pdf.mjs")
+  )) as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
   // `getDocument` detaches the underlying `ArrayBuffer` it's handed (its
   // fake-worker transfer simulation) — real, confirmed bug: this
