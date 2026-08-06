@@ -18,18 +18,41 @@
  * fake-worker loader checks `globalThis.pdfjsWorker.WorkerMessageHandler`
  * FIRST and skips the dynamic import entirely when it's already set —
  * this is pdfjs-dist's own documented escape hatch for exactly this
- * bundler problem. Importing the worker module normally (a static
- * import, which Next bundles like any other dependency) and assigning
- * it here fixes this without any Next.js config changes.
+ * bundler problem. Importing the worker module and assigning it here
+ * fixes this.
+ *
+ * Both `pdf-parse` and `pdfjs-dist` are imported lazily, inside
+ * `ensurePdfjsWorker`/`extractPdfText` themselves, never at this
+ * module's own top level — found live (production build only; local
+ * `next dev` never reproduced it) that a static top-level import here
+ * pulled `pdf-parse`'s **browser** build (14 unguarded top-level
+ * `DOMMatrix` references — confirmed by inspecting the built output;
+ * its Node "import"/"require" conditions have none) into the module
+ * graph of any page that merely imports this file transitively, e.g.
+ * the Company Dashboard via `import-service.ts`'s `listRecentImports` —
+ * crashing SSR with "DOMMatrix is not defined" on a page that never
+ * calls PDF parsing at all. Fixed two ways, deliberately redundant: (1)
+ * `next.config.ts`'s `serverExternalPackages` opts both packages out of
+ * Next's Server Components bundling so they resolve via native Node
+ * `require()` (which correctly picks the Node-safe conditions, not
+ * "browser"); (2) lazy import here means neither package is ever
+ * touched — bundled or not — unless a real PDF import request actually
+ * calls `extractPdfText`.
  */
-import { PDFParse } from "pdf-parse";
-import { WorkerMessageHandler } from "pdfjs-dist/legacy/build/pdf.worker.mjs";
-
 declare global {
-  var pdfjsWorker: { WorkerMessageHandler: typeof WorkerMessageHandler } | undefined;
+  var pdfjsWorker: { WorkerMessageHandler: unknown } | undefined;
 }
 
-globalThis.pdfjsWorker = { WorkerMessageHandler };
+let workerReady: Promise<void> | null = null;
+
+function ensurePdfjsWorker(): Promise<void> {
+  if (!workerReady) {
+    workerReady = import("pdfjs-dist/legacy/build/pdf.worker.mjs").then(({ WorkerMessageHandler }) => {
+      globalThis.pdfjsWorker = { WorkerMessageHandler };
+    });
+  }
+  return workerReady;
+}
 
 /**
  * PDF Bank Statement Import — Product Review Board's Final Outstanding
@@ -49,6 +72,8 @@ export class PdfExtractionError extends Error {
 const MIN_EXTRACTABLE_TEXT_LENGTH = 20;
 
 export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+  await ensurePdfjsWorker();
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: Buffer.from(buffer) });
   let result: { text: string };
   try {
