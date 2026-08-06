@@ -14,7 +14,8 @@
  * (see `pdfNotYetImplemented` below) rather than guessing at column
  * positions with no ground truth to check against. What IS real here:
  * detecting WHICH of the 10 banks produced a given PDF, via genuine text
- * extraction (`pdf-parse`) and literal bank-name matching against the
+ * extraction (`pdf-text-extraction.ts`, calling `pdfjs-dist` directly)
+ * and literal bank-name matching against the
  * statement's own letterhead text (`contentMarkers`, `resolvePdfBankAdapter`)
  * — filename alone can't identify a bank (unlike CSV/XLSX/OFX/QIF, whose
  * extension IS the whole match), so PDF adapters always report
