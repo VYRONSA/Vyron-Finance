@@ -28,14 +28,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
     const outcome = await confirmPdfBankStatementImport(companyId, input, importedBy);
     return NextResponse.json(outcome, { status: 201 });
   } catch (error) {
+    // See preview/route.ts's own note — same "specific message for a
+    // real PDF/data problem, safe generic message logged-not-leaked for
+    // anything unexpected" split.
     if (error instanceof ValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    // TEMP-DIAGNOSTIC: see preview/route.ts's own note.
     console.error("PDF confirm failed unexpectedly:", error);
-    const message = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : undefined;
-    const name = error instanceof Error ? error.name : undefined;
-    return NextResponse.json({ error: `Unexpected error: ${message}`, name, stack }, { status: 500 });
+    return NextResponse.json({ error: "Something went wrong while completing this import. Please try again, or contact support if the problem continues." }, { status: 500 });
   }
 }

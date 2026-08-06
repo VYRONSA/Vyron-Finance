@@ -26,16 +26,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
     const preview = await previewPdfBankStatement(companyId, file);
     return NextResponse.json(preview, { status: 200 });
   } catch (error) {
+    // Every anticipated "this PDF has a real problem" case — password
+    // protected, scanned image, corrupted, unrecognised bank/layout —
+    // is already a `ValidationError` by the time it reaches here (see
+    // `previewPdfBankStatement`/`extractPdfText`), so it gets its own
+    // specific message and a 400, never a bare 500. Anything else here
+    // is a genuine, unexpected server fault: logged in full server-side
+    // (captured in Vercel's function logs) but never echoed back to the
+    // client, which only ever sees a safe, generic message — no "Request
+    // failed" with nothing else, and no internals leaked either.
     if (error instanceof ValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    // TEMP-DIAGNOSTIC: capturing the real production error directly in
-    // the response — no Vercel dashboard log access available this
-    // round. Reverted to a safe, generic message once root-caused.
     console.error("PDF preview failed unexpectedly:", error);
-    const message = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : undefined;
-    const name = error instanceof Error ? error.name : undefined;
-    return NextResponse.json({ error: `Unexpected error: ${message}`, name, stack }, { status: 500 });
+    return NextResponse.json({ error: "Something went wrong while processing this PDF. Please try again, or contact support if the problem continues." }, { status: 500 });
   }
 }
