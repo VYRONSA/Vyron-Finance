@@ -21,7 +21,7 @@
  * bundler problem. Importing the worker module and assigning it here
  * fixes this.
  *
- * Both `pdf-parse` and `pdfjs-dist` are imported lazily, inside
+ * Both `pdf-parse` and `pdfjs-dist` are loaded lazily, inside
  * `ensurePdfjsWorker`/`extractPdfText` themselves, never at this
  * module's own top level — found live (production build only; local
  * `next dev` never reproduced it) that a static top-level import here
@@ -31,14 +31,30 @@
  * graph of any page that merely imports this file transitively, e.g.
  * the Company Dashboard via `import-service.ts`'s `listRecentImports` —
  * crashing SSR with "DOMMatrix is not defined" on a page that never
- * calls PDF parsing at all. Fixed two ways, deliberately redundant: (1)
- * `next.config.ts`'s `serverExternalPackages` opts both packages out of
- * Next's Server Components bundling so they resolve via native Node
- * `require()` (which correctly picks the Node-safe conditions, not
- * "browser"); (2) lazy import here means neither package is ever
- * touched — bundled or not — unless a real PDF import request actually
- * calls `extractPdfText`.
+ * calls PDF parsing at all.
+ *
+ * `pdf-parse` is loaded via `require()` (through `createRequire`), not
+ * `import()` — a second, real defect confirmed live in production even
+ * after the lazy-loading fix above and `next.config.ts`'s
+ * `serverExternalPackages`: Turbopack's own runtime loader for
+ * externalized packages (its "externalImport" mechanism) resolved
+ * `import("pdf-parse")` to the same unsafe browser-condition build
+ * again at actual request time on Vercel, even though the identical
+ * code path worked correctly against a local production build
+ * (`next build && next start`) — an environment-specific difference in
+ * how that mechanism picks package.json export conditions for a
+ * dynamic ESM import specifically. `pdf-parse`'s own CommonJS/"require"
+ * condition build is independently confirmed safe (its one `DOMMatrix`
+ * reference sits inside a static method body, never evaluated at
+ * load time), and Node's plain CJS `require()` resolution is simpler,
+ * well-defined, and — verified directly — reliably picks that build.
+ * `pdfjs-dist`'s worker module stays a dynamic `import()`: it's a real
+ * `.mjs` file, which Node's `require()` cannot load at all
+ * (`ERR_REQUIRE_ESM`), and its own load was never implicated in the
+ * production failure (the error named only `pdf-parse`).
  */
+import { createRequire } from "node:module";
+
 declare global {
   var pdfjsWorker: { WorkerMessageHandler: unknown } | undefined;
 }
@@ -52,6 +68,18 @@ function ensurePdfjsWorker(): Promise<void> {
     });
   }
   return workerReady;
+}
+
+let pdfParseModule: { PDFParse: typeof import("pdf-parse").PDFParse } | null = null;
+
+function loadPdfParse(): { PDFParse: typeof import("pdf-parse").PDFParse } {
+  if (!pdfParseModule) {
+    const require = createRequire(import.meta.url);
+    const loaded = require("pdf-parse") as { PDFParse: typeof import("pdf-parse").PDFParse };
+    pdfParseModule = loaded;
+    return loaded;
+  }
+  return pdfParseModule;
 }
 
 /**
@@ -73,7 +101,7 @@ const MIN_EXTRACTABLE_TEXT_LENGTH = 20;
 
 export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   await ensurePdfjsWorker();
-  const { PDFParse } = await import("pdf-parse");
+  const { PDFParse } = loadPdfParse();
   const parser = new PDFParse({ data: Buffer.from(buffer) });
   let result: { text: string };
   try {
