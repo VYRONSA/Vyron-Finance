@@ -46,6 +46,23 @@ describe("reconcileStatementBalances", () => {
     expect(result.delta).toBe(-100);
   });
 
+  it("defaults to the asset-account formula (credit adds, debit subtracts) when balancePolarity is absent", () => {
+    const metadata = { ...NULL_STATEMENT_METADATA, openingBalance: 1000, closingBalance: 1300, balancePolarity: undefined };
+    const result = reconcileStatementBalances(metadata, [txn({ credit: 500 }), txn({ debit: 200 })]);
+    expect(result.expectedClosingBalance).toBe(1300);
+  });
+
+  it("uses the liability-account formula (debit adds, credit subtracts) for balancePolarity: 'liability' — Final Certification round, VR real defect", () => {
+    // A credit card: opening balance owed 1000, a 500 purchase (debit,
+    // increases what's owed), a 200 payment (credit, reduces it) ->
+    // closing owed should be 1300, not 700 (what the asset formula
+    // would wrongly compute).
+    const metadata = { ...NULL_STATEMENT_METADATA, openingBalance: 1000, closingBalance: 1300, balancePolarity: "liability" as const };
+    const result = reconcileStatementBalances(metadata, [txn({ debit: 500 }), txn({ credit: 200 })]);
+    expect(result.expectedClosingBalance).toBe(1300);
+    expect(result.reconciles).toBe(true);
+  });
+
   it("tolerates sub-cent rounding noise", () => {
     const metadata = { ...NULL_STATEMENT_METADATA, openingBalance: 100, closingBalance: 100.005 };
     const result = reconcileStatementBalances(metadata, []);
@@ -61,6 +78,11 @@ describe("validateRunningBalances", () => {
   it("returns no issues when every row's stated balance matches the running total", () => {
     const transactions = [txn({ credit: 500, balance: 1500, rowNumber: 1 }), txn({ debit: 200, balance: 1300, rowNumber: 2 })];
     expect(validateRunningBalances(1000, transactions)).toEqual([]);
+  });
+
+  it("carries a running balance in the liability direction (debit adds, credit subtracts) for balancePolarity: 'liability'", () => {
+    const transactions = [txn({ debit: 500, balance: 1500, rowNumber: 1 }), txn({ credit: 200, balance: 1300, rowNumber: 2 })];
+    expect(validateRunningBalances(1000, transactions, "liability")).toEqual([]);
   });
 
   it("flags a row whose stated balance disagrees with the running total", () => {

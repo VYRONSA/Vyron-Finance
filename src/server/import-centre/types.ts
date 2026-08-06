@@ -109,6 +109,16 @@ export type BankStatementMetadata = {
   interestSummary: string | null;
   vat: number | null;
   fees: number | null;
+  /** Final Certification round — confirmed as a real, generalisable
+   * defect once the FNB Business Credit Card statement was reconciled:
+   * `reconcileStatementBalances` previously assumed every statement is
+   * an asset (a credit row always increases the tracked value, a debit
+   * always decreases it) — correct for a bank/cheque account, wrong for
+   * a credit-card liability, where a debit (a new charge) increases
+   * what's owed and a credit (a payment) decreases it. `null`/absent is
+   * treated as `"asset"` for backward compatibility with every existing
+   * bank-account-style parser. */
+  balancePolarity?: "asset" | "liability" | null;
 };
 
 export const NULL_STATEMENT_METADATA: BankStatementMetadata = {

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkFnbCreditCardReconciliation,
   extractFnbCreditCardMetadata,
   extractFnbCreditCardTransactions,
   extractFnbCreditCardTurnoverSummary,
 } from "./fnb-credit-card-statement-parser";
+import { NULL_STATEMENT_METADATA, type ParsedBankTransaction } from "../types";
 
 // Real content extracted (via this app's own `extractPdfText`) from the
 // Product Review Board's supplied real FNB Business Credit Card sample —
@@ -77,6 +79,53 @@ describe("extractFnbCreditCardMetadata", () => {
   it("never prints a statement period on this statement type, so leaves it null rather than guessing", () => {
     expect(metadata.statementPeriodStart).toBeNull();
     expect(metadata.statementPeriodEnd).toBeNull();
+  });
+
+  it("marks the balance polarity as 'liability' — a credit card, not a bank account (Final Certification round, real defect fix)", () => {
+    expect(metadata.balancePolarity).toBe("liability");
+  });
+});
+
+describe("checkFnbCreditCardReconciliation", () => {
+  it("returns null when the statement has no opening/closing balance", () => {
+    expect(checkFnbCreditCardReconciliation(NULL_STATEMENT_METADATA, [])).toBeNull();
+  });
+
+  it("demonstrates the exact real-statement reconciliation: opening + debits - credits + the segregated Credit Balance = closing", () => {
+    // The real figures from the actual FNB Business Credit Card
+    // statement (Final Certification round) — see this module's own
+    // docstring for the full evidence (the R336.48 figure independently
+    // printed twice on the real document).
+    const metadata = {
+      ...NULL_STATEMENT_METADATA,
+      openingBalance: 35413.88,
+      closingBalance: 35479.56,
+      availableBalance: 336.48,
+      balancePolarity: "liability" as const,
+    };
+    const transactions: ParsedBankTransaction[] = [
+      { transactionDate: "2025-04-01", reference: "", description: "debits", beneficiary: "", debit: 110243.08, credit: 0, balance: null, bankAccount: "8812710012806001", vat: null, glAccount: "", notes: "", sourceFilename: "s.pdf", importBatch: "B1", rowNumber: 1 },
+      { transactionDate: "2025-04-01", reference: "", description: "credits", beneficiary: "", debit: 0, credit: 110513.88, balance: null, bankAccount: "8812710012806001", vat: null, glAccount: "", notes: "", sourceFilename: "s.pdf", importBatch: "B1", rowNumber: 2 },
+    ];
+    const check = checkFnbCreditCardReconciliation(metadata, transactions)!;
+    expect(check.liabilityFormulaResult).toBeCloseTo(35143.08, 2);
+    expect(check.explainedByUnnettedCardholderCredit).toBe(true);
+    expect(check.fullyExplainedResult).toBeCloseTo(35479.56, 2);
+  });
+
+  it("does not claim an explanation when the residual doesn't actually match the segregated credit balance", () => {
+    const metadata = {
+      ...NULL_STATEMENT_METADATA,
+      openingBalance: 1000,
+      closingBalance: 1900, // a genuine unexplained gap, not 336.48-shaped
+      availableBalance: 50,
+      balancePolarity: "liability" as const,
+    };
+    const transactions: ParsedBankTransaction[] = [
+      { transactionDate: "2025-04-01", reference: "", description: "debit", beneficiary: "", debit: 500, credit: 0, balance: null, bankAccount: "x", vat: null, glAccount: "", notes: "", sourceFilename: "s.pdf", importBatch: "B1", rowNumber: 1 },
+    ];
+    const check = checkFnbCreditCardReconciliation(metadata, transactions)!;
+    expect(check.explainedByUnnettedCardholderCredit).toBe(false);
   });
 });
 

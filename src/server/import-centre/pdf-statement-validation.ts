@@ -23,15 +23,26 @@ export type BalanceReconciliationResult = {
   delta: number | null;
 };
 
-/** openingBalance + sum(credits) - sum(debits) should equal
- * closingBalance, within rounding tolerance. */
+/** For an **asset** statement (a bank/cheque account — the default,
+ * matching every parser before the Final Certification round): opening
+ * + credits - debits should equal closing, since a credit (money in)
+ * increases the tracked value.
+ *
+ * For a **liability** statement (a credit card — VR-018/VR-019's real
+ * certification round confirmed this was previously wrong, applied
+ * unconditionally): opening + debits - credits should equal closing,
+ * since a debit (a new charge) increases what's owed and a credit (a
+ * payment) decreases it — the opposite polarity. */
 export function reconcileStatementBalances(metadata: BankStatementMetadata, transactions: ParsedBankTransaction[]): BalanceReconciliationResult {
   if (metadata.openingBalance === null || metadata.closingBalance === null) {
     return { reconciles: null, expectedClosingBalance: null, delta: null };
   }
   const totalCredits = transactions.reduce((sum, t) => sum + t.credit, 0);
   const totalDebits = transactions.reduce((sum, t) => sum + t.debit, 0);
-  const expectedClosingBalance = metadata.openingBalance + totalCredits - totalDebits;
+  const expectedClosingBalance =
+    metadata.balancePolarity === "liability"
+      ? metadata.openingBalance + totalDebits - totalCredits
+      : metadata.openingBalance + totalCredits - totalDebits;
   const delta = Math.round((expectedClosingBalance - metadata.closingBalance) * 100) / 100;
   return { reconciles: Math.abs(delta) <= ROUNDING_TOLERANCE, expectedClosingBalance, delta };
 }
@@ -42,12 +53,13 @@ export type RunningBalanceIssue = { rowNumber: number; expectedBalance: number; 
  * `openingBalance`, and flags any row whose own stated `balance` doesn't
  * match what the running total says it should be. Rows with no stated
  * balance are skipped (nothing to check), not flagged. */
-export function validateRunningBalances(openingBalance: number | null, transactions: ParsedBankTransaction[]): RunningBalanceIssue[] {
+export function validateRunningBalances(openingBalance: number | null, transactions: ParsedBankTransaction[], balancePolarity?: "asset" | "liability" | null): RunningBalanceIssue[] {
   if (openingBalance === null) return [];
   const issues: RunningBalanceIssue[] = [];
+  const sign = balancePolarity === "liability" ? -1 : 1;
   let running = openingBalance;
   for (const txn of transactions) {
-    running = Math.round((running + txn.credit - txn.debit) * 100) / 100;
+    running = Math.round((running + sign * (txn.credit - txn.debit)) * 100) / 100;
     if (txn.balance !== null) {
       const delta = Math.round((running - txn.balance) * 100) / 100;
       if (Math.abs(delta) > ROUNDING_TOLERANCE) {
@@ -123,7 +135,7 @@ export type StatementValidationResult = {
 export function validateStatement(metadata: BankStatementMetadata, transactions: ParsedBankTransaction[], expectedTransactionCount: number | null = null): StatementValidationResult {
   return {
     balanceReconciliation: reconcileStatementBalances(metadata, transactions),
-    runningBalanceIssues: validateRunningBalances(metadata.openingBalance, transactions),
+    runningBalanceIssues: validateRunningBalances(metadata.openingBalance, transactions, metadata.balancePolarity),
     transactionCount: validateTransactionCount(expectedTransactionCount, transactions),
     invalidValueIssues: validateTransactionValues(transactions),
   };

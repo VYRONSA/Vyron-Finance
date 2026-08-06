@@ -10,6 +10,7 @@ import { decodeCsvBuffer } from "@/server/import-centre/csv-utils";
 import { resolveBankStatementAdapter, resolvePdfBankAdapter, SUPPORTED_EXTENSIONS, type PdfBankDetection } from "@/server/import-centre/bank-statement-adapter-registry";
 import { extractPdfText, PdfExtractionError } from "@/server/import-centre/pdf-text-extraction";
 import { validateStatement, type StatementValidationResult } from "@/server/import-centre/pdf-statement-validation";
+import { checkFnbCreditCardReconciliation, type FnbCreditCardReconciliationCheck } from "@/server/import-centre/parsers/fnb-credit-card-statement-parser";
 import { NULL_STATEMENT_METADATA, type BankStatementMetadata, type BankStatementParseResult, type ImportExceptionRecord, type ParsedBankTransaction } from "@/server/import-centre/types";
 import * as importRepo from "@/server/repositories/import-repository";
 import * as supplierRepo from "@/server/repositories/supplier-reconciliation-repository";
@@ -213,6 +214,11 @@ export type PdfStatementPreview = {
    * same "missing transactions" check can be re-run against whatever
    * the user ends up confirming. */
   expectedTransactionCount: number | null;
+  /** FNB Business Credit Card only (`bankId: "fnb-credit-card-pdf"`) —
+   * see `checkFnbCreditCardReconciliation`'s own docstring. `null` for
+   * every other bank/statement type, or when this statement's own
+   * reconciliation genuinely doesn't match the explained shape. */
+  reconciliationExplanation: FnbCreditCardReconciliationCheck | null;
 };
 
 /** Step 1 of PDF Bank Statement Import's review flow — the Board's own
@@ -264,6 +270,11 @@ export async function previewPdfBankStatement(companyId: string, file: File): Pr
     }
   }
 
+  const reconciliationExplanation =
+    detection.adapter.id === "fnb-credit-card-pdf" && validation.balanceReconciliation.reconciles === false
+      ? checkFnbCreditCardReconciliation(metadata, parseResult.transactions)
+      : null;
+
   return {
     batchId,
     sourceFilename: file.name,
@@ -279,6 +290,7 @@ export async function previewPdfBankStatement(companyId: string, file: File): Pr
     validation,
     duplicateOfBatch,
     expectedTransactionCount,
+    reconciliationExplanation,
   };
 }
 

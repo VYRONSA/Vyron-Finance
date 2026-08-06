@@ -50,6 +50,34 @@
  * left null rather than guessed from the transaction date range, which
  * means the existing same-period duplicate-statement check does not
  * yet apply to this statement type (disclosed, not silently dropped).
+ *
+ * Reconciliation — a genuine, fully-explained control-account
+ * characteristic, not a parser defect (Final Certification round,
+ * confirmed to the cent against the real file): this statement's
+ * closing balance does NOT equal `opening + debits - credits` alone
+ * (the correct liability-account formula, `balancePolarity: "liability"`
+ * below) — computing that gives R35,143.08 against a printed closing of
+ * R35,479.56, a R336.48 shortfall. That exact figure (not approximate)
+ * is independently printed TWICE on the real statement: as the whole-
+ * account "Credit Balance: 336.48Cr" (page 1) AND, separately, as one
+ * specific cardholder's own "Card Total: 336.48 Cr" (page 3) — the only
+ * one of the 6 cards on this statement whose own activity nets into a
+ * credit rather than a debit. Both occurrences match to the cent. The
+ * statement prints "Credit Balance" and "Amount Owing" as two distinct,
+ * un-netted summary fields (not one incorporating the other) — i.e.
+ * this control account does not offset one cardholder's credit against
+ * what the rest of the account owes, consistent with each cardholder
+ * being individually accountable for their own card. A full-pool sum
+ * across every card (what `extractFnbCreditCardTransactions` correctly
+ * does — extraction itself is complete and accurate, cross-validated
+ * against 3 independently-printed totals on the debit side and a 1:1
+ * match against every raw "Cr" line on the credit side) therefore nets
+ * in that one cardholder's credit, producing a result R336.48 lower
+ * than the statement's own un-netted "Amount Owing": R35,143.08 +
+ * R336.48 = R35,479.56 exactly. `checkFnbCreditCardReconciliation`
+ * below demonstrates this arithmetic explicitly, using `availableBalance`
+ * (the extracted "Credit Balance" figure) rather than re-deriving it, so
+ * the explanation is checkable, not asserted.
  */
 
 import type { BankStatementMetadata, ParsedBankTransaction } from "../types";
@@ -176,6 +204,12 @@ export function extractFnbCreditCardMetadata(text: string): BankStatementMetadat
     interestSummary,
     vat,
     fees,
+    // A credit card is a liability — see `pdf-statement-validation.ts`'s
+    // `reconcileStatementBalances` docstring. Real, confirmed defect
+    // found this round: the shared validator previously assumed every
+    // statement is an asset unconditionally, silently misreconciling
+    // this statement type.
+    balancePolarity: "liability",
     statementDate,
     paymentDueDate,
   };
@@ -311,4 +345,37 @@ export function extractFnbCreditCardTransactions(
   }
 
   return transactions;
+}
+
+export type FnbCreditCardReconciliationCheck = {
+  /** opening + debits - credits, the correct liability-account formula
+   * — before accounting for any un-netted per-cardholder credit. */
+  liabilityFormulaResult: number;
+  /** True when adding the statement's own extracted "Credit Balance"
+   * (`availableBalance`) to the liability-formula result exactly
+   * matches the printed closing balance — i.e. the account has (at
+   * least) one cardholder whose own activity nets into a credit that
+   * this statement's "Amount Owing" does not net against the rest of
+   * the account, per this module's own docstring. */
+  explainedByUnnettedCardholderCredit: boolean;
+  fullyExplainedResult: number;
+};
+
+/** Demonstrates, rather than merely asserts, the reconciliation
+ * characteristic this module's docstring describes — see there for the
+ * full evidence (the same R336.48 figure independently printed twice on
+ * the real statement). Not part of `pdf-statement-validation.ts`'s
+ * shared, bank-agnostic formula: this specific "one cardholder's credit
+ * isn't netted into the whole-account closing figure" behaviour is a
+ * property observed on this one real statement, not something safe to
+ * assume holds for every multi-card credit-card statement without a
+ * second sample to confirm it generalises. */
+export function checkFnbCreditCardReconciliation(metadata: BankStatementMetadata, transactions: ParsedBankTransaction[]): FnbCreditCardReconciliationCheck | null {
+  if (metadata.openingBalance === null || metadata.closingBalance === null) return null;
+  const totalCredits = transactions.reduce((sum, t) => sum + t.credit, 0);
+  const totalDebits = transactions.reduce((sum, t) => sum + t.debit, 0);
+  const liabilityFormulaResult = metadata.openingBalance + totalDebits - totalCredits;
+  const fullyExplainedResult = liabilityFormulaResult + (metadata.availableBalance ?? 0);
+  const explainedByUnnettedCardholderCredit = Math.round((fullyExplainedResult - metadata.closingBalance) * 100) / 100 === 0;
+  return { liabilityFormulaResult, explainedByUnnettedCardholderCredit, fullyExplainedResult };
 }

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { BatchEntryGrid, type GridColumn } from "@/components/financial/shared/batch-entry-grid";
 import type { BankStatementMetadata, ImportExceptionRecord, ParsedBankTransaction } from "@/server/import-centre/types";
 import type { StatementValidationResult } from "@/server/import-centre/pdf-statement-validation";
+import type { FnbCreditCardReconciliationCheck } from "@/server/import-centre/parsers/fnb-credit-card-statement-parser";
 import type { ImportBatch } from "@/server/accounting/types";
 
 export type PdfStatementPreview = {
@@ -20,6 +21,7 @@ export type PdfStatementPreview = {
   validation: StatementValidationResult;
   duplicateOfBatch: ImportBatch | null;
   expectedTransactionCount: number | null;
+  reconciliationExplanation: FnbCreditCardReconciliationCheck | null;
 };
 
 function formatMoney(value: number | null): string {
@@ -142,7 +144,12 @@ export function PdfImportReviewPanel({ companyId, preview, onDiscard }: { compan
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {balanceReconciliation.reconciles === false && (
+          {balanceReconciliation.reconciles === false && preview.reconciliationExplanation?.explainedByUnnettedCardholderCredit && (
+            <Badge tone="warn">
+              Balances differ by {formatMoney(preview.metadata.availableBalance)} — matches this statement&rsquo;s own segregated Credit Balance (one cardholder&rsquo;s credit isn&rsquo;t netted into Amount Owing), not a missing transaction
+            </Badge>
+          )}
+          {balanceReconciliation.reconciles === false && !preview.reconciliationExplanation?.explainedByUnnettedCardholderCredit && (
             <Badge tone="danger">
               Opening + transactions ≠ closing balance (off by {balanceReconciliation.delta?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
             </Badge>
