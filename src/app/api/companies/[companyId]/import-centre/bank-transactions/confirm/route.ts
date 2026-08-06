@@ -31,6 +31,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
     if (error instanceof ValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    // TEMP-DIAGNOSTIC: see preview/route.ts's own note.
+    console.error("PDF confirm failed unexpectedly:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    const name = error instanceof Error ? error.name : undefined;
+    return NextResponse.json({ error: `Unexpected error: ${message}`, name, stack }, { status: 500 });
   }
 }

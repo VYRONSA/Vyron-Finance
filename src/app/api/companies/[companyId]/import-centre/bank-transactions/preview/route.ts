@@ -29,6 +29,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
     if (error instanceof ValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    // TEMP-DIAGNOSTIC: capturing the real production error directly in
+    // the response — no Vercel dashboard log access available this
+    // round. Reverted to a safe, generic message once root-caused.
+    console.error("PDF preview failed unexpectedly:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    const name = error instanceof Error ? error.name : undefined;
+    return NextResponse.json({ error: `Unexpected error: ${message}`, name, stack }, { status: 500 });
   }
 }
