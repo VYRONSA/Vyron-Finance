@@ -75,6 +75,30 @@ export type ImportedBill = {
   cancelledAt: string | null;
 };
 
+// "Additional Requirement: Purchase Processing" — a Bill/Credit Note/
+// Debit Note entered through Purchasing may optionally carry line
+// items; the header's own gl_account/vat_code/vat/total stay real
+// roll-ups computed from these when present (see 0059's own comment).
+export type PurchaseBillLine = {
+  id: number;
+  companyId: string;
+  billId: number;
+  lineOrder: number;
+  description: string;
+  glAccount: string;
+  vatCode: string;
+  costCentreId: number | null;
+  projectId: number | null;
+  departmentId: number | null;
+  quantity: number;
+  unitCost: number;
+  discount: number;
+  netAmount: number;
+  vatAmount: number;
+  lineTotal: number;
+  createdAt: string;
+};
+
 // 'Allocated' is an Allocation-Engine-only outcome layered on top of the
 // Matching Engine's own three-way Matched/Suggested/Unallocated status —
 // see allocation-engine.ts's module docstring.

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -9,8 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChevronDown, IconChevronLeft, IconFileText, IconPlus } from "@/components/ui/icons";
+import { BatchEntryGrid, type GridColumn } from "@/components/financial/shared/batch-entry-grid";
 import type { BillPostingStatus, ImportedBill, Supplier } from "@/server/accounting/types";
-import type { VatTreatment } from "@/server/company-management/types";
+import type { CostCentre, Department, Project, VatTreatment } from "@/server/company-management/types";
+import type { ChartOfAccount } from "@/server/general-ledger/types";
 
 const DOCUMENT_TYPES: ImportedBill["documentType"][] = ["Bill", "Credit Note", "Debit Note"];
 const STATUS_OPTIONS: (BillPostingStatus | "All")[] = ["All", "Draft", "Submitted", "Approved", "Posted", "Cancelled"];
@@ -26,16 +28,67 @@ function money(value: number): string {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** One capture-grid row — "Additional Requirement: Purchase
+ * Processing": unlimited lines, each independently allocated to a GL
+ * account, VAT code, and (optionally — "where applicable") a cost
+ * centre/project/department. IDs are held as strings (grid select
+ * values are always strings) and converted back to number|null at
+ * submit time. */
+type BillLineRow = {
+  rowId: string;
+  description: string;
+  glAccount: string;
+  vatCode: string;
+  costCentreId: string;
+  projectId: string;
+  departmentId: string;
+  quantity: number;
+  unitCost: number;
+  discount: number;
+};
+
+let lineRowSeq = 0;
+function createEmptyBillLineRow(defaultVatCode: string): BillLineRow {
+  lineRowSeq += 1;
+  return {
+    rowId: `line-${lineRowSeq}`,
+    description: "",
+    glAccount: "",
+    vatCode: defaultVatCode,
+    costCentreId: "",
+    projectId: "",
+    departmentId: "",
+    quantity: 1,
+    unitCost: 0,
+    discount: 0,
+  };
+}
+
+function computeLineTotals(row: BillLineRow, vatTreatments: VatTreatment[]) {
+  const rate = vatTreatments.find((v) => v.code === row.vatCode)?.rate ?? 0;
+  const net = Math.round((row.quantity * row.unitCost - row.discount) * 100) / 100;
+  const vat = Math.round(net * (rate / 100) * 100) / 100;
+  return { net, vat, total: Math.round((net + vat) * 100) / 100 };
+}
+
 function BillFormPanel({
   companyId,
   suppliers,
   vatTreatments,
+  chartOfAccounts,
+  costCentres,
+  projects,
+  departments,
   onDone,
   onCancel,
 }: {
   companyId: string;
   suppliers: Supplier[];
   vatTreatments: VatTreatment[];
+  chartOfAccounts: ChartOfAccount[];
+  costCentres: CostCentre[];
+  projects: Project[];
+  departments: Department[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -44,10 +97,33 @@ function BillFormPanel({
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState("");
-  const [vatTreatmentCode, setVatTreatmentCode] = useState(vatTreatments[0]?.code ?? "");
-  const [subtotal, setSubtotal] = useState("");
+  const [lines, setLines] = useState<BillLineRow[]>(() => [createEmptyBillLineRow(vatTreatments[0]?.code ?? "")]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const glOptions = useMemo(() => chartOfAccounts.filter((a) => a.isActive).map((a) => ({ value: a.accountCode, label: `${a.accountCode} — ${a.description}` })), [chartOfAccounts]);
+  const vatOptions = useMemo(() => vatTreatments.map((v) => ({ value: v.code, label: `${v.name} (${v.rate}%)` })), [vatTreatments]);
+  const costCentreOptions = useMemo(() => costCentres.filter((c) => c.isActive).map((c) => ({ value: String(c.id), label: c.name })), [costCentres]);
+  const projectOptions = useMemo(() => projects.filter((p) => p.isActive).map((p) => ({ value: String(p.id), label: p.name })), [projects]);
+  const departmentOptions = useMemo(() => departments.filter((d) => d.isActive).map((d) => ({ value: String(d.id), label: d.name })), [departments]);
+
+  const columns: GridColumn<BillLineRow>[] = [
+    { key: "description", label: "Description", type: "text" },
+    { key: "glAccount", label: "GL Account", type: "select", options: glOptions, placeholder: "Select account…" },
+    { key: "vatCode", label: "VAT Code", type: "select", options: vatOptions, placeholder: "Select VAT…", width: "w-40" },
+    { key: "costCentreId", label: "Cost Centre", type: "select", options: costCentreOptions, placeholder: "None", width: "w-36" },
+    { key: "projectId", label: "Project", type: "select", options: projectOptions, placeholder: "None", width: "w-36" },
+    { key: "departmentId", label: "Department", type: "select", options: departmentOptions, placeholder: "None", width: "w-36" },
+    { key: "quantity", label: "Qty", type: "number", align: "right", width: "w-20" },
+    { key: "unitCost", label: "Unit Cost", type: "number", align: "right", width: "w-28" },
+    { key: "discount", label: "Discount", type: "number", align: "right", width: "w-28" },
+  ];
+
+  const computedLines = useMemo(() => lines.map((row) => ({ row, ...computeLineTotals(row, vatTreatments) })), [lines, vatTreatments]);
+  const validLines = computedLines.filter((l) => l.row.glAccount && l.row.vatCode && l.net > 0);
+  const subtotal = Math.round(validLines.reduce((s, l) => s + l.net, 0) * 100) / 100;
+  const vatTotal = Math.round(validLines.reduce((s, l) => s + l.vat, 0) * 100) / 100;
+  const grandTotal = Math.round((subtotal + vatTotal) * 100) / 100;
 
   async function submit() {
     setLoading(true);
@@ -62,8 +138,17 @@ function BillFormPanel({
           invoiceNumber,
           invoiceDate,
           dueDate: dueDate || null,
-          vatTreatmentCode,
-          subtotal: Number(subtotal) || 0,
+          lines: validLines.map(({ row }) => ({
+            description: row.description,
+            glAccount: row.glAccount,
+            vatCode: row.vatCode,
+            costCentreId: row.costCentreId ? Number(row.costCentreId) : null,
+            projectId: row.projectId ? Number(row.projectId) : null,
+            departmentId: row.departmentId ? Number(row.departmentId) : null,
+            quantity: row.quantity,
+            unitCost: row.unitCost,
+            discount: row.discount,
+          })),
         }),
       });
       const data = await res.json();
@@ -82,7 +167,7 @@ function BillFormPanel({
   return (
     <div className="rounded-vf-md border border-vf-paper-border p-4">
       <p className="mb-3 text-sm font-semibold text-vf-ink">New Supplier Document</p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Field label="Supplier" htmlFor="bill-supplier" required className="lg:col-span-2">
           <Select id="bill-supplier" value={supplierId} onChange={(e) => setSupplierId(Number(e.target.value))}>
             {suppliers.map((s) => (
@@ -103,25 +188,34 @@ function BillFormPanel({
         <Field label="Date" htmlFor="bill-date" required>
           <Input id="bill-date" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
         </Field>
+      </div>
+      <div className="mt-3 max-w-xs">
         <Field label="Due Date" htmlFor="bill-due">
           <Input id="bill-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </Field>
       </div>
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="VAT Treatment" htmlFor="bill-vat" required>
-          <Select id="bill-vat" value={vatTreatmentCode} onChange={(e) => setVatTreatmentCode(e.target.value)}>
-            {vatTreatments.map((v) => (
-              <option key={v.code} value={v.code}>{v.name} ({v.rate}%)</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Amount (excl. VAT)" htmlFor="bill-subtotal" required>
-          <Input id="bill-subtotal" type="number" step="0.01" value={subtotal} onChange={(e) => setSubtotal(e.target.value)} />
-        </Field>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-vf-ink-faint">Lines</p>
+        <BatchEntryGrid
+          columns={columns}
+          rows={lines}
+          onRowsChange={setLines}
+          createEmptyRow={() => createEmptyBillLineRow(vatTreatments[0]?.code ?? "")}
+          getRowId={(row) => row.rowId}
+          emptyLabel="Add at least one line — capture the whole document before posting, not one item at a time."
+        />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-4 rounded-vf-md bg-vf-paper-alt px-3 py-2 text-sm">
+        <span>Subtotal <span className="font-mono font-medium tabular-nums">{money(subtotal)}</span></span>
+        <span>VAT <span className="font-mono font-medium tabular-nums">{money(vatTotal)}</span></span>
+        <span>Total <span className="font-mono font-semibold tabular-nums">{money(grandTotal)}</span></span>
+        <span className="text-vf-ink-faint">{validLines.length} valid line{validLines.length === 1 ? "" : "s"}</span>
       </div>
 
       <div className="mt-3 flex gap-2">
-        <Button variant="primary" size="sm" disabled={loading || !supplierId || !invoiceNumber.trim() || !vatTreatmentCode || (Number(subtotal) || 0) <= 0} onClick={submit}>
+        <Button variant="primary" size="sm" disabled={loading || !supplierId || !invoiceNumber.trim() || validLines.length === 0} onClick={submit}>
           Create {documentType}
         </Button>
         <Button variant="subtle" size="sm" onClick={onCancel}>
@@ -138,12 +232,20 @@ export function BillsTab({
   bills,
   suppliers,
   vatTreatments,
+  chartOfAccounts,
+  costCentres,
+  projects,
+  departments,
   previewMode,
 }: {
   companyId: string;
   bills: ImportedBill[];
   suppliers: Supplier[];
   vatTreatments: VatTreatment[];
+  chartOfAccounts: ChartOfAccount[];
+  costCentres: CostCentre[];
+  projects: Project[];
+  departments: Department[];
   previewMode: boolean;
 }) {
   const router = useRouter();
@@ -208,13 +310,23 @@ export function BillsTab({
         <div className="min-w-[200px] flex-1">
           <Input placeholder="Search invoice #, supplier…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search supplier bills" />
         </div>
-        <Button variant="primary" size="sm" disabled={previewMode || suppliers.length === 0 || vatTreatments.length === 0} title={disabledTitle} onClick={() => setShowForm(true)}>
+        <Button variant="primary" size="sm" disabled={previewMode || suppliers.length === 0 || vatTreatments.length === 0 || chartOfAccounts.length === 0} title={disabledTitle} onClick={() => setShowForm(true)}>
           <IconPlus className="h-4 w-4" /> New Document
         </Button>
       </div>
 
       {showForm && (
-        <BillFormPanel companyId={companyId} suppliers={suppliers} vatTreatments={vatTreatments} onDone={() => { setShowForm(false); router.refresh(); }} onCancel={() => setShowForm(false)} />
+        <BillFormPanel
+          companyId={companyId}
+          suppliers={suppliers}
+          vatTreatments={vatTreatments}
+          chartOfAccounts={chartOfAccounts}
+          costCentres={costCentres}
+          projects={projects}
+          departments={departments}
+          onDone={() => { setShowForm(false); router.refresh(); }}
+          onCancel={() => setShowForm(false)}
+        />
       )}
 
       {error && <p className="text-sm text-vf-danger">{error}</p>}

@@ -25,11 +25,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ comp
   return NextResponse.json({ bills });
 }
 
-/** Either a direct bill (`supplierId`/`invoiceNumber`/`invoiceDate`/
- * `vatTreatmentCode`/`subtotal`) or a real Order -> Bill conversion
- * (`orderId`/`invoiceNumber`/`invoiceDate`/`vatTreatmentCode`, no
- * subtotal — the service sums the order's own lines and requires it to
- * be fully `Received` first). */
+/** Either a real Order -> Bill conversion (`orderId`/`invoiceNumber`/
+ * `invoiceDate`/`vatTreatmentCode`, no subtotal — the service sums the
+ * order's own lines and requires it to be fully `Received` first), a
+ * multi-line bill (`supplierId`/`invoiceNumber`/`invoiceDate`/`lines`
+ * — "Additional Requirement: Purchase Processing"), or the legacy
+ * single-amount path (`supplierId`/`invoiceNumber`/`invoiceDate`/
+ * `vatTreatmentCode`/`subtotal`) — `createPurchaseBill` itself
+ * dispatches on whether `lines` is present. */
 export async function POST(request: Request, { params }: { params: Promise<{ companyId: string }> }) {
   const session = await requireSession();
   if (!session.ok) return session.response;

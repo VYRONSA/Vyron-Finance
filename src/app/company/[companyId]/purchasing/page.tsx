@@ -14,8 +14,11 @@ import { listGoodsReceivedNotes } from "@/server/services/goods-received-note-se
 import { listAllBills } from "@/server/services/purchase-bill-service";
 import { listSupplierPayments } from "@/server/services/supplier-payment-service";
 import { buildPurchasingDashboardSummary } from "@/server/services/purchasing-summary-service";
+import { listChartOfAccounts } from "@/server/services/chart-of-accounts-service";
+import { listCostCentres, listDepartments, listProjects } from "@/server/services/org-master-data-service";
 import { MOCK_SUPPLIERS, MOCK_BILLS } from "@/lib/mock/supplier-reconciliation-data";
-import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
+import { MOCK_VAT_TREATMENTS, MOCK_COST_CENTRES, MOCK_DEPARTMENTS, MOCK_PROJECTS } from "@/lib/mock/company-management-data";
+import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import {
   MOCK_GOODS_RECEIVED_NOTES,
   MOCK_PURCHASE_BILLS,
@@ -32,7 +35,7 @@ export default async function PurchasingPage({ params }: { params: Promise<{ com
   const { companyId } = await params;
   const previewMode = !isSupabaseConfigured();
 
-  const [suppliers, vatTreatments, requisitions, orders, grns, bills, payments] = previewMode
+  const [suppliers, vatTreatments, requisitions, orders, grns, bills, payments, chartOfAccounts, costCentres, projects, departments] = previewMode
     ? [
         MOCK_SUPPLIERS,
         MOCK_VAT_TREATMENTS,
@@ -41,6 +44,10 @@ export default async function PurchasingPage({ params }: { params: Promise<{ com
         MOCK_GOODS_RECEIVED_NOTES,
         [...MOCK_BILLS, ...MOCK_PURCHASE_BILLS],
         MOCK_SUPPLIER_PAYMENTS,
+        MOCK_CHART_OF_ACCOUNTS,
+        MOCK_COST_CENTRES,
+        MOCK_PROJECTS,
+        MOCK_DEPARTMENTS,
       ]
     : await Promise.all([
         listSuppliers(companyId),
@@ -50,6 +57,10 @@ export default async function PurchasingPage({ params }: { params: Promise<{ com
         listGoodsReceivedNotes(companyId),
         listAllBills(companyId),
         listSupplierPayments(companyId),
+        listChartOfAccounts(companyId),
+        listCostCentres(companyId),
+        listProjects(companyId),
+        listDepartments(companyId),
       ]);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -110,6 +121,10 @@ export default async function PurchasingPage({ params }: { params: Promise<{ com
           grns={grns}
           bills={bills}
           payments={payments}
+          chartOfAccounts={chartOfAccounts}
+          costCentres={costCentres}
+          projects={projects}
+          departments={departments}
         />
       </Suspense>
     </div>

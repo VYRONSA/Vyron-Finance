@@ -19,8 +19,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getPerformedByLabel } from "@/server/auth/require-session";
-import { billFromRow, type ImportedBillRow } from "@/server/accounting/mappers";
-import type { ImportedBill } from "@/server/accounting/types";
+import { billFromRow, purchaseBillLineFromRow, type ImportedBillRow, type PurchaseBillLineRow } from "@/server/accounting/mappers";
+import type { ImportedBill, PurchaseBillLine } from "@/server/accounting/types";
 
 const BILL_SELECT = "*";
 
@@ -120,6 +120,106 @@ export async function createPurchaseBill(companyId: string, input: NewPurchaseBi
     .single<ImportedBillRow>();
   if (error) throw error;
   return billFromRow(data);
+}
+
+export type NewPurchaseBillLine = {
+  description: string;
+  glAccount: string;
+  vatCode: string;
+  costCentreId: number | null;
+  projectId: number | null;
+  departmentId: number | null;
+  quantity: number;
+  unitCost: number;
+  discount: number;
+  netAmount: number;
+  vatAmount: number;
+  lineTotal: number;
+};
+
+/** "Additional Requirement: Purchase Processing" — the multi-line
+ * capture path. Header totals (`vat`/`total`) are the caller's own
+ * roll-up of the lines, not recomputed here (see
+ * `purchase-bill-service.ts::createPurchaseBill`) — this repository
+ * layer stays a thin insert, same as every other table in this
+ * codebase. Header + lines insert sequentially, not in a DB
+ * transaction, matching this codebase's established pattern elsewhere
+ * (e.g. `import-service.ts`'s per-row loop) for multi-statement writes
+ * through the Supabase JS client. */
+export async function createPurchaseBillWithLines(
+  companyId: string,
+  input: NewPurchaseBill,
+  vat: number,
+  total: number,
+  lines: NewPurchaseBillLine[],
+): Promise<{ bill: ImportedBill; lines: PurchaseBillLine[] }> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("ae_imported_bills")
+    .insert({
+      company_id: companyId,
+      supplier_id: input.supplierId,
+      supplier_name: input.supplierName,
+      invoice_number: input.invoiceNumber,
+      document_type: input.documentType ?? "Bill",
+      invoice_date: input.invoiceDate,
+      due_date: input.dueDate ?? null,
+      vat,
+      total,
+      outstanding: total,
+      status: "Open",
+      gl_account: input.glAccount ?? null,
+      vat_code: input.vatCode ?? null,
+      origin: "Purchasing",
+      purchase_order_id: input.purchaseOrderId ?? null,
+      goods_received_note_id: input.goodsReceivedNoteId ?? null,
+      posting_status: "Draft",
+    })
+    .select("*")
+    .single<ImportedBillRow>();
+  if (error) throw error;
+  const bill = billFromRow(data);
+
+  const { data: lineRows, error: linesError } = await supabase
+    .from("ae_purchase_bill_lines")
+    .insert(
+      lines.map((line, index) => ({
+        company_id: companyId,
+        bill_id: bill.id,
+        line_order: index,
+        description: line.description,
+        gl_account: line.glAccount,
+        vat_code: line.vatCode,
+        cost_centre_id: line.costCentreId,
+        project_id: line.projectId,
+        department_id: line.departmentId,
+        quantity: line.quantity,
+        unit_cost: line.unitCost,
+        discount: line.discount,
+        net_amount: line.netAmount,
+        vat_amount: line.vatAmount,
+        line_total: line.lineTotal,
+      })),
+    )
+    .select("*")
+    .returns<PurchaseBillLineRow[]>();
+  if (linesError) throw linesError;
+
+  return { bill, lines: lineRows.map(purchaseBillLineFromRow) };
+}
+
+export async function listPurchaseBillLines(companyId: string, billId: number): Promise<PurchaseBillLine[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ae_purchase_bill_lines")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("bill_id", billId)
+    .order("line_order", { ascending: true })
+    .returns<PurchaseBillLineRow[]>();
+  if (error) throw error;
+  return data.map(purchaseBillLineFromRow);
 }
 
 async function setBillFields(companyId: string, billId: number, fields: Record<string, unknown>): Promise<ImportedBill> {

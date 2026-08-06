@@ -10,7 +10,8 @@ import { GrnsTab } from "./grns-tab";
 import { BillsTab } from "./bills-tab";
 import { PaymentsTab } from "./payments-tab";
 import type { ImportedBill, Supplier } from "@/server/accounting/types";
-import type { VatTreatment } from "@/server/company-management/types";
+import type { CostCentre, Department, Project, VatTreatment } from "@/server/company-management/types";
+import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { GoodsReceivedNote, PurchaseOrder, PurchaseRequisition, SupplierPayment } from "@/server/purchasing/types";
 
 const TABS = ["Requisitions", "Purchase Orders", "GRNs", "Bills", "Payments"] as const;
@@ -31,6 +32,10 @@ export function PurchasingTabs({
   grns,
   bills,
   payments,
+  chartOfAccounts,
+  costCentres,
+  projects,
+  departments,
 }: {
   companyId: string;
   previewMode: boolean;
@@ -41,6 +46,10 @@ export function PurchasingTabs({
   grns: GoodsReceivedNote[];
   bills: ImportedBill[];
   payments: SupplierPayment[];
+  chartOfAccounts: ChartOfAccount[];
+  costCentres: CostCentre[];
+  projects: Project[];
+  departments: Department[];
 }) {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>(() => tabFromSlug(searchParams.get("tab")));
@@ -70,7 +79,17 @@ export function PurchasingTabs({
         )}
         {activeTab === "GRNs" && <GrnsTab companyId={companyId} grns={grns} suppliers={suppliers} orders={orders} previewMode={previewMode} />}
         {activeTab === "Bills" && (
-          <BillsTab companyId={companyId} bills={bills} suppliers={suppliers} vatTreatments={vatTreatments} previewMode={previewMode} />
+          <BillsTab
+            companyId={companyId}
+            bills={bills}
+            suppliers={suppliers}
+            vatTreatments={vatTreatments}
+            chartOfAccounts={chartOfAccounts}
+            costCentres={costCentres}
+            projects={projects}
+            departments={departments}
+            previewMode={previewMode}
+          />
         )}
         {activeTab === "Payments" && <PaymentsTab companyId={companyId} payments={payments} suppliers={suppliers} bills={bills} previewMode={previewMode} />}
       </CardContent>

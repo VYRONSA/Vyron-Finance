@@ -15,6 +15,7 @@ import type {
   JournalLine,
   MatchHistoryEntry,
   MatchResult,
+  PurchaseBillLine,
   ReviewHistoryEntry,
   ReviewStatus,
   Supplier,
@@ -119,6 +120,48 @@ export function billFromRow(row: ImportedBillRow): ImportedBill {
     postedAt: row.posted_at,
     cancelledBy: row.cancelled_by,
     cancelledAt: row.cancelled_at,
+  };
+}
+
+export type PurchaseBillLineRow = {
+  id: number;
+  company_id: string;
+  bill_id: number;
+  line_order: number;
+  description: string;
+  gl_account: string;
+  vat_code: string;
+  cost_centre_id: number | null;
+  project_id: number | null;
+  department_id: number | null;
+  quantity: number;
+  unit_cost: number;
+  discount: number;
+  net_amount: number;
+  vat_amount: number;
+  line_total: number;
+  created_at: string;
+};
+
+export function purchaseBillLineFromRow(row: PurchaseBillLineRow): PurchaseBillLine {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    billId: row.bill_id,
+    lineOrder: row.line_order,
+    description: row.description,
+    glAccount: row.gl_account,
+    vatCode: row.vat_code,
+    costCentreId: row.cost_centre_id,
+    projectId: row.project_id,
+    departmentId: row.department_id,
+    quantity: Number(row.quantity),
+    unitCost: Number(row.unit_cost),
+    discount: Number(row.discount),
+    netAmount: Number(row.net_amount),
+    vatAmount: Number(row.vat_amount),
+    lineTotal: Number(row.line_total),
+    createdAt: row.created_at,
   };
 }
 

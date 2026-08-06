@@ -3,7 +3,8 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { PurchasingTabs } from "./purchasing-tabs";
 import { MOCK_SUPPLIERS, MOCK_BILLS } from "@/lib/mock/supplier-reconciliation-data";
-import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
+import { MOCK_VAT_TREATMENTS, MOCK_COST_CENTRES, MOCK_DEPARTMENTS, MOCK_PROJECTS } from "@/lib/mock/company-management-data";
+import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import {
   MOCK_GOODS_RECEIVED_NOTES,
   MOCK_PURCHASE_BILLS,
@@ -29,6 +30,10 @@ function renderTabs() {
       grns={MOCK_GOODS_RECEIVED_NOTES}
       bills={[...MOCK_BILLS, ...MOCK_PURCHASE_BILLS]}
       payments={MOCK_SUPPLIER_PAYMENTS}
+      chartOfAccounts={MOCK_CHART_OF_ACCOUNTS}
+      costCentres={MOCK_COST_CENTRES}
+      projects={MOCK_PROJECTS}
+      departments={MOCK_DEPARTMENTS}
     />,
   );
 }
