@@ -346,6 +346,12 @@ export async function confirmPdfBankStatementImport(companyId: string, input: Co
       openingBalance: metadata.openingBalance,
       closingBalance: metadata.closingBalance,
       balanceReconciles: validation.balanceReconciliation.reconciles,
+      statementNumber: metadata.statementNumber,
+      creditLimit: metadata.creditLimit,
+      availableBalance: metadata.availableBalance,
+      interestSummary: metadata.interestSummary,
+      vat: metadata.vat,
+      fees: metadata.fees,
     },
   });
 

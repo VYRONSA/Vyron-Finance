@@ -94,6 +94,21 @@ export type BankStatementMetadata = {
   statementPeriodEnd: string | null;
   openingBalance: number | null;
   closingBalance: number | null;
+  /** Final Certification round (real FNB PDFs) — the Board's header
+   * field list also names Statement Number, Credit Limit, Available
+   * Balance, Interest information, VAT, and Fees, none of which the
+   * original 6-field shape above had room for. Every field here is the
+   * same "null when genuinely not printed/found, never guessed"
+   * contract as the rest of this type. `interestSummary` is text, not a
+   * single number, because a real statement prints more than one rate
+   * (e.g. separate Purchases/Cash/Petrol rates, or a Credit vs. Debit
+   * rate pair) — collapsing that to one number would be lossy. */
+  statementNumber: string | null;
+  creditLimit: number | null;
+  availableBalance: number | null;
+  interestSummary: string | null;
+  vat: number | null;
+  fees: number | null;
 };
 
 export const NULL_STATEMENT_METADATA: BankStatementMetadata = {
@@ -103,6 +118,12 @@ export const NULL_STATEMENT_METADATA: BankStatementMetadata = {
   statementPeriodEnd: null,
   openingBalance: null,
   closingBalance: null,
+  statementNumber: null,
+  creditLimit: null,
+  availableBalance: null,
+  interestSummary: null,
+  vat: null,
+  fees: null,
 };
 
 export type BankStatementParseResult = {

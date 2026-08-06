@@ -33,6 +33,13 @@ export type NewImportBatch = {
     openingBalance: number | null;
     closingBalance: number | null;
     balanceReconciles: boolean | null;
+    /** Final Certification round — see migration 0061. */
+    statementNumber?: string | null;
+    creditLimit?: number | null;
+    availableBalance?: number | null;
+    interestSummary?: string | null;
+    vat?: number | null;
+    fees?: number | null;
   };
 };
 
@@ -58,6 +65,12 @@ export async function insertImportBatch(companyId: string, batch: NewImportBatch
       statement_opening_balance: batch.statement?.openingBalance ?? null,
       statement_closing_balance: batch.statement?.closingBalance ?? null,
       balance_reconciles: batch.statement?.balanceReconciles ?? null,
+      statement_number: batch.statement?.statementNumber ?? null,
+      statement_credit_limit: batch.statement?.creditLimit ?? null,
+      statement_available_balance: batch.statement?.availableBalance ?? null,
+      statement_interest_summary: batch.statement?.interestSummary ?? null,
+      statement_vat: batch.statement?.vat ?? null,
+      statement_fees: batch.statement?.fees ?? null,
     })
     .select("*")
     .single<ImportBatchRow>();

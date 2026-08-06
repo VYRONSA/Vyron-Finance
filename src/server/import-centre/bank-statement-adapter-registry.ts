@@ -37,6 +37,7 @@ import { parseOfxStatement } from "./ofx-parser";
 import { parseQifStatement } from "./qif-parser";
 import { extractPdfText } from "./pdf-text-extraction";
 import { extractFnbStatementMetadata, extractFnbTransactions, extractFnbTurnoverSummary } from "./parsers/fnb-bank-statement-parser";
+import { extractFnbCreditCardMetadata, extractFnbCreditCardTransactions } from "./parsers/fnb-credit-card-statement-parser";
 import { NULL_STATEMENT_METADATA, type BankStatementParseResult } from "./types";
 
 export type BankStatementAdapter = {
@@ -176,10 +177,64 @@ async function parseFnbStatement(buffer: ArrayBuffer, filename: string, importBa
   };
 }
 
+/** FNB's second real statement type, from the Final Certification round
+ * — a "Business Credit Card" control-account statement, structurally
+ * unrelated to the Platinum Business Account (current/cheque) layout
+ * `parseFnbStatement` above handles (see
+ * `parsers/fnb-credit-card-statement-parser.ts`'s own module docstring).
+ * Registered with the more specific "BUSINESS CREDIT CARD" marker and
+ * placed BEFORE the generic `fnb-pdf` entry below in `PDF_ADAPTERS`,
+ * since `resolvePdfBankAdapter` returns the first matching adapter and
+ * both statement types share FNB's own generic letterhead markers —
+ * without this ordering, every FNB Business Credit Card statement would
+ * incorrectly resolve to the cheque-account parser instead. */
+async function parseFnbCreditCardStatement(buffer: ArrayBuffer, filename: string, importBatch: string): Promise<BankStatementParseResult> {
+  const text = await extractPdfText(buffer);
+  const metadata = extractFnbCreditCardMetadata(text);
+
+  if (!metadata.accountNumber) {
+    return {
+      transactions: [],
+      exceptions: [
+        {
+          sourceFilename: filename,
+          rowNumber: 0,
+          exceptionType: "Invalid Template",
+          description:
+            "FNB Business Credit Card was detected, but this statement's control account number couldn't be located in the expected format — this parser is implemented-but-unvalidated (built against one real FNB Business Credit Card sample) and may not yet cover this statement's exact layout. No transactions were fabricated or guessed.",
+        },
+      ],
+      outcome: { filename, rowsRead: 0, rowsImported: 0, rowsSkipped: 0 },
+      metadata,
+    };
+  }
+
+  const transactions = extractFnbCreditCardTransactions(text, metadata.accountNumber, filename, importBatch);
+
+  return {
+    transactions,
+    exceptions: [],
+    outcome: { filename, rowsRead: transactions.length, rowsImported: transactions.length, rowsSkipped: 0 },
+    metadata,
+    // This statement type prints no "Turnover for Statement Period"
+    // footer (confirmed against the real PDF, not assumed) — genuinely
+    // unavailable, not fabricated.
+    expectedTransactionCount: null,
+  };
+}
+
 /** All 10 named banks from the Board's own directive, each a real,
  * registered adapter — see this file's module docstring for what "real"
  * means here (detection, not extraction) and why. */
 export const PDF_ADAPTERS: BankStatementAdapter[] = [
+  {
+    id: "fnb-credit-card-pdf",
+    label: "First National Bank (FNB) Business Credit Card (PDF) — implemented, awaiting second-sample validation",
+    matchesFile: () => false,
+    contentMarkers: ["BUSINESS CREDIT CARD"],
+    status: "implemented-unvalidated",
+    parse: parseFnbCreditCardStatement,
+  },
   {
     id: "fnb-pdf",
     label: "First National Bank (FNB) (PDF) — implemented, awaiting second-sample validation",

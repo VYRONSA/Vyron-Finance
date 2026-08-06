@@ -133,6 +133,12 @@ export function PdfImportReviewPanel({ companyId, preview, onDiscard }: { compan
           />
           <MetadataField label="Opening Balance" value={formatMoney(preview.metadata.openingBalance)} />
           <MetadataField label="Closing Balance" value={formatMoney(preview.metadata.closingBalance)} />
+          <MetadataField label="Statement Number" value={preview.metadata.statementNumber ?? "Not extracted"} />
+          <MetadataField label="Credit Limit" value={formatMoney(preview.metadata.creditLimit)} />
+          <MetadataField label="Available Balance" value={formatMoney(preview.metadata.availableBalance)} />
+          <MetadataField label="Interest" value={preview.metadata.interestSummary ?? "Not extracted"} />
+          <MetadataField label="VAT" value={formatMoney(preview.metadata.vat)} />
+          <MetadataField label="Fees" value={formatMoney(preview.metadata.fees)} />
         </div>
 
         <div className="flex flex-wrap gap-2">
