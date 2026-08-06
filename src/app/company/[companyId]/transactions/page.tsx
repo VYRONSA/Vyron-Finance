@@ -45,7 +45,11 @@ export default async function TransactionExplorerPage({ params }: { params: Prom
     : await listTransactions(companyId, defaultFilters, null);
 
   return (
-    <div className="mx-auto flex max-w-[1800px] flex-col gap-6">
+    // `min-w-0` — see `workspace-shell.tsx`'s own note on VR-022; kept
+    // here too as the direct ancestor of the wide grid, not just at the
+    // shell level, so this page's own layout doesn't rely solely on an
+    // ancestor two levels up staying correctly configured.
+    <div className="mx-auto flex min-w-0 max-w-[1800px] flex-col gap-6">
       {/* Executive Hero */}
       <Card tone="hero" className="relative overflow-hidden">
         <div

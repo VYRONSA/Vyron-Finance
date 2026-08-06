@@ -143,7 +143,15 @@ const columns = [
   }),
 ];
 
-const PINNED_COLUMN_IDS = new Set(["select", "transactionDate"]);
+// VR-022 — "Frozen columns (Date, Description, Amount) should remain
+// visible while scrolling if practical." No single "Amount" column
+// exists (debit/credit/balance are separate, since this is a
+// double-entry ledger, not a single signed-amount feed) — pinning all
+// three would eat most of the visible width before the user even
+// scrolls, so only Date and Description are pinned; `leftOffset` below
+// already computes each pinned column's position dynamically, so this
+// set can grow without any other change.
+const PINNED_COLUMN_IDS = new Set(["select", "transactionDate", "description"]);
 
 export function TransactionGrid({
   transactions,

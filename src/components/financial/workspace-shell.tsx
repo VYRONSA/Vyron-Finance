@@ -199,7 +199,19 @@ export function FinancialWorkspaceShell({
           </button>
         </aside>
 
-        <div className="flex flex-1 flex-col">
+        {/* `min-w-0` on both flex items below is the actual fix for
+            VR-022 (Transaction Explorer's table pushing the whole page
+            wider instead of scrolling internally) — a classic flexbox
+            gotcha: a flex item's default `min-width` is `auto`, which
+            lets it grow to fit its widest descendant (here, any page's
+            wide data table) rather than respecting the row's available
+            width, so the overflow propagates all the way up to the
+            document instead of being caught by any `overflow-x-auto`
+            container further down. Fixed once, here, in the one shell
+            every page in this workspace renders inside — not per-page —
+            so this can't recur on a page that happens to render a wide
+            table later. */}
+        <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-vf-paper-border bg-vf-paper px-6 py-3">
             <Link
               href="/platform"
@@ -240,7 +252,7 @@ export function FinancialWorkspaceShell({
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 2xl:px-10">{children}</main>
+          <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 2xl:px-10">{children}</main>
         </div>
       </div>
     </div>
