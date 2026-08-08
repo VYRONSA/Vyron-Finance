@@ -115,6 +115,8 @@ function txn(
     matchedCustomerId: null,
     matchedMerchantId: null,
     ruleId: null,
+    allocationType: null,
+    allocationNotes: "",
     entrySource: "Imported",
     captureStatus: null,
     cashbookBatchId: null,

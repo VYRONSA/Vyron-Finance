@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BatchEntryGrid, type GridColumn } from "@/components/financial/shared/batch-entry-grid";
+import { ImportOutcomeSummary } from "@/components/financial/import-centre/import-outcome-summary";
 import type { BankStatementMetadata, ImportExceptionRecord, ParsedBankTransaction } from "@/server/import-centre/types";
 import type { StatementValidationResult } from "@/server/import-centre/pdf-statement-validation";
 import type { FnbCreditCardReconciliationCheck } from "@/server/import-centre/parsers/fnb-credit-card-statement-parser";
@@ -102,18 +103,16 @@ export function PdfImportReviewPanel({ companyId, preview, onDiscard }: { compan
 
   if (confirmedOutcome) {
     return (
-      <Card>
-        <CardContent className="flex flex-col gap-2 pt-6">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge tone="good">{confirmedOutcome.importedCount} imported</Badge>
-            {confirmedOutcome.duplicateCount > 0 && <Badge tone="muted">{confirmedOutcome.duplicateCount} already on file</Badge>}
-            {confirmedOutcome.rulesAutoAllocated > 0 && <Badge tone="info">{confirmedOutcome.rulesAutoAllocated} auto-allocated by Banking Rules</Badge>}
-          </div>
-          <Button variant="subtle" size="sm" onClick={onDiscard}>
-            Import another statement
-          </Button>
-        </CardContent>
-      </Card>
+      <ImportOutcomeSummary
+        companyId={companyId}
+        batchId={preview.batchId}
+        importedCount={confirmedOutcome.importedCount}
+        duplicateCount={confirmedOutcome.duplicateCount}
+        rulesAllocatedCount={confirmedOutcome.rulesAutoAllocated}
+        exceptionCount={preview.exceptions.length}
+        onImportAnother={onDiscard}
+        onFinish={onDiscard}
+      />
     );
   }
 

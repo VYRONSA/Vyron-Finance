@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeCursor, encodeCursor, parseFilters, ValidationError } from "./transaction-explorer-service";
+import { allocateRow, decodeCursor, encodeCursor, parseFilters, ValidationError } from "./transaction-explorer-service";
 
 function params(entries: [string, string][]): URLSearchParams {
   const p = new URLSearchParams();
@@ -113,5 +113,43 @@ describe("encodeCursor / decodeCursor", () => {
     expect(() => decodeCursor("not-valid-base64url-json")).toThrow(ValidationError);
     expect(() => decodeCursor(Buffer.from(JSON.stringify({ foo: "bar" })).toString("base64url"))).toThrow(ValidationError);
     expect(() => decodeCursor(Buffer.from(JSON.stringify({ id: "not-a-number", sortValue: 1 })).toString("base64url"))).toThrow(ValidationError);
+  });
+});
+
+// Transaction Explorer Redesign, Phase 1 — `allocateRow`'s validation
+// throws synchronously, before any Supabase call, for every case below
+// (invalid type; a required target missing for the given type) — these
+// are the cases exercisable without mocking the database, matching this
+// file's own established convention of testing the pure/no-IO paths of
+// this service directly.
+describe("allocateRow validation", () => {
+  it("rejects an unknown allocation type", async () => {
+    await expect(
+      allocateRow("company-1", [1], { type: "X" as never, accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "" }, "tester"),
+    ).rejects.toThrow(ValidationError);
+  });
+
+  it("rejects an empty transaction id list", async () => {
+    await expect(
+      allocateRow("company-1", [], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "" }, "tester"),
+    ).rejects.toThrow(ValidationError);
+  });
+
+  it("rejects a GL allocation with no account code", async () => {
+    await expect(
+      allocateRow("company-1", [1], { type: "G", accountCode: "   ", supplierId: null, customerId: null, vatCode: null, allocationNotes: "" }, "tester"),
+    ).rejects.toThrow(ValidationError);
+  });
+
+  it("rejects a Supplier allocation with no supplier id", async () => {
+    await expect(
+      allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "" }, "tester"),
+    ).rejects.toThrow(ValidationError);
+  });
+
+  it("rejects a Customer allocation with no customer id", async () => {
+    await expect(
+      allocateRow("company-1", [1], { type: "C", accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "" }, "tester"),
+    ).rejects.toThrow(ValidationError);
   });
 });

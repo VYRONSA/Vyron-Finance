@@ -67,7 +67,7 @@ function txn(overrides: Partial<BankTransactionRecord> = {}): BankTransactionRec
     requiredAction: null, suggestedGlAccount: null, suggestedVatCode: null,
     allocationMethod: null, allocationReason: "", isManualOverride: false,
     reviewStatus: null, reviewedBy: null, reviewedAt: null, reviewNote: null,
-    journalId: null, matchedCustomerId: null, matchedMerchantId: null, ruleId: null,
+    journalId: null, matchedCustomerId: null, matchedMerchantId: null, ruleId: null, allocationType: null, allocationNotes: "",
     entrySource: "Imported", captureStatus: null, cashbookBatchId: null,
     reconciliationId: null, reversalOfTransactionId: null, isSplit: false,
     ...overrides,

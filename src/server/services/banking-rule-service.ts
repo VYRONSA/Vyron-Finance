@@ -90,6 +90,45 @@ export async function getRuleConflicts(companyId: string, domain: RuleDomain): P
   return detectRuleConflicts(rules);
 }
 
+type ComparableCondition = { field: string; operator: string; value: string; value2?: string | null };
+type ComparableAction = { actionType: string; targetId?: number | null; targetText?: string | null };
+
+/** Exported for direct unit testing — this is the actual "are these two
+ * rules identical" logic; `findExactDuplicateRule` below is just I/O
+ * (fetch existing rules) wrapped around it. */
+export function normalizeConditions(conditions: ComparableCondition[]): string {
+  return conditions
+    .map((c) => `${c.field}|${c.operator}|${c.value.toLowerCase()}|${(c.value2 ?? "").toLowerCase()}`)
+    .sort()
+    .join(";");
+}
+
+export function normalizeActions(actions: ComparableAction[]): string {
+  return actions
+    .map((a) => `${a.actionType}|${a.targetId ?? ""}|${(a.targetText ?? "").toLowerCase()}`)
+    .sort()
+    .join(";");
+}
+
+/** Transaction Explorer Redesign, Phase 1 — the new grid's inline "Set
+ * Rule" checkbox needs a true-duplicate check, distinct from
+ * `detectRuleConflicts` above (which flags *overlapping-but-disagreeing*
+ * active rules, not identical ones). Compares normalized condition/action
+ * tuples for real equality against every active rule already on file for
+ * this domain/ruleType. */
+export async function findExactDuplicateRule(
+  companyId: string,
+  domain: RuleDomain,
+  ruleType: string,
+  conditions: ComparableCondition[],
+  actions: ComparableAction[],
+): Promise<BankingRule | null> {
+  const rules = await repo.listBankingRules(companyId, domain, ruleType);
+  const targetConditions = normalizeConditions(conditions);
+  const targetActions = normalizeActions(actions);
+  return rules.find((r) => r.isActive && normalizeConditions(r.conditions) === targetConditions && normalizeActions(r.actions) === targetActions) ?? null;
+}
+
 export type SimulateResult = { matchedCount: number; totalCount: number; sample: { transactionId: number; matched: boolean }[] };
 
 /** Pure evaluation over an already-fetched candidate record set — the

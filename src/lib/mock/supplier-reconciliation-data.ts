@@ -108,6 +108,8 @@ function base(id: number, overrides: Partial<BankTransactionRecord>): BankTransa
     matchedCustomerId: null,
     matchedMerchantId: null,
     ruleId: null,
+    allocationType: null,
+    allocationNotes: "",
     entrySource: "Imported",
     captureStatus: null,
     cashbookBatchId: null,

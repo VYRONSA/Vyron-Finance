@@ -114,7 +114,20 @@ export function FinancialWorkspaceShell({
   const initials = (userEmail ?? companyName).slice(0, 2).toUpperCase();
 
   return (
-    <div className="min-h-screen bg-vf-workspace-bg">
+    // Pilot Review Board "Stabilisation Phase" (UI-003) — `overflow-x-hidden`
+    // here is a hard, shell-level structural boundary: the page itself must
+    // never be able to scroll horizontally, full stop, regardless of what
+    // any individual page renders. This is deliberately in ADDITION to (not
+    // instead of) fixing the actual root cause wherever it's found — see
+    // the `min-w-0` note below and `transaction-grid.tsx`'s own note on the
+    // specific regression this round traced and fixed (a virtualization
+    // wrapper added later that hadn't inherited the `min-w-0` fix). Without
+    // a page-level backstop like this, the SAME flexbox footgun recurring
+    // in any future page reveals `<body>`'s own near-black canvas colour
+    // (`--color-canvas`, the dark marketing/auth theme) in the gap — which
+    // is what "black area" reports actually are: not a colour bug, an
+    // overflow bug that happens to expose a dark colour when it occurs.
+    <div className="min-h-screen overflow-x-hidden bg-vf-workspace-bg">
       {previewMode && (
         <div className="border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-600">
           Preview Mode — no Supabase project is configured yet, so this workspace is showing mock
@@ -123,36 +136,61 @@ export function FinancialWorkspaceShell({
       )}
 
       <div className="flex min-h-screen">
+        {/* UI-002 — "the sidebar must behave like a desktop application":
+            `sticky top-0 h-screen` locks the sidebar's own box to the
+            viewport height regardless of how tall the current page's
+            content is, so it can never scroll away with the document.
+            The nav list inside scrolls independently via its own
+            `overflow-y-auto` only if the nav items themselves exceed that
+            fixed height — the branding header and collapse button below
+            stay put either way. */}
         <aside
           className={cn(
-            "hidden shrink-0 flex-col bg-gradient-to-b from-vf-red-600 to-vf-red-900 px-3 py-5 transition-[width] lg:flex",
+            "sticky top-0 hidden h-screen shrink-0 flex-col bg-gradient-to-b from-vf-red-600 to-vf-red-900 px-3 py-5 transition-[width] lg:flex",
             collapsed ? "w-[72px]" : "w-64",
           )}
         >
-          <Link
-            href="/"
-            className="mb-6 flex items-center gap-2.5 px-2 font-display text-lg text-vf-on-dark"
-            title="VYRON FINANCE"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-vf-charcoal">
-              <BrandMark className="h-4 w-4" />
+          {/* UI-001 — the branding section is a deliberate focal point,
+              not a shrunk-down echo of the marketing/auth mark sizing
+              used elsewhere in the app: this is the one screen an
+              accountant looks at all day, so it earns more presence than
+              a one-time login screen does. Same `BrandMark` vector and
+              same silver/blue identity as everywhere else in the VYRON
+              ecosystem — only the scale and framing change. */}
+          <Link href="/" className="group mb-1 flex flex-col gap-3 px-1 pt-1" title="VYRON FINANCE — Financial Workspace">
+            <span
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-vf-charcoal-soft to-vf-charcoal shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_28px_-8px_rgba(0,0,0,0.65)] ring-1 ring-white/10 transition-transform duration-200 group-hover:scale-[1.04]",
+                collapsed ? "h-11 w-11" : "h-14 w-14",
+              )}
+            >
+              <BrandMark className={collapsed ? "h-6 w-6" : "h-7 w-7"} />
             </span>
             {!collapsed && (
-              <span>
-                VYRON <span className="text-vf-red-300">FINANCE</span>
-              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="font-display text-[1.4rem] leading-none tracking-tight text-vf-on-dark">
+                  VYRON <span className="text-vf-red-300">FINANCE</span>
+                </span>
+                <span className="text-[0.62rem] font-semibold tracking-[0.22em] text-vf-on-dark-faint uppercase">Enterprise Financial Platform</span>
+              </div>
             )}
           </Link>
+          <div className={cn("mt-4 mb-2 border-t border-white/10", collapsed && "mx-1")} />
 
-          <nav className="flex flex-1 flex-col gap-5 overflow-y-auto">
-            {NAV_GROUPS.map((group) => (
+          <nav className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden pt-1">
+            {NAV_GROUPS.map((group, groupIndex) => (
               <div key={group.label}>
                 {!collapsed && (
-                  <p className="px-3 pb-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-vf-on-dark-faint">
+                  <p
+                    className={cn(
+                      "px-3 pb-2 text-[0.65rem] font-semibold tracking-[0.14em] text-vf-on-dark-faint/80 uppercase",
+                      groupIndex > 0 && "border-t border-white/[0.06] pt-4",
+                    )}
+                  >
                     {group.label}
                   </p>
                 )}
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col gap-1">
                   {group.items.map((item) => {
                     const Icon = item.icon;
                     const active = isActive(item.href);
@@ -163,7 +201,7 @@ export function FinancialWorkspaceShell({
                       </>
                     );
                     const itemClass = cn(
-                      "flex items-center gap-2.5 rounded-vf-sm px-3 py-2 text-sm font-medium transition",
+                      "flex items-center gap-2.5 rounded-vf-sm px-3 py-2.5 text-sm font-medium transition",
                       collapsed && "justify-center",
                       active
                         ? "bg-white/16 text-vf-on-dark shadow-[inset_3px_0_0_var(--color-vf-red-300)]"
@@ -210,7 +248,11 @@ export function FinancialWorkspaceShell({
             container further down. Fixed once, here, in the one shell
             every page in this workspace renders inside — not per-page —
             so this can't recur on a page that happens to render a wide
-            table later. */}
+            table later. (It DID recur once anyway, in a virtualization
+            wrapper added well after this comment was written, which is
+            exactly why UI-003 also added the `overflow-x-hidden`
+            backstop above — a single fix, however well-reasoned, isn't
+            proof against every future addition.) */}
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-vf-paper-border bg-vf-paper px-6 py-3">
             <Link

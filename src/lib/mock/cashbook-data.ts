@@ -24,7 +24,7 @@ function baseTransaction(overrides: Partial<BankTransactionRecord>): BankTransac
     confidenceScore: null, rulesTriggered: [], matchReason: "", requiredAction: null, suggestedGlAccount: null,
     suggestedVatCode: null, allocationMethod: null, allocationReason: "", isManualOverride: false,
     reviewStatus: null, reviewedBy: null, reviewedAt: null, reviewNote: null, journalId: null,
-    matchedCustomerId: null, matchedMerchantId: null, ruleId: null,
+    matchedCustomerId: null, matchedMerchantId: null, ruleId: null, allocationType: null, allocationNotes: "",
     entrySource: "Manual", captureStatus: "Draft", cashbookBatchId: null, reconciliationId: null, reversalOfTransactionId: null,
     isSplit: false,
     ...overrides,

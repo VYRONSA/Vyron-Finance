@@ -203,6 +203,9 @@ export type BankTransactionRow = {
   matched_customer_id: number | null;
   matched_merchant_id: number | null;
   rule_id: number | null;
+  // Transaction Explorer Redesign, Phase 1 — see migration 0062.
+  allocation_type: string | null;
+  allocation_notes: string;
   // Cashbook & Bank Reconciliation (Workflow Completion Audit) — see
   // 0022_cashbook_reconciliation.sql. Reuses this SAME table for manual
   // capture rather than forking a parallel object.
@@ -257,6 +260,8 @@ export function bankTransactionFromRow(row: BankTransactionRow): BankTransaction
     matchedCustomerId: row.matched_customer_id,
     matchedMerchantId: row.matched_merchant_id,
     ruleId: row.rule_id,
+    allocationType: (row.allocation_type as BankTransactionRecord["allocationType"]) ?? null,
+    allocationNotes: row.allocation_notes ?? "",
     entrySource: (row.entry_source as BankTransactionRecord["entrySource"]) ?? "Imported",
     captureStatus: row.capture_status as BankTransactionRecord["captureStatus"],
     cashbookBatchId: row.cashbook_batch_id,

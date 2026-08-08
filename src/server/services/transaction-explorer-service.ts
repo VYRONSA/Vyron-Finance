@@ -9,6 +9,8 @@ import * as bankAccountRepo from "@/server/repositories/bank-account-repository"
 import * as supplierRepo from "@/server/repositories/supplier-reconciliation-repository";
 import * as customerRepo from "@/server/repositories/customer-repository";
 import * as merchantRepo from "@/server/repositories/merchant-repository";
+import { listChartOfAccounts } from "@/server/repositories/chart-of-accounts-repository";
+import { listVatTreatments } from "@/server/repositories/vat-treatment-repository";
 import * as journalRepo from "@/server/repositories/journal-repository";
 import * as importRepo from "@/server/repositories/import-repository";
 import { generateJournalFromTransactions, type BankAccountGlInfo, type GenerateJournalOutcome } from "@/server/services/journal-service";
@@ -252,6 +254,57 @@ export async function assignCustomer(companyId: string, transactionIds: number[]
   const customer = await customerRepo.getCustomer(companyId, customerId);
   if (!customer) throw new ValidationError(`No customer with id ${customerId}.`);
   await repo.bulkAssignCustomer(companyId, transactionIds, customerId, performedBy);
+}
+
+export type AllocateRowInput = {
+  type: "G" | "C" | "S";
+  accountCode: string | null;
+  supplierId: number | null;
+  customerId: number | null;
+  vatCode: string | null;
+  allocationNotes: string;
+};
+
+const ALLOCATION_TYPES = ["G", "C", "S"] as const;
+
+/** Transaction Explorer Redesign, Phase 1 — the one validated write path
+ * behind the new inline allocation grid, single-row commit and "apply to
+ * selected" bulk allocation alike. Closes a real, pre-existing gap: until
+ * now `assignGl`/`assignVat` only checked non-empty, never that the code
+ * actually exists in `chart_of_accounts`/`vat_treatments` (unlike
+ * `assignSupplier`/`assignCustomer`, which already validate existence) —
+ * every accountant-facing entry point for GL/VAT now gets that same
+ * existence check. */
+export async function allocateRow(companyId: string, transactionIds: number[], input: AllocateRowInput, performedBy: string): Promise<void> {
+  requireIds(transactionIds);
+  if (!ALLOCATION_TYPES.includes(input.type)) throw new ValidationError(`Invalid allocation type '${input.type}' — expected G, C, or S.`);
+
+  if (input.type === "G") {
+    const accountCode = input.accountCode?.trim();
+    if (!accountCode) throw new ValidationError("GL account is required.");
+    const accounts = await listChartOfAccounts(companyId);
+    if (!accounts.some((a) => a.accountCode === accountCode)) throw new ValidationError(`No GL account with code '${accountCode}'.`);
+  } else if (input.type === "S") {
+    if (input.supplierId === null) throw new ValidationError("Supplier is required.");
+    const supplier = await supplierRepo.getSupplier(companyId, input.supplierId);
+    if (!supplier) throw new ValidationError(`No supplier with id ${input.supplierId}.`);
+  } else if (input.type === "C") {
+    if (input.customerId === null) throw new ValidationError("Customer is required.");
+    const customer = await customerRepo.getCustomer(companyId, input.customerId);
+    if (!customer) throw new ValidationError(`No customer with id ${input.customerId}.`);
+  }
+
+  if (input.vatCode) {
+    const treatments = await listVatTreatments(companyId);
+    if (!treatments.some((v) => v.code === input.vatCode)) throw new ValidationError(`No VAT treatment with code '${input.vatCode}'.`);
+  }
+
+  await repo.allocateRow(
+    companyId,
+    transactionIds,
+    { type: input.type, accountCode: input.accountCode?.trim() ?? null, supplierId: input.supplierId, customerId: input.customerId, vatCode: input.vatCode, allocationNotes: input.allocationNotes },
+    performedBy,
+  );
 }
 
 /** Runs the Banking Rule Engine against exactly the selected

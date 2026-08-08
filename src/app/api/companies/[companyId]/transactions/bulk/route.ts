@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession, getPerformedByLabel } from "@/server/auth/require-session";
 import {
+  allocateRow,
   applyBulkReview,
   applyRule,
   applyRulesToRemainingBatchTransactions,
@@ -50,6 +51,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
       }
       case "assign-customer": {
         await assignCustomer(companyId, body.transactionIds ?? [], body.customerId, performedBy);
+        return NextResponse.json({ ok: true });
+      }
+      case "allocate-row": {
+        await allocateRow(
+          companyId,
+          body.transactionIds ?? [],
+          {
+            type: body.type,
+            accountCode: body.accountCode ?? null,
+            supplierId: body.supplierId ?? null,
+            customerId: body.customerId ?? null,
+            vatCode: body.vatCode ?? null,
+            allocationNotes: body.allocationNotes ?? "",
+          },
+          performedBy,
+        );
         return NextResponse.json({ ok: true });
       }
       case "apply-rule": {

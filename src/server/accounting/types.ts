@@ -157,6 +157,15 @@ export type BankTransactionRecord = {
   matchedMerchantId: number | null;
   ruleId: number | null;
 
+  // Transaction Explorer Redesign, Phase 1 (Bank Transaction Allocation
+  // Workspace) — the discriminator the inline grid's Type column reads/
+  // writes, since matchedSupplierId/matchedCustomerId/suggestedGlAccount
+  // above are not mutually exclusive on their own (see migration
+  // 0062's header comment). allocationNotes is a NEW accountant-entered
+  // field, deliberately separate from the as-imported `notes` above.
+  allocationType: "G" | "C" | "S" | null;
+  allocationNotes: string;
+
   // Cashbook & Bank Reconciliation (Workflow Completion Audit) additions
   // — this SAME table reused for manually-captured entries, not a
   // parallel object. `captureStatus` is only meaningful when

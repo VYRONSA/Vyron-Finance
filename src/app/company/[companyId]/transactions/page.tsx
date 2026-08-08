@@ -9,11 +9,15 @@ import { listBankAccounts } from "@/server/repositories/bank-account-repository"
 import { listSuppliers } from "@/server/repositories/supplier-reconciliation-repository";
 import { listCustomers } from "@/server/repositories/customer-repository";
 import { listMerchants } from "@/server/repositories/merchant-repository";
+import { listChartOfAccounts } from "@/server/repositories/chart-of-accounts-repository";
+import { listVatTreatments } from "@/server/repositories/vat-treatment-repository";
 import { MOCK_TRANSACTION_SUMMARY, MOCK_TRANSACTIONS } from "@/lib/mock/transaction-explorer-data";
 import { MOCK_BANK_ACCOUNT_SUMMARIES } from "@/lib/mock/bank-accounts-data";
 import { MOCK_SUPPLIERS } from "@/lib/mock/supplier-reconciliation-data";
 import { MOCK_CUSTOMERS } from "@/lib/mock/customer-management-data";
 import { MOCK_MERCHANTS } from "@/lib/mock/banking-automation-data";
+import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
+import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 
 export const metadata: Metadata = {
   title: "Transaction Explorer — VYRON FINANCE",
@@ -23,8 +27,15 @@ function money(value: number): string {
   return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export default async function TransactionExplorerPage({ params }: { params: Promise<{ companyId: string }> }) {
+export default async function TransactionExplorerPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ companyId: string }>;
+  searchParams: Promise<{ importBatch?: string }>;
+}) {
   const { companyId } = await params;
+  const { importBatch } = await searchParams;
   const previewMode = !isSupabaseConfigured();
 
   const summary = previewMode ? MOCK_TRANSACTION_SUMMARY : await getSummary(companyId);
@@ -34,10 +45,16 @@ export default async function TransactionExplorerPage({ params }: { params: Prom
   const suppliers = previewMode ? MOCK_SUPPLIERS : await listSuppliers(companyId);
   const customers = previewMode ? MOCK_CUSTOMERS : await listCustomers(companyId);
   const merchants = previewMode ? MOCK_MERCHANTS : await listMerchants(companyId);
+  const chartOfAccounts = previewMode ? MOCK_CHART_OF_ACCOUNTS : await listChartOfAccounts(companyId);
+  const vatTreatments = previewMode ? MOCK_VAT_TREATMENTS : await listVatTreatments(companyId);
 
+  // Pilot Review Board follow-up — the new Import Summary screen's
+  // "Review Transactions" button links here with `?importBatch=...` so
+  // an accountant lands directly on the statement they just imported,
+  // not the whole unfiltered ledger.
   const defaultFilters = {
     search: null, dateFrom: null, dateTo: null, minAmount: null, maxAmount: null,
-    statuses: null, bankAccountId: null, importBatch: null, duplicateOnly: false,
+    statuses: null, bankAccountId: null, importBatch: importBatch ?? null, duplicateOnly: false,
     unknownSupplierOnly: false, sortBy: "transactionDate" as const, sortDirection: "desc" as const,
   };
   const initialPage = previewMode
@@ -97,8 +114,10 @@ export default async function TransactionExplorerPage({ params }: { params: Prom
         previewMode={previewMode}
         bankAccounts={bankAccounts}
         suppliers={suppliers}
-        customers={customers.map((c) => ({ id: c.id, name: c.name }))}
+        customers={customers.map((c) => ({ id: c.id, name: c.name, customerCode: c.customerCode }))}
         merchants={merchants}
+        chartOfAccounts={chartOfAccounts}
+        vatTreatments={vatTreatments}
         initialTransactions={initialPage.transactions}
         initialNextCursor={initialPage.nextCursor}
         initialHasMore={initialPage.hasMore}

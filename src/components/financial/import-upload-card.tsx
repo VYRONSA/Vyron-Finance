@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { ImportBatch } from "@/server/accounting/types";
 import type { ImportExceptionRecord } from "@/server/import-centre/types";
 import { PdfImportReviewPanel, type PdfStatementPreview } from "@/components/financial/import-centre/pdf-import-review-panel";
+import { ImportOutcomeSummary } from "@/components/financial/import-centre/import-outcome-summary";
 
 type UploadResult = { batch: ImportBatch; exceptions: ImportExceptionRecord[] };
 
@@ -193,7 +194,32 @@ export function ImportUploadCard({
               </p>
             )}
 
-            {result && (
+            {result && kind === "bank-transactions" && (
+              <div className="flex flex-col gap-2">
+                <ImportOutcomeSummary
+                  companyId={companyId}
+                  batchId={result.batch.batchId}
+                  importedCount={result.batch.importedCount}
+                  duplicateCount={result.batch.duplicateCount}
+                  rulesAllocatedCount={0}
+                  exceptionCount={result.exceptions.length}
+                  onImportAnother={() => setResult(null)}
+                  onFinish={() => setResult(null)}
+                />
+                {result.exceptions.length > 0 && (
+                  <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-vf-md border border-vf-paper-border bg-vf-paper-alt p-3 text-xs text-vf-ink-faint">
+                    {result.exceptions.slice(0, 20).map((exc, i) => (
+                      <li key={i}>
+                        Row {exc.rowNumber} — <span className="font-medium text-vf-ink-soft">{exc.exceptionType}</span>: {exc.description}
+                      </li>
+                    ))}
+                    {result.exceptions.length > 20 && <li>…and {result.exceptions.length - 20} more.</li>}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {result && kind === "bills" && (
               <div role="status" aria-live="polite" className="flex flex-col gap-2 rounded-vf-md border border-vf-paper-border bg-vf-paper-alt p-3">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge tone="good">{result.batch.importedCount} imported</Badge>

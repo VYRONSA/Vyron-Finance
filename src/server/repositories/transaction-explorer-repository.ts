@@ -497,6 +497,40 @@ export async function bulkAssignCustomer(companyId: string, transactionIds: numb
   );
 }
 
+export type AllocateRowFields = {
+  type: "G" | "C" | "S";
+  accountCode: string | null;
+  supplierId: number | null;
+  customerId: number | null;
+  vatCode: string | null;
+  allocationNotes: string;
+};
+
+/** Transaction Explorer Redesign, Phase 1 — the one write path behind the
+ * new inline grid's per-row commit AND its "apply to selected" bulk
+ * allocation (same function, `transactionIds` is `[id]` for the former).
+ * Deliberately reuses the existing, already-audited
+ * `bulkAssignGl`/`bulkAssignSupplier`/`bulkAssignCustomer`/`bulkAssignVat`
+ * functions above rather than duplicating their allocation-history
+ * writes — this only adds the one new direct update those don't cover
+ * (`allocation_type`/`allocation_notes`, see migration 0062). */
+export async function allocateRow(companyId: string, transactionIds: number[], input: AllocateRowFields, performedBy: string): Promise<void> {
+  const tasks: Promise<void>[] = [];
+  if (input.type === "G" && input.accountCode) tasks.push(bulkAssignGl(companyId, transactionIds, input.accountCode, performedBy));
+  if (input.type === "S" && input.supplierId !== null) tasks.push(bulkAssignSupplier(companyId, transactionIds, input.supplierId, performedBy));
+  if (input.type === "C" && input.customerId !== null) tasks.push(bulkAssignCustomer(companyId, transactionIds, input.customerId, performedBy));
+  if (input.vatCode) tasks.push(bulkAssignVat(companyId, transactionIds, input.vatCode, performedBy));
+  await Promise.all(tasks);
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("ae_bank_transactions")
+    .update({ allocation_type: input.type, allocation_notes: input.allocationNotes })
+    .eq("company_id", companyId)
+    .in("id", transactionIds);
+  if (error) throw error;
+}
+
 export type RuleResolutionFields = Partial<{
   matchedMerchantId: number;
   matchedSupplierId: number;
