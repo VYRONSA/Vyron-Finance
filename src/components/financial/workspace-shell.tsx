@@ -158,11 +158,10 @@ export function FinancialWorkspaceShell({
         >
           {/* UI-006 — restrained on purpose: one flat icon frame (a
               ring, not a stack of glows), a stacked two-weight wordmark,
-              and a precise tagline. The mark itself (`BrandMark`) is
-              intentionally UNCHANGED here — the user is designing a
-              proper VYRON ecosystem-wide logo separately and will hand
-              over a concrete reference; this only refines the framing
-              and typography around whatever mark ends up there. */}
+              and a precise tagline. `BrandMark` (src/components/ui/
+              brand-mark.tsx) now renders the approved VYRON ecosystem
+              compass-star reference — the same mark every future VYRON
+              product shares, not something invented independently here. */}
           <Link href="/" className="group mb-1 flex flex-col items-start gap-3 px-1 pt-1" title="VYRON FINANCE — Financial Workspace">
             <span
               className={cn(
@@ -170,7 +169,7 @@ export function FinancialWorkspaceShell({
                 collapsed ? "h-10 w-10" : "h-12 w-12",
               )}
             >
-              <BrandMark className={collapsed ? "h-5 w-5" : "h-6 w-6"} />
+              <BrandMark className={collapsed ? "h-6 w-6" : "h-7 w-7"} />
             </span>
             {!collapsed && (
               <div className="flex flex-col">
