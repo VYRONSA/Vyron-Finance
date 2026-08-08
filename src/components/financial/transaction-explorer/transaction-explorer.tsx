@@ -76,6 +76,7 @@ export function TransactionExplorer({
   initialTransactions,
   initialNextCursor,
   initialHasMore,
+  initialImportBatch,
 }: {
   companyId: string;
   previewMode: boolean;
@@ -88,6 +89,7 @@ export function TransactionExplorer({
   initialTransactions: BankTransactionRecord[];
   initialNextCursor: string | null;
   initialHasMore: boolean;
+  initialImportBatch: string | null;
 }) {
   const router = useRouter();
   const [filters, setFilters] = useState<FilterDraft>(EMPTY_FILTER_DRAFT);
@@ -103,9 +105,16 @@ export function TransactionExplorer({
   // trimming them is also most of what keeps the grid's natural width
   // inside a laptop screen without horizontal scrolling at all for the
   // core Date → Type → Account → VAT → Notes → Set Rule workflow.
+  // UX-019 — "the eye should move Description → Type → Account Code →
+  // Account Description → VAT → Notes → Set Rule → Status, no
+  // unnecessary columns interrupting that flow." `balance` (a running
+  // account balance, useful for bank reconciliation but not for
+  // deciding how to allocate a single transaction) is the one addition
+  // this round — Debit/Credit stay visible since the amount itself is
+  // exactly what an accountant needs to judge the right GL account.
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     glAccount: false, vatTreatment: false, customer: false, supplier: false,
-    reference: false, bankAccount: false, merchant: false,
+    reference: false, bankAccount: false, merchant: false, balance: false,
     rulesApplied: false, journalStatus: false, confidenceScore: false, requiredAction: false,
   });
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
@@ -563,7 +572,15 @@ export function TransactionExplorer({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    // UX-006/UX-011 — "Processing Mode... the grid should occupy
+    // roughly 85-90% of available browser height." `h-full min-h-0`
+    // lets this component consume the full height `workspace-shell.tsx`'s
+    // `<main>` gives its page content, instead of only its own natural
+    // content height; `<TransactionGrid>` below is the one child wrapped
+    // in `flex-1 min-h-0` so it's the piece that actually absorbs
+    // whatever height is left after the toolbar/filters/stats rows above
+    // it — everything else here keeps its natural height.
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2 text-xs text-vf-ink-faint" role="status" aria-live="polite">
         <span className="font-semibold tracking-wide uppercase">This page</span>
         <span>Imported <span className="font-mono font-semibold text-vf-ink">{pageStats.imported}</span></span>
@@ -575,6 +592,22 @@ export function TransactionExplorer({
         <span>Rules Created <span className="font-mono font-semibold text-vf-info">{pageStats.rulesCreated}</span></span>
         <span>·</span>
         <span>Duplicates <span className="font-mono font-semibold text-vf-ink">{pageStats.duplicates}</span></span>
+        {initialImportBatch && (
+          <>
+            <span>·</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-vf-info/30 bg-vf-info/8 px-2.5 py-0.5 text-vf-info">
+              Import Batch <span className="font-mono font-semibold">{initialImportBatch}</span>
+              <button
+                type="button"
+                onClick={() => router.push(`/company/${companyId}/transactions`)}
+                className="font-semibold hover:underline"
+                title="Show all transactions, not just this import batch"
+              >
+                Clear
+              </button>
+            </span>
+          </>
+        )}
       </div>
 
       <TransactionFiltersBar bankAccounts={bankAccounts} onApply={applyFilters} />
@@ -695,28 +728,30 @@ export function TransactionExplorer({
         </div>
       )}
 
-      <TransactionGrid
-        transactions={transactions}
-        sorting={sorting}
-        onSortingChange={applySorting}
-        columnVisibility={columnVisibility}
-        onColumnVisibilityChange={setColumnVisibility}
-        rowSelection={rowSelection}
-        onRowSelectionChange={setRowSelection}
-        columnSizing={columnSizing}
-        onColumnSizingChange={setColumnSizing}
-        onRowClick={openDetail}
-        loading={loading}
-        highlightedIds={highlightedIds}
-        suppliers={suppliers}
-        customers={customers}
-        chartOfAccounts={chartOfAccounts}
-        vatTreatments={vatTreatments}
-        onAllocateRow={allocateRowInline}
-        onBulkAllocate={allocateRowsInline}
-        onCheckDuplicateRule={checkDuplicateRule}
-        onMerchantClick={setMerchantPanelTransaction}
-      />
+      <div className="min-h-0 min-w-0 flex-1">
+        <TransactionGrid
+          transactions={transactions}
+          sorting={sorting}
+          onSortingChange={applySorting}
+          columnVisibility={columnVisibility}
+          onColumnVisibilityChange={setColumnVisibility}
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
+          columnSizing={columnSizing}
+          onColumnSizingChange={setColumnSizing}
+          onRowClick={openDetail}
+          loading={loading}
+          highlightedIds={highlightedIds}
+          suppliers={suppliers}
+          customers={customers}
+          chartOfAccounts={chartOfAccounts}
+          vatTreatments={vatTreatments}
+          onAllocateRow={allocateRowInline}
+          onBulkAllocate={allocateRowsInline}
+          onCheckDuplicateRule={checkDuplicateRule}
+          onMerchantClick={setMerchantPanelTransaction}
+        />
+      </div>
 
       {!previewMode && (
         <div className="flex items-center justify-between text-sm text-vf-ink-faint">

@@ -19,15 +19,32 @@ type TableTone = "paper" | "dark";
 // `overflow-x-auto`) rather than spread onto `<table>`, where a native
 // scroll event would never fire. No existing caller passes either prop,
 // so this is purely additive.
-export const Table = React.forwardRef<HTMLDivElement, React.TableHTMLAttributes<HTMLTableElement> & { tone?: TableTone; onScroll?: React.UIEventHandler<HTMLDivElement> }>(
-  function Table({ className, tone = "paper", onScroll, ...props }, ref) {
-    return (
-      <div ref={ref} onScroll={onScroll} className={cn("overflow-x-auto rounded-vf-md border", tone === "dark" ? "border-vf-dark-border" : "border-vf-paper-border")}>
-        <table className={cn("w-full min-w-max border-collapse text-sm", className)} {...props} />
-      </div>
-    );
-  },
-);
+//
+// UX-010 — "only ONE horizontal scrollbar." Transaction Workspace pairs
+// this div with a floating mirror bar (see transaction-grid.tsx) that's
+// the one actually visible/interactive; this div's own native scrollbar
+// is hidden (still fully functional — `overflow-x-auto` still scrolls
+// via drag, wheel, or the mirror's synced `scrollLeft`) so the two never
+// stack. `hideScrollbar` defaults to false so every other table in the
+// app keeps its native scrollbar unchanged.
+export const Table = React.forwardRef<
+  HTMLDivElement,
+  React.TableHTMLAttributes<HTMLTableElement> & { tone?: TableTone; onScroll?: React.UIEventHandler<HTMLDivElement>; hideScrollbar?: boolean }
+>(function Table({ className, tone = "paper", onScroll, hideScrollbar, ...props }, ref) {
+  return (
+    <div
+      ref={ref}
+      onScroll={onScroll}
+      className={cn(
+        "overflow-x-auto rounded-vf-md border",
+        tone === "dark" ? "border-vf-dark-border" : "border-vf-paper-border",
+        hideScrollbar && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+      )}
+    >
+      <table className={cn("w-full min-w-max border-collapse text-sm", className)} {...props} />
+    </div>
+  );
+});
 
 export function TableHead({
   className,

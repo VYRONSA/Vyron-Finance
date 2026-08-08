@@ -11,6 +11,14 @@ import { createClient } from "@/lib/supabase/server";
 import { chartOfAccountFromRow, type ChartOfAccountRow } from "@/server/general-ledger/mappers";
 import type { AccountType, ChartOfAccount, NormalBalance } from "@/server/general-ledger/types";
 
+// RC1 Phase 3 (Performance Hardening) — see customer-repository.ts's own
+// comment on this exact pattern. This query was unbounded until the
+// Transaction Workspace's live GL lookup (UX-009) needed to guarantee it
+// scales to "thousands of accounts" without silently relying on
+// PostgREST's own default row cap; `company_id` already has a real index
+// (0007_general_ledger.sql).
+const LIST_CAP = 10_000;
+
 export async function listChartOfAccounts(companyId: string): Promise<ChartOfAccount[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -18,6 +26,7 @@ export async function listChartOfAccounts(companyId: string): Promise<ChartOfAcc
     .select("*")
     .eq("company_id", companyId)
     .order("account_code")
+    .limit(LIST_CAP)
     .returns<ChartOfAccountRow[]>();
   if (error) throw error;
   return data.map(chartOfAccountFromRow);

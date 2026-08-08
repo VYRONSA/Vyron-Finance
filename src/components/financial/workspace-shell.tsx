@@ -131,6 +131,19 @@ export function FinancialWorkspaceShell({
     mainRef.current?.scrollTo(0, 0);
   }, [pathname]);
 
+  // UX-006 — "Full Screen Processing Mode... collapse sidebar to
+  // icons-only... when entering Transaction Workspace." Only fires on
+  // the transition INTO the route (guarded by the ref, which tracks the
+  // previous render's value) — collapsing again on every re-render
+  // inside the route would fight an accountant who manually re-expands
+  // the sidebar while processing a statement.
+  const isProcessingRoute = pathname.startsWith(`/company/${companyId}/transactions`);
+  const wasProcessingRouteRef = useRef(isProcessingRoute);
+  useEffect(() => {
+    if (isProcessingRoute && !wasProcessingRouteRef.current) setCollapsed(true);
+    wasProcessingRouteRef.current = isProcessingRoute;
+  }, [isProcessingRoute]);
+
   return (
     // `h-screen overflow-hidden` — the outermost frame is locked to
     // exactly the viewport size and never scrolls itself; every
@@ -300,7 +313,13 @@ export function FinancialWorkspaceShell({
             </div>
           </header>
 
-          <main ref={mainRef} className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 2xl:px-10">
+          <main
+            ref={mainRef}
+            className={cn(
+              "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto",
+              isProcessingRoute ? "px-4 py-3 sm:px-6" : "px-4 py-6 sm:px-6 lg:px-8 2xl:px-10",
+            )}
+          >
             {children}
           </main>
         </div>

@@ -71,7 +71,14 @@ type MinimalCustomer = { id: number; name: string; customerCode: string };
 // ---------------------------------------------------------------------
 
 export type PendingRowEdit = {
-  type: "G" | "C" | "S";
+  // Pilot Review Board follow-up (UX-008) — `null` means "not chosen
+  // yet," a real, distinct third state from G/C/S: it's what makes the
+  // Account Code search unified (Customers+Suppliers+GL together) for a
+  // brand-new, untouched row, while narrowing to exactly one category
+  // the moment Type IS set — either by typing it directly, or by
+  // picking a result from the unified search, which sets it as a
+  // side effect.
+  type: "G" | "C" | "S" | null;
   accountCode: string;
   supplierId: number | null;
   customerId: number | null;
@@ -111,7 +118,7 @@ export function ruleActionsFor(input: AllocateRowPayload): { actionType: string;
 }
 
 function initialEdit(t: BankTransactionRecord): PendingRowEdit {
-  const type: "G" | "C" | "S" = t.allocationType ?? (t.matchedSupplierId !== null ? "S" : t.matchedCustomerId !== null ? "C" : "G");
+  const type: "G" | "C" | "S" | null = t.allocationType ?? (t.matchedSupplierId !== null ? "S" : t.matchedCustomerId !== null ? "C" : null);
   return {
     type,
     accountCode: t.suggestedGlAccount ?? "",
@@ -137,7 +144,18 @@ function vatShorthand(v: VatTreatment): string {
 function accountDescriptionFor(edit: PendingRowEdit, chartOfAccounts: ChartOfAccount[], suppliers: Supplier[], customers: MinimalCustomer[]): string {
   if (edit.type === "G") return chartOfAccounts.find((a) => a.accountCode === edit.accountCode)?.description ?? "";
   if (edit.type === "S") return suppliers.find((s) => s.id === edit.supplierId)?.name ?? "";
-  return customers.find((c) => c.id === edit.customerId)?.name ?? "";
+  if (edit.type === "C") return customers.find((c) => c.id === edit.customerId)?.name ?? "";
+  return "";
+}
+
+/** Whether the row's allocation is complete enough to save — `type`
+ * itself being unresolved (`null`) always counts as missing, same as a
+ * resolved type with no account/supplier/customer chosen yet. */
+function isAllocationMissing(edit: PendingRowEdit): boolean {
+  if (edit.type === null) return true;
+  if (edit.type === "G") return !edit.accountCode.trim();
+  if (edit.type === "S") return edit.supplierId === null;
+  return edit.customerId === null;
 }
 
 const helper = createColumnHelper<BankTransactionRecord>();
@@ -194,6 +212,7 @@ const NEW_ALLOCATION_COLUMN_IDS = new Set(["type", "accountCode", "accountDescri
 const PINNED_COLUMN_IDS = new Set(["select", "transactionDate", "description", "type"]);
 
 const TYPE_LABELS: Record<"G" | "C" | "S", string> = { G: "GL Account", C: "Customer", S: "Supplier" };
+const TYPE_LABEL_UNSET = "Not set — type G, C, or S";
 
 // Pilot Review Board follow-up — "typing g must instantly become G, no
 // dropdown required." A plain single-character input beats a `<select>`
@@ -207,7 +226,7 @@ function TypeCell({
   onChange,
   cellRef,
 }: {
-  value: "G" | "C" | "S";
+  value: "G" | "C" | "S" | null;
   disabled: boolean;
   onChange: (next: "G" | "C" | "S") => void;
   cellRef: (el: HTMLInputElement | null) => void;
@@ -218,14 +237,14 @@ function TypeCell({
       type="text"
       maxLength={1}
       disabled={disabled}
-      value={value}
+      value={value ?? ""}
       onFocus={(e) => e.target.select()}
       onChange={(e) => {
         const next = e.target.value.trim().slice(-1).toUpperCase();
         if (next === "G" || next === "C" || next === "S") onChange(next);
       }}
       aria-label="Allocation type — G for GL Account, C for Customer, S for Supplier"
-      title={TYPE_LABELS[value]}
+      title={value ? TYPE_LABELS[value] : TYPE_LABEL_UNSET}
       className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-center text-sm font-semibold focus:border-vf-red-500 focus:bg-vf-paper"
     />
   );
@@ -254,33 +273,39 @@ function AccountCodeCell({
   onChange: (patch: Partial<PendingRowEdit>) => void;
   cellRef: (el: HTMLInputElement | null) => void;
 }) {
-  // Pilot Review Board follow-up — "don't make the user think about
-  // different lookup controls." One unified search across Customers,
-  // Suppliers, and General Ledger accounts (in that fixed group order),
-  // regardless of the row's current Type — picking any result sets Type
-  // AND the underlying account/supplier/customer together in one
-  // `onChange`. Values are prefixed by category ("g:440000"/"c:12"/
+  // UX-008 correction — once Type is chosen, the lookup narrows to
+  // exactly that one category (typing "spar" after selecting G must
+  // search the Chart of Accounts only, never Customers/Suppliers again).
+  // Type stays unified across all three (Customers, Suppliers, General
+  // Ledger, in that fixed group order) only while it hasn't been chosen
+  // yet — picking a result from the unified list is what sets Type in
+  // the first place. Values are prefixed by category ("g:440000"/"c:12"/
   // "s:7") since a GL code and a supplier id are otherwise not
   // guaranteed unique against each other.
-  const options: ComboboxOption<string>[] = useMemo(
-    () => [
-      ...customers.map((c) => ({
-        value: `c:${c.id}`, label: c.customerCode || c.name, sublabel: c.name, group: "Customers",
-        searchText: `${c.customerCode} ${c.name}`,
-      })),
-      ...suppliers.map((s) => ({
-        value: `s:${s.id}`, label: s.supplierCode || s.name, sublabel: s.name, group: "Suppliers",
-        searchText: `${s.supplierCode} ${s.name} ${s.alternativeNames.join(" ")}`,
-      })),
-      ...chartOfAccounts.map((a) => ({
-        value: `g:${a.accountCode}`, label: a.accountCode, sublabel: a.description, group: "General Ledger",
-        searchText: `${a.accountCode} ${a.description}`,
-      })),
-    ],
-    [chartOfAccounts, suppliers, customers],
-  );
+  const options: ComboboxOption<string>[] = useMemo(() => {
+    const customerOptions = customers.map((c) => ({
+      value: `c:${c.id}`, label: c.customerCode || c.name, sublabel: c.name, group: "Customers",
+      searchText: `${c.customerCode} ${c.name}`,
+    }));
+    const supplierOptions = suppliers.map((s) => ({
+      value: `s:${s.id}`, label: s.supplierCode || s.name, sublabel: s.name, group: "Suppliers",
+      searchText: `${s.supplierCode} ${s.name} ${s.alternativeNames.join(" ")}`,
+    }));
+    const glOptions = chartOfAccounts.map((a) => ({
+      value: `g:${a.accountCode}`, label: a.accountCode, sublabel: a.description, group: "General Ledger",
+      searchText: `${a.accountCode} ${a.description}`,
+    }));
+    if (edit.type === "G") return glOptions;
+    if (edit.type === "S") return supplierOptions;
+    if (edit.type === "C") return customerOptions;
+    return [...customerOptions, ...supplierOptions, ...glOptions];
+  }, [chartOfAccounts, suppliers, customers, edit.type]);
 
-  const value = edit.type === "G" ? (edit.accountCode ? `g:${edit.accountCode}` : null) : edit.type === "S" ? (edit.supplierId !== null ? `s:${edit.supplierId}` : null) : edit.customerId !== null ? `c:${edit.customerId}` : null;
+  const value = edit.type === "G" ? (edit.accountCode ? `g:${edit.accountCode}` : null) : edit.type === "S" ? (edit.supplierId !== null ? `s:${edit.supplierId}` : null) : edit.type === "C" ? (edit.customerId !== null ? `c:${edit.customerId}` : null) : null;
+
+  const placeholder =
+    edit.type === "G" ? "Search GL Account…" : edit.type === "C" ? "Search Customer…" : edit.type === "S" ? "Search Supplier…" : "Search customer, supplier, or GL account…";
+  const invalidMessage = edit.type === "G" ? "GL account is required." : edit.type === "S" ? "Supplier is required." : edit.type === "C" ? "Customer is required." : "Type is required.";
 
   return (
     <Combobox
@@ -288,11 +313,11 @@ function AccountCodeCell({
       options={options}
       disabled={disabled}
       invalid={invalid}
-      invalidMessage={edit.type === "G" ? "GL account is required." : edit.type === "S" ? "Supplier is required." : "Customer is required."}
+      invalidMessage={invalidMessage}
       suggested={suggested}
       onAcceptSuggestion={onAcceptSuggestion}
       inputRef={cellRef}
-      placeholder="Search customer, supplier, or GL account…"
+      placeholder={placeholder}
       aria-label="Account"
       onCommit={(val) => {
         if (val === null) return;
@@ -358,7 +383,7 @@ function VatCodeCell({
  * actually gets saved. */
 function rulePreviewText(t: BankTransactionRecord, edit: PendingRowEdit, chartOfAccounts: ChartOfAccount[], suppliers: Supplier[], customers: MinimalCustomer[]): string {
   const account = accountDescriptionFor(edit, chartOfAccounts, suppliers, customers) || "—";
-  const typeLabel = edit.type === "G" ? "GL" : edit.type === "C" ? "Customer" : "Supplier";
+  const typeLabel = edit.type === "G" ? "GL" : edit.type === "C" ? "Customer" : edit.type === "S" ? "Supplier" : "—";
   const lines = [
     `Rule: Contains "${t.beneficiary}"`,
     `Allocate: ${typeLabel} — ${account}`,
@@ -528,9 +553,7 @@ export function TransactionGrid({
     const edit = pendingEdits.get(t.id);
     if (!edit || savingIds.has(t.id)) return;
 
-    const missing =
-      (edit.type === "G" && !edit.accountCode.trim()) || (edit.type === "S" && edit.supplierId === null) || (edit.type === "C" && edit.customerId === null);
-    if (missing) return; // incomplete row — nothing to save yet, keep the pending edit so the field still shows as touched/invalid
+    if (isAllocationMissing(edit) || edit.type === null) return; // incomplete row (including Type not chosen yet) — nothing to save, keep the pending edit so the field still shows as touched/invalid
 
     setSavingIds((prev) => new Set(prev).add(t.id));
     const ruleOptions: RuleCreationOptions | null = edit.setRule
@@ -600,8 +623,9 @@ export function TransactionGrid({
 
   async function applySimilarPrompt() {
     if (!similarPrompt) return;
-    setApplyingSimilar(true);
     const { matchingIds, edit } = similarPrompt;
+    if (edit.type === null) return;
+    setApplyingSimilar(true);
     await onBulkAllocate(matchingIds, {
       type: edit.type,
       accountCode: edit.type === "G" ? edit.accountCode.trim() : null,
@@ -618,6 +642,7 @@ export function TransactionGrid({
     updateEdit(t, { setRule: checked });
     if (!checked) return;
     const edit = getEdit(t);
+    if (edit.type === null) return;
     const payload: AllocateRowPayload = {
       type: edit.type,
       accountCode: edit.type === "G" ? edit.accountCode : null,
@@ -721,7 +746,7 @@ export function TransactionGrid({
           const t = row.original;
           const edit = getEdit(t);
           const touched = pendingEdits.has(t.id);
-          const missing = (edit.type === "G" && !edit.accountCode.trim()) || (edit.type === "S" && edit.supplierId === null) || (edit.type === "C" && edit.customerId === null);
+          const missing = isAllocationMissing(edit);
           const suggested = (t.allocationStatus === "Suggested" || sessionSuggestions.has(t.id)) && !touched;
           return (
             <AccountCodeCell
@@ -824,7 +849,7 @@ export function TransactionGrid({
           const t = row.original;
           const edit = getEdit(t);
           const touched = pendingEdits.has(t.id);
-          const missing = (edit.type === "G" && !edit.accountCode.trim()) || (edit.type === "S" && edit.supplierId === null) || (edit.type === "C" && edit.customerId === null);
+          const missing = isAllocationMissing(edit);
           const { label, tone } = computeMatchStatus(t, touched, missing);
           return <Badge tone={tone}>{label}</Badge>;
         },
@@ -889,7 +914,11 @@ export function TransactionGrid({
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 49,
+    // UX-020 — kept in sync with the tighter `py-2` row padding just
+    // below (row height dropped from the previous ~49px estimate);
+    // must match the real rendered height or virtualization's scroll
+    // math drifts.
+    estimateSize: () => 41,
     overscan: 12,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
@@ -1004,7 +1033,7 @@ export function TransactionGrid({
       e.preventDefault();
       const edit = getEdit(t);
       const selectedIds = transactions.filter((tx) => rowSelection[String(tx.id)]).map((tx) => tx.id);
-      if (selectedIds.length > 0) {
+      if (selectedIds.length > 0 && edit.type !== null) {
         void onBulkAllocate(selectedIds, {
           type: edit.type,
           accountCode: edit.type === "G" ? edit.accountCode.trim() : null,
@@ -1028,7 +1057,14 @@ export function TransactionGrid({
     // `min-w-max` table (in `ui/table.tsx`) pushes these wrapping divs —
     // and therefore the whole page — wider instead of scrolling inside
     // its own `overflow-x-auto` container.
-    <div className="flex min-w-0 flex-col gap-2">
+    // UX-006/UX-007 — "Processing Mode... grid should occupy roughly
+    // 85–90% of available browser height... the grid is the product."
+    // `h-full min-h-0` lets this component fill whatever height its
+    // parent (`TransactionExplorer`) allocates to it, instead of
+    // growing to its content's natural height — the scroll container
+    // below is what actually turns that into a fixed-height, internally
+    // scrolling grid via its own `flex-1 min-h-0`.
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
       {similarPrompt && (
         <div className="flex flex-wrap items-center gap-3 rounded-vf-md border border-vf-info/25 bg-vf-info/8 px-3.5 py-2.5 text-sm text-vf-info">
           <span>
@@ -1059,8 +1095,8 @@ export function TransactionGrid({
           <div style={{ width: tableScrollWidth, height: 1 }} />
         </div>
       )}
-      <div ref={scrollContainerRef} onKeyDownCapture={handleGridKeyDown} className="min-w-0 max-h-[600px] overflow-y-auto rounded-vf-md">
-    <Table ref={tableWrapperRef} onScroll={handleTableScroll}>
+      <div ref={scrollContainerRef} onKeyDownCapture={handleGridKeyDown} className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-vf-md">
+    <Table ref={tableWrapperRef} onScroll={handleTableScroll} hideScrollbar>
       <TableHead sticky>
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
@@ -1135,7 +1171,15 @@ export function TransactionGrid({
                       <TableCell
                         key={cell.id}
                         style={{ width: cell.column.getSize(), position: pinned ? "sticky" : undefined, left: pinned ? leftOffset(cell.column.id) : undefined }}
-                        className={cn(pinned && "z-[1] bg-vf-paper", isNewColumn && "p-1")}
+                        // UX-020 — "maximise visible rows without sacrificing
+                        // readability." Only overrides `ui/table.tsx`'s
+                        // shared `py-3` default within THIS grid (every
+                        // other table in the app keeps its normal row
+                        // height) — `py-2` brings read-only cells close to
+                        // the already-tight editable cells (`p-1` wrapper +
+                        // each control's own `py-1.5`) instead of the read
+                        // side dominating the row height.
+                        className={cn(pinned && "z-[1] bg-vf-paper", isNewColumn ? "p-1" : "py-2")}
                         onClick={isNewColumn ? (e) => e.stopPropagation() : undefined}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
