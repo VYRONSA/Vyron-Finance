@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -113,71 +113,80 @@ export function FinancialWorkspaceShell({
   };
   const initials = (userEmail ?? companyName).slice(0, 2).toUpperCase();
 
+  // UI-005 — "the sidebar must never visually move... full-height blue
+  // application frame." A `sticky` sidebar (last round's fix) still
+  // *unsticks* once a long page has scrolled far enough that the
+  // sidebar would overrun the bottom of its own containing row — the
+  // exact "blue shell ends, page continues beneath it" symptom
+  // reported. Sticky was the wrong tool: it makes an element stay put
+  // *within document scroll*, not stay put *instead of* document
+  // scroll. Real native-app sidebars (Slack, Linear, Notion) don't
+  // scroll the document at all — the whole shell is pinned to the
+  // viewport and only specific *panes inside it* scroll. `<main>`'s own
+  // scroll position doesn't reset on route change the way the browser
+  // naturally resets document scroll, so this effect does that
+  // explicitly on every navigation.
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0);
+  }, [pathname]);
+
   return (
-    // Pilot Review Board "Stabilisation Phase" (UI-003) — `overflow-x-hidden`
-    // here is a hard, shell-level structural boundary: the page itself must
-    // never be able to scroll horizontally, full stop, regardless of what
-    // any individual page renders. This is deliberately in ADDITION to (not
-    // instead of) fixing the actual root cause wherever it's found — see
-    // the `min-w-0` note below and `transaction-grid.tsx`'s own note on the
-    // specific regression this round traced and fixed (a virtualization
-    // wrapper added later that hadn't inherited the `min-w-0` fix). Without
-    // a page-level backstop like this, the SAME flexbox footgun recurring
-    // in any future page reveals `<body>`'s own near-black canvas colour
-    // (`--color-canvas`, the dark marketing/auth theme) in the gap — which
-    // is what "black area" reports actually are: not a colour bug, an
-    // overflow bug that happens to expose a dark colour when it occurs.
-    <div className="min-h-screen overflow-x-hidden bg-vf-workspace-bg">
+    // `h-screen overflow-hidden` — the outermost frame is locked to
+    // exactly the viewport size and never scrolls itself; every
+    // scrollable region below is a deliberate, bounded exception
+    // (`<nav>`, `<main>`), not the document. This is what actually
+    // guarantees UI-003's "workspace must never scroll horizontally"
+    // and UI-005's "sidebar must never visually move" at the same
+    // time — both are the same underlying fix, a real fixed frame
+    // instead of relying on sticky/overflow tricks layered on top of
+    // ordinary document scroll.
+    <div className="flex h-screen flex-col overflow-hidden bg-vf-workspace-bg">
       {previewMode && (
-        <div className="border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-600">
+        <div className="shrink-0 border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-600">
           Preview Mode — no Supabase project is configured yet, so this workspace is showing mock
           data with authentication disabled. See ARCHITECTURE.md.
         </div>
       )}
 
-      <div className="flex min-h-screen">
-        {/* UI-002 — "the sidebar must behave like a desktop application":
-            `sticky top-0 h-screen` locks the sidebar's own box to the
-            viewport height regardless of how tall the current page's
-            content is, so it can never scroll away with the document.
-            The nav list inside scrolls independently via its own
-            `overflow-y-auto` only if the nav items themselves exceed that
-            fixed height — the branding header and collapse button below
-            stay put either way. */}
+      <div className="flex min-h-0 flex-1">
         <aside
           className={cn(
-            "sticky top-0 hidden h-screen shrink-0 flex-col bg-gradient-to-b from-vf-red-600 to-vf-red-900 px-3 py-5 transition-[width] lg:flex",
+            "hidden h-full shrink-0 flex-col bg-gradient-to-b from-vf-red-600 to-vf-red-900 px-3 py-5 transition-[width] lg:flex",
             collapsed ? "w-[72px]" : "w-64",
           )}
         >
-          {/* UI-001 — the branding section is a deliberate focal point,
-              not a shrunk-down echo of the marketing/auth mark sizing
-              used elsewhere in the app: this is the one screen an
-              accountant looks at all day, so it earns more presence than
-              a one-time login screen does. Same `BrandMark` vector and
-              same silver/blue identity as everywhere else in the VYRON
-              ecosystem — only the scale and framing change. */}
-          <Link href="/" className="group mb-1 flex flex-col gap-3 px-1 pt-1" title="VYRON FINANCE — Financial Workspace">
+          {/* UI-006 — restrained on purpose: one flat icon frame (a
+              ring, not a stack of glows), a stacked two-weight wordmark,
+              and a precise tagline. The mark itself (`BrandMark`) is
+              intentionally UNCHANGED here — the user is designing a
+              proper VYRON ecosystem-wide logo separately and will hand
+              over a concrete reference; this only refines the framing
+              and typography around whatever mark ends up there. */}
+          <Link href="/" className="group mb-1 flex flex-col items-start gap-3 px-1 pt-1" title="VYRON FINANCE — Financial Workspace">
             <span
               className={cn(
-                "flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-vf-charcoal-soft to-vf-charcoal shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_28px_-8px_rgba(0,0,0,0.65)] ring-1 ring-white/10 transition-transform duration-200 group-hover:scale-[1.04]",
-                collapsed ? "h-11 w-11" : "h-14 w-14",
+                "flex shrink-0 items-center justify-center rounded-xl bg-vf-charcoal ring-1 ring-white/[0.09] transition-transform duration-200 group-hover:scale-[1.03]",
+                collapsed ? "h-10 w-10" : "h-12 w-12",
               )}
             >
-              <BrandMark className={collapsed ? "h-6 w-6" : "h-7 w-7"} />
+              <BrandMark className={collapsed ? "h-5 w-5" : "h-6 w-6"} />
             </span>
             {!collapsed && (
-              <div className="flex flex-col gap-0.5">
-                <span className="font-display text-[1.4rem] leading-none tracking-tight text-vf-on-dark">
-                  VYRON <span className="text-vf-red-300">FINANCE</span>
+              <div className="flex flex-col">
+                <span className="font-display text-xl leading-[1.1] font-semibold tracking-tight text-vf-on-dark">VYRON</span>
+                <span className="font-display text-xl leading-[1.1] font-light tracking-[0.06em] text-vf-red-300">FINANCE</span>
+                <span className="mt-2.5 text-[0.6rem] leading-tight font-medium tracking-[0.16em] text-vf-on-dark-faint uppercase">
+                  Enterprise Financial
+                  <br />
+                  Intelligence Platform
                 </span>
-                <span className="text-[0.62rem] font-semibold tracking-[0.22em] text-vf-on-dark-faint uppercase">Enterprise Financial Platform</span>
               </div>
             )}
           </Link>
-          <div className={cn("mt-4 mb-2 border-t border-white/10", collapsed && "mx-1")} />
+          <div className={cn("mt-5 mb-2 h-px bg-white/10", collapsed && "mx-1")} />
 
-          <nav className="flex flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden pt-1">
+          <nav className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden pt-1">
             {NAV_GROUPS.map((group, groupIndex) => (
               <div key={group.label}>
                 {!collapsed && (
@@ -248,13 +257,11 @@ export function FinancialWorkspaceShell({
             container further down. Fixed once, here, in the one shell
             every page in this workspace renders inside — not per-page —
             so this can't recur on a page that happens to render a wide
-            table later. (It DID recur once anyway, in a virtualization
-            wrapper added well after this comment was written, which is
-            exactly why UI-003 also added the `overflow-x-hidden`
-            backstop above — a single fix, however well-reasoned, isn't
-            proof against every future addition.) */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-vf-paper-border bg-vf-paper px-6 py-3">
+            table later. `min-h-0` is the same fix on the height axis —
+            needed now that `<main>` below has its own bounded scroll
+            (UI-005) instead of the document scrolling. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="z-10 flex shrink-0 items-center justify-between gap-4 border-b border-vf-paper-border bg-vf-paper px-6 py-3">
             <Link
               href="/platform"
               className="flex items-center gap-1.5 text-sm transition hover:text-vf-red-600"
@@ -294,7 +301,9 @@ export function FinancialWorkspaceShell({
             </div>
           </header>
 
-          <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 2xl:px-10">{children}</main>
+          <main ref={mainRef} className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 2xl:px-10">
+            {children}
+          </main>
         </div>
       </div>
     </div>
