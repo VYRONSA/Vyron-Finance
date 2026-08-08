@@ -11,13 +11,23 @@ import { cn } from "@/lib/utils";
  */
 type TableTone = "paper" | "dark";
 
-export function Table({ className, tone = "paper", ...props }: React.TableHTMLAttributes<HTMLTableElement> & { tone?: TableTone }) {
-  return (
-    <div className={cn("overflow-x-auto rounded-vf-md border", tone === "dark" ? "border-vf-dark-border" : "border-vf-paper-border")}>
-      <table className={cn("w-full min-w-max border-collapse text-sm", className)} {...props} />
-    </div>
-  );
-}
+// `forwardRef` targets the *wrapping* scroll div, not the `<table>`
+// itself — that's the element callers actually need a handle to (e.g.
+// syncing an external scrollbar to this one's `scrollLeft`). `onScroll`
+// is likewise applied to that same wrapping div (the only element that
+// ever actually fires a scroll event here, since it's the one with
+// `overflow-x-auto`) rather than spread onto `<table>`, where a native
+// scroll event would never fire. No existing caller passes either prop,
+// so this is purely additive.
+export const Table = React.forwardRef<HTMLDivElement, React.TableHTMLAttributes<HTMLTableElement> & { tone?: TableTone; onScroll?: React.UIEventHandler<HTMLDivElement> }>(
+  function Table({ className, tone = "paper", onScroll, ...props }, ref) {
+    return (
+      <div ref={ref} onScroll={onScroll} className={cn("overflow-x-auto rounded-vf-md border", tone === "dark" ? "border-vf-dark-border" : "border-vf-paper-border")}>
+        <table className={cn("w-full min-w-max border-collapse text-sm", className)} {...props} />
+      </div>
+    );
+  },
+);
 
 export function TableHead({
   className,

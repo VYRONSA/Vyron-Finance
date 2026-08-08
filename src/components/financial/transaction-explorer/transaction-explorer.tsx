@@ -92,13 +92,21 @@ export function TransactionExplorer({
   const router = useRouter();
   const [filters, setFilters] = useState<FilterDraft>(EMPTY_FILTER_DRAFT);
   const [sorting, setSorting] = useState<SortingState>([{ id: "transactionDate", desc: true }]);
-  // Transaction Explorer Redesign, Phase 1 — the old read-only GL
-  // Account/VAT Treatment/Customer/Supplier columns are redundant now
-  // that the new editable Account Code/VAT Code columns show the same
-  // facts; hidden by default (still selectable via the column chooser),
-  // not removed, so nothing already relying on them breaks.
+  // Transaction Explorer Redesign — "this is an allocation screen, not
+  // a transaction report; prioritise editable allocation columns."
+  // Hidden by default (still selectable via the column chooser, never
+  // removed): the old read-only GL Account/VAT Treatment/Customer/
+  // Supplier columns (redundant with the new editable Account Code/VAT
+  // Code columns), plus Reference/Bank Account/Merchant/Rule Applied/
+  // Journal Status/Confidence/Recovery Status — genuinely useful for
+  // audit/investigation, but not needed to process a statement, and
+  // trimming them is also most of what keeps the grid's natural width
+  // inside a laptop screen without horizontal scrolling at all for the
+  // core Date → Type → Account → VAT → Notes → Set Rule workflow.
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     glAccount: false, vatTreatment: false, customer: false, supplier: false,
+    reference: false, bankAccount: false, merchant: false,
+    rulesApplied: false, journalStatus: false, confidenceScore: false, requiredAction: false,
   });
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});

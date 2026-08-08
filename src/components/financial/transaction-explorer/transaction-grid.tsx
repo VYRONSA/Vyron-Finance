@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createColumnHelper,
   flexRender,
@@ -896,6 +896,46 @@ export function TransactionGrid({
   const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
   const paddingBottom = virtualRows.length > 0 ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end : 0;
 
+  // UX-001 — "the user must never need to scroll to the last row just to
+  // move sideways." The table's own native horizontal scrollbar lives at
+  // the bottom of its box, which on a laptop screen can genuinely be
+  // below the fold once filters/stats/toolbar chrome stack up above the
+  // grid. This mirrors that same scroll position into a slim bar pinned
+  // right above the grid instead — always in view whenever the grid is,
+  // regardless of vertical scroll position inside it.
+  const tableWrapperRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
+  const syncingScrollRef = useRef<"top" | "table" | null>(null);
+
+  useEffect(() => {
+    const el = tableWrapperRef.current;
+    if (!el) return;
+    const update = () => setTableScrollWidth(el.scrollWidth);
+    update();
+    // jsdom (this project's test environment) has no ResizeObserver —
+    // the one-off `update()` above already covers a correct initial
+    // measurement there; only real browsers get the live re-measure.
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [columns]);
+
+  function handleTopScroll() {
+    if (syncingScrollRef.current === "table") return;
+    syncingScrollRef.current = "top";
+    if (tableWrapperRef.current && topScrollRef.current) tableWrapperRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    syncingScrollRef.current = null;
+  }
+
+  function handleTableScroll() {
+    if (syncingScrollRef.current === "top") return;
+    syncingScrollRef.current = "table";
+    if (tableWrapperRef.current && topScrollRef.current) topScrollRef.current.scrollLeft = tableWrapperRef.current.scrollLeft;
+    syncingScrollRef.current = null;
+  }
+
   function handleRowKeyDown(e: React.KeyboardEvent<HTMLTableRowElement>, rowIndex: number) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Enter") return;
     const rowCells = cellRefs.current[rowIndex] ?? [];
@@ -1008,8 +1048,19 @@ export function TransactionGrid({
           </button>
         </div>
       )}
+      {tableScrollWidth > 0 && (
+        <div
+          ref={topScrollRef}
+          onScroll={handleTopScroll}
+          className="min-w-0 overflow-x-auto overflow-y-hidden"
+          style={{ scrollbarWidth: "thin" }}
+          aria-hidden
+        >
+          <div style={{ width: tableScrollWidth, height: 1 }} />
+        </div>
+      )}
       <div ref={scrollContainerRef} onKeyDownCapture={handleGridKeyDown} className="min-w-0 max-h-[600px] overflow-y-auto rounded-vf-md">
-    <Table>
+    <Table ref={tableWrapperRef} onScroll={handleTableScroll}>
       <TableHead sticky>
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
