@@ -1,0 +1,281 @@
+/**
+ * Application Service layer for Bank Accounts — validation and
+ * orchestration on top of the repository, never talking to Supabase
+ * directly (see ARCHITECTURE.md's API layer section).
+ */
+
+import * as repo from "@/server/repositories/bank-account-repository";
+import { recordPermissionAuditEntry } from "@/server/repositories/permission-repository";
+import { getOpeningBalanceGovernance } from "@/server/services/opening-balance-service";
+import { listOpeningBalanceEntries } from "@/server/repositories/opening-balance-repository";
+import { listChartOfAccounts } from "@/server/services/chart-of-accounts-service";
+import { createJournal } from "@/server/repositories/journal-repository";
+import { postApprovedJournals } from "@/server/services/posting-engine-service";
+import type { BankAccount, BankAccountSummary } from "@/server/accounting/types";
+
+export class ValidationError extends Error {}
+
+export type CreateBankAccountRequest = {
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+  accountType?: string;
+  branch?: string;
+  currency?: string;
+  openingBalance?: number;
+  // Finding #140 — previously create-only-by-omission: the type/DB
+  // columns existed (added for the edit path in Pilot Review Round 1,
+  // Phase 2) but a newly created account could never set them, only fix
+  // them afterward via Edit.
+  openingBalanceDate?: string | null;
+  openingBalanceReference?: string;
+  glAccount?: string;
+};
+
+/** Pure validation, exported for direct unit testing — no Supabase call
+ * involved, so this is testable without a live project. */
+export function validateCreateBankAccountInput(input: CreateBankAccountRequest) {
+  if (!input.accountNumber?.trim()) throw new ValidationError("Account number is required.");
+  if (!input.accountName?.trim()) throw new ValidationError("Account name is required.");
+  if (!input.bankName?.trim()) throw new ValidationError("Bank name is required.");
+}
+
+/** Master Implementation Tracker — Programme 2, Root Cause RC-7,
+ * Findings #019/#077/#220. A bank account's GL Account is joined
+ * against the Chart of Accounts purely by string match elsewhere (e.g.
+ * `gl-opening-balances-grid.tsx`'s `bankAccountByGl` map) — a typo here
+ * used to silently produce "no match" with no error anywhere. Reject at
+ * the source instead. Blank is still allowed (falls back to a
+ * synthetic `BANK-{accountNumber}` code downstream). */
+export async function validateBankAccountGlCode(companyId: string, glAccount: string | undefined): Promise<void> {
+  if (!glAccount?.trim()) return;
+  const chartOfAccounts = await listChartOfAccounts(companyId);
+  const exists = chartOfAccounts.some((a) => a.accountCode === glAccount.trim());
+  if (!exists) throw new ValidationError(`GL account '${glAccount.trim()}' does not exist in the Chart of Accounts.`);
+}
+
+export async function createBankAccount(companyId: string, input: CreateBankAccountRequest): Promise<BankAccount> {
+  validateCreateBankAccountInput(input);
+  await validateBankAccountGlCode(companyId, input.glAccount);
+
+  const existing = await repo.findBankAccountByNumber(companyId, input.accountNumber.trim());
+  if (existing) {
+    throw new ValidationError(`An account with number ${input.accountNumber} already exists (${existing.accountName}).`);
+  }
+
+  return repo.createBankAccount(companyId, {
+    accountNumber: input.accountNumber.trim(),
+    accountName: input.accountName.trim(),
+    bankName: input.bankName.trim(),
+    accountType: input.accountType?.trim() ?? "",
+    branch: input.branch?.trim() ?? "",
+    currency: input.currency?.trim() || "ZAR",
+    openingBalance: input.openingBalance ?? 0,
+    openingBalanceDate: input.openingBalanceDate ?? null,
+    openingBalanceReference: input.openingBalanceReference?.trim() ?? "",
+    glAccount: input.glAccount?.trim() ?? "",
+  });
+}
+
+export type EditBankAccountRequest = Partial<{
+  accountName: string;
+  bankName: string;
+  accountType: string;
+  branch: string;
+  currency: string;
+  notes: string;
+  glAccount: string;
+  // Pilot Review Round 1, Phase 2 — previously create-only.
+  openingBalance: number;
+  openingBalanceDate: string | null;
+  openingBalanceReference: string;
+  reason: string;
+}>;
+
+/** Pure core of the opening-balance edit path — changing the opening
+ * balance shifts `current_balance` by the same delta, never recalculated
+ * from scratch, so every real transaction/reconciliation movement
+ * already posted against the account is preserved. Extracted for direct
+ * unit testing, matching this codebase's pure-core/orchestration split. */
+export function computeOpeningBalanceDelta(existingOpeningBalance: number, existingCurrentBalance: number, newOpeningBalance: number): { opening_balance: number; current_balance: number } {
+  const delta = newOpeningBalance - existingOpeningBalance;
+  return { opening_balance: newOpeningBalance, current_balance: existingCurrentBalance + delta };
+}
+
+/** Board's "Editable Bank Opening Balances" requirement — amending an
+ * opening balance that was already posted to the General Ledger (a real,
+ * posted `BankAccount`-category `opening_balance_entries` row exists for
+ * this account) must not leave the GL silently stale. Never edits the
+ * original posted journal — posted history stays immutable, the same
+ * discipline `editOpeningBalanceEntry` already enforces — instead posts
+ * one real, balanced correcting journal for exactly the delta, through
+ * the same one Posting Engine every other module uses. The correction's
+ * second leg is the company's Suspense account (code `9999`, seeded for
+ * every company by `seed_company_defaults()`, `0022_cashbook_reconciliation.sql`)
+ * since a single bank account's own correction has no natural
+ * counterpart of its own — exactly what a Suspense account is for. */
+async function correctPostedBankOpeningBalanceIfNeeded(
+  companyId: string, accountId: number, glAccountCode: string, delta: number, reason: string, performedBy: string,
+): Promise<void> {
+  if (Math.round(delta * 100) === 0) return;
+
+  const entries = await listOpeningBalanceEntries(companyId);
+  const postedEntry = entries.find((e) => e.category === "BankAccount" && e.bankAccountId === accountId && e.status === "posted");
+  if (!postedEntry) return;
+
+  const chartOfAccounts = await listChartOfAccounts(companyId);
+  const suspense = chartOfAccounts.find((a) => a.accountCode === "9999") ?? chartOfAccounts.find((a) => a.description === "Suspense");
+  if (!suspense) {
+    throw new ValidationError("No Suspense account found in the Chart of Accounts — cannot post a correcting journal for this opening balance amendment.");
+  }
+
+  const journal = await createJournal(companyId, {
+    journalType: "Opening Balance Correction",
+    description: `Opening balance correction — ${reason || "amended after go-live"}`,
+    reference: "Opening Balances Centre",
+    sourceType: "OpeningBalance",
+    sourceId: postedEntry.id,
+    status: "Approved",
+    lines: [
+      { accountCode: glAccountCode, debit: delta > 0 ? delta : 0, credit: delta < 0 ? -delta : 0, description: "Opening balance correction" },
+      { accountCode: suspense.accountCode, debit: delta < 0 ? -delta : 0, credit: delta > 0 ? delta : 0, description: "Opening balance correction" },
+    ],
+  });
+  await postApprovedJournals(companyId);
+
+  await recordPermissionAuditEntry(
+    companyId, "BankAccountOpeningBalance", String(accountId), "correctingJournal", null, `Journal ${journal.journalNumber} (${delta > 0 ? "+" : ""}${delta.toFixed(2)}) against Suspense`,
+    reason || "Posted opening balance corrected after go-live.", performedBy,
+  );
+}
+
+export async function editBankAccount(companyId: string, accountId: number, input: EditBankAccountRequest, performedBy = "System"): Promise<BankAccount> {
+  if (input.accountName !== undefined && !input.accountName.trim()) {
+    throw new ValidationError("Account name cannot be empty.");
+  }
+  if (input.openingBalance !== undefined && (typeof input.openingBalance !== "number" || Number.isNaN(input.openingBalance))) {
+    throw new ValidationError("Opening balance must be a number.");
+  }
+  if (input.glAccount !== undefined) await validateBankAccountGlCode(companyId, input.glAccount);
+
+  const existing = await repo.getBankAccount(companyId, accountId);
+  if (!existing) throw new ValidationError(`No bank account with id ${accountId}.`);
+
+  if (input.openingBalance !== undefined) {
+    const governance = await getOpeningBalanceGovernance(companyId);
+    if (governance.reasonRequired && !input.reason?.trim()) {
+      throw new ValidationError("A reason is required to change an opening balance after go-live.");
+    }
+  }
+
+  const updated = await repo.updateBankAccount(companyId, accountId, {
+    ...(input.accountName !== undefined && { account_name: input.accountName.trim() }),
+    ...(input.bankName !== undefined && { bank_name: input.bankName.trim() }),
+    ...(input.accountType !== undefined && { account_type: input.accountType.trim() }),
+    ...(input.branch !== undefined && { branch: input.branch.trim() }),
+    ...(input.currency !== undefined && { currency: input.currency.trim() }),
+    ...(input.notes !== undefined && { notes: input.notes }),
+    ...(input.glAccount !== undefined && { gl_account: input.glAccount.trim() }),
+    ...(input.openingBalance !== undefined && computeOpeningBalanceDelta(existing.openingBalance, existing.currentBalance, input.openingBalance)),
+    ...(input.openingBalanceDate !== undefined && { opening_balance_date: input.openingBalanceDate }),
+    ...(input.openingBalanceReference !== undefined && { opening_balance_reference: input.openingBalanceReference.trim() }),
+  });
+
+  // Pilot Review Round 1, Phase 10 — the same "audit every editable
+  // field, not a hand-picked subset" discipline `customer-service.ts`/
+  // `supplier-management-service.ts` already established. Opening balance
+  // keeps its own distinct `item_type` (`BankAccountOpeningBalance`) and
+  // governance/correcting-journal handling — everything else is new here.
+  const reason = input.reason?.trim() || "Bank account details updated.";
+  const fieldChanges: [string, unknown, unknown][] = [
+    ["accountName", existing.accountName, updated.accountName],
+    ["bankName", existing.bankName, updated.bankName],
+    ["accountType", existing.accountType, updated.accountType],
+    ["branch", existing.branch, updated.branch],
+    ["currency", existing.currency, updated.currency],
+    ["notes", existing.notes, updated.notes],
+    ["glAccount", existing.glAccount, updated.glAccount],
+  ];
+  for (const [field, oldValue, newValue] of fieldChanges) {
+    if (oldValue !== newValue) {
+      await recordPermissionAuditEntry(companyId, "BankAccount", String(accountId), field, String(oldValue), String(newValue), reason, performedBy);
+    }
+  }
+
+  if (input.openingBalance !== undefined && input.openingBalance !== existing.openingBalance) {
+    await recordPermissionAuditEntry(
+      companyId, "BankAccountOpeningBalance", String(accountId), "openingBalance",
+      existing.openingBalance.toFixed(2), input.openingBalance.toFixed(2),
+      input.reason?.trim() || "Corrected during implementation.", performedBy,
+    );
+
+    const glAccountCode = existing.glAccount?.trim() || `BANK-${existing.accountNumber}`;
+    await correctPostedBankOpeningBalanceIfNeeded(
+      companyId, accountId, glAccountCode, input.openingBalance - existing.openingBalance, input.reason?.trim() ?? "", performedBy,
+    );
+  }
+
+  return updated;
+}
+
+export async function archiveBankAccount(companyId: string, accountId: number): Promise<BankAccount> {
+  return repo.updateBankAccount(companyId, accountId, { status: "Archived" });
+}
+
+export async function reactivateBankAccount(companyId: string, accountId: number): Promise<BankAccount> {
+  return repo.updateBankAccount(companyId, accountId, { status: "Active" });
+}
+
+export async function listBankAccountSummaries(companyId: string): Promise<BankAccountSummary[]> {
+  const accounts = await repo.listBankAccounts(companyId);
+  return Promise.all(
+    accounts.map(async (account) => {
+      const stats = await repo.getBankAccountStats(companyId, account.id);
+      return {
+        account,
+        // `ae_bank_transactions` has no statement_number column yet (out
+        // of Module 1's scope — it belongs to the Imports module's parser
+        // metadata). Real once Module 3 adds it; 0 until then rather than
+        // querying a column that doesn't exist.
+        statementCount: 0,
+        transactionCount: stats.transactionCount,
+        transactionCountCapped: stats.isCapped,
+        totalDebits: stats.totalDebits,
+        totalCredits: stats.totalCredits,
+        lastImport: stats.lastImport,
+        matched: stats.matched,
+        suggested: stats.suggested,
+        unallocated: stats.unallocated,
+      };
+    }),
+  );
+}
+
+export async function getBankAccountSummary(companyId: string, accountId: number): Promise<BankAccountSummary | null> {
+  const account = await repo.getBankAccount(companyId, accountId);
+  if (!account) return null;
+  const stats = await repo.getBankAccountStats(companyId, accountId);
+  return {
+    account,
+    statementCount: 0,
+    transactionCount: stats.transactionCount,
+    transactionCountCapped: stats.isCapped,
+    totalDebits: stats.totalDebits,
+    totalCredits: stats.totalCredits,
+    lastImport: stats.lastImport,
+    matched: stats.matched,
+    suggested: stats.suggested,
+    unallocated: stats.unallocated,
+  };
+}
+
+export { listRecentTransactionsForAccount } from "@/server/repositories/bank-account-repository";
+
+/** Masks all but the last 4 digits of an account number for display —
+ * e.g. "62050837304" -> "•••• 7304". Never used for the value stored or
+ * submitted back to the server, only for rendering. */
+export function maskAccountNumber(accountNumber: string): string {
+  const digits = accountNumber.trim();
+  if (digits.length <= 4) return digits;
+  return `•••• ${digits.slice(-4)}`;
+}

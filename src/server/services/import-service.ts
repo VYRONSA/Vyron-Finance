@@ -1,0 +1,471 @@
+/**
+ * Application Service layer for the Import Centre — orchestrates the pure
+ * CSV parsers against the repository layer: resolves/creates suppliers and
+ * bank accounts, ingests rows idempotently, and records one import batch
+ * per uploaded file. Never talks to Supabase directly.
+ */
+
+import { parseBillsCsv } from "@/server/import-centre/xero-bills-parser";
+import { decodeCsvBuffer } from "@/server/import-centre/csv-utils";
+import { resolveBankStatementAdapter, resolvePdfBankAdapter, SUPPORTED_EXTENSIONS, type PdfBankDetection } from "@/server/import-centre/bank-statement-adapter-registry";
+import { extractPdfText, PdfExtractionError } from "@/server/import-centre/pdf-text-extraction";
+import { validateStatement, type StatementValidationResult } from "@/server/import-centre/pdf-statement-validation";
+import { checkFnbCreditCardReconciliation, type FnbCreditCardReconciliationCheck } from "@/server/import-centre/parsers/fnb-credit-card-statement-parser";
+import { NULL_STATEMENT_METADATA, type BankStatementMetadata, type BankStatementParseResult, type ImportExceptionRecord, type ParsedBankTransaction } from "@/server/import-centre/types";
+import { assignSourceOccurrences } from "@/server/import-centre/import-source-occurrence";
+import * as importRepo from "@/server/repositories/import-repository";
+import * as supplierRepo from "@/server/repositories/supplier-reconciliation-repository";
+import * as bankAccountRepo from "@/server/repositories/bank-account-repository";
+import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
+import { applyRulesToTransactions } from "@/server/services/rule-processing-service";
+import { classifyUnallocatedTransactionsWithAi } from "@/server/services/transaction-classification-service";
+import { getCompany } from "@/server/services/company-service";
+import type { ImportBatch } from "@/server/accounting/types";
+
+export class ValidationError extends Error {}
+
+export type ImportOutcome = {
+  batch: ImportBatch;
+  exceptions: ImportExceptionRecord[];
+  /** Master Implementation Tracker — Programme 2, Epic E2, Finding #024.
+   * Only ever set for the bank-statement path (`importBankStatement`) —
+   * `importBillsCsv` doesn't run through the Banking Rules engine at
+   * all, so it stays implicitly `undefined` there rather than a
+   * misleading always-0. */
+  rulesAutoAllocated?: number;
+};
+
+function generateBatchId(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `BATCH-${stamp}`;
+}
+
+async function getOrCreateSupplierId(companyId: string, name: string, cache: Map<string, number>): Promise<number | null> {
+  if (!name) return null;
+  const cacheKey = name.trim().toLowerCase();
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const existing = await supplierRepo.findSupplierByName(companyId, name);
+  const supplier = existing ?? (await supplierRepo.createSupplierByName(companyId, name));
+  cache.set(cacheKey, supplier.id);
+  return supplier.id;
+}
+
+export async function importBillsCsv(companyId: string, file: File, importedBy = "System"): Promise<ImportOutcome> {
+  if (!file.name.toLowerCase().endsWith(".csv")) {
+    throw new ValidationError("Only .csv files are supported for Bills / Credit Notes import.");
+  }
+
+  const buffer = await file.arrayBuffer();
+  const text = decodeCsvBuffer(buffer);
+  const batchId = generateBatchId();
+  // Master Implementation Tracker — Programme 2, Root Cause RC-13,
+  // Findings #083/#143. The company's own base currency, not a
+  // hardcoded literal, is the fallback when the source file has no
+  // currency column — and the parsed value is now actually persisted.
+  const company = await getCompany(companyId);
+  const { transactions, exceptions } = parseBillsCsv(text, file.name, batchId, company?.baseCurrencyCode ?? "ZAR");
+
+  const supplierCache = new Map<string, number>();
+  let importedCount = 0;
+  let duplicateCount = 0;
+
+  for (const txn of transactions) {
+    const supplierId = await getOrCreateSupplierId(companyId, txn.supplier, supplierCache);
+    const { created } = await importRepo.ingestBillIdempotent(companyId, {
+      supplierId,
+      supplierName: txn.supplier,
+      invoiceNumber: txn.invoiceNumber,
+      documentType: txn.documentType,
+      invoiceDate: txn.invoiceDate,
+      dueDate: txn.dueDate,
+      vat: txn.vat,
+      total: txn.total,
+      outstanding: txn.amountDue,
+      currency: txn.currency,
+      importBatch: batchId,
+      sourceFilename: file.name,
+    });
+    if (created) importedCount++;
+    else duplicateCount++;
+  }
+
+  const batch = await importRepo.insertImportBatch(companyId, {
+    batchId,
+    importType: "bills",
+    sourceFilename: file.name,
+    rowCount: transactions.length + exceptions.filter((e) => e.exceptionType !== "VAT Mismatch").length,
+    importedCount,
+    duplicateCount,
+    exceptionCount: exceptions.length,
+    importedBy,
+  });
+
+  return { batch, exceptions };
+}
+
+/** Shared commit step for bank-statement transactions — used both by the
+ * direct-commit CSV/XLSX/OFX/QIF path (`importBankStatement`) and the
+ * PDF review-then-commit path (`confirmPdfBankStatementImport`). Resolves
+ * (or creates) each row's bank account, ingests idempotently, and
+ * collects the ids of the rows genuinely newly created (as opposed to
+ * already-on-file duplicates) so the caller can run the Banking Rules
+ * engine against exactly those. */
+async function commitBankTransactions(
+  companyId: string,
+  transactions: ParsedBankTransaction[],
+  batchId: string,
+  sourceFilename: string,
+): Promise<{ importedCount: number; duplicateCount: number; createdTransactionIds: number[]; exceptions: ImportExceptionRecord[] }> {
+  const bankAccountCache = new Map<string, number | null>();
+  // Master Implementation Tracker — Programme 2, Epic E2, Finding #187.
+  const newlyCreatedAccountNumbers = new Set<string>();
+  async function resolveBankAccountId(accountNumber: string): Promise<number | null> {
+    if (!accountNumber) return null;
+    const cached = bankAccountCache.get(accountNumber);
+    if (cached !== undefined) return cached;
+    const { account, created } = await bankAccountRepo.getOrCreateBankAccountByNumber(companyId, accountNumber);
+    if (created) newlyCreatedAccountNumbers.add(accountNumber);
+    bankAccountCache.set(accountNumber, account.id);
+    return account.id;
+  }
+
+  let importedCount = 0;
+  let duplicateCount = 0;
+  const createdTransactionIds: number[] = [];
+
+  // Migration 0092 — a statement that genuinely lists the same payment
+  // twice on the same day is two real client records, and both must be
+  // imported. Stamping each row's ordinal among identical rows in THIS
+  // file is what lets both through while keeping a re-upload of the same
+  // file fully idempotent. Computed over the whole parsed file, in file
+  // order, before any row is written — see
+  // `import-source-occurrence.ts`.
+  for (const txn of assignSourceOccurrences(transactions)) {
+    const bankAccountId = await resolveBankAccountId(txn.bankAccount);
+    // Never null for CSV/XLSX/OFX/QIF: those parsers only push a row once
+    // its date parsed successfully (an unparseable date is an "Invalid
+    // Date" exception, and the row is skipped rather than added). A PDF
+    // review-screen correction could in principle leave this blank, so
+    // still guarded here rather than assumed.
+    const transactionDate = txn.transactionDate;
+    if (!transactionDate) continue;
+    const { transaction, created } = await importRepo.ingestBankTransactionIdempotent(companyId, {
+      transactionDate,
+      reference: txn.reference,
+      description: txn.description,
+      beneficiary: txn.beneficiary,
+      debit: txn.debit,
+      credit: txn.credit,
+      balance: txn.balance,
+      bankAccount: txn.bankAccount,
+      bankAccountId,
+      vat: txn.vat,
+      glAccount: txn.glAccount,
+      notes: txn.notes,
+      importBatch: batchId,
+      sourceFilename,
+      sourceOccurrence: txn.sourceOccurrence,
+    });
+    if (created) {
+      importedCount++;
+      createdTransactionIds.push(transaction.id);
+    } else {
+      duplicateCount++;
+    }
+  }
+
+  const exceptions: ImportExceptionRecord[] = [...newlyCreatedAccountNumbers].map((accountNumber) => ({
+    sourceFilename,
+    rowNumber: 0,
+    exceptionType: "New Bank Account Created",
+    description: `No existing bank account matches '${accountNumber}' — a new account was created automatically. Review it under Bank Accounts and set its GL Account.`,
+    beneficiary: accountNumber,
+  }));
+
+  return { importedCount, duplicateCount, createdTransactionIds, exceptions };
+}
+
+/** Dispatches to the matching entry in `BANK_STATEMENT_ADAPTERS` (CSV,
+ * Excel, OFX, QIF) via the extensible parser framework. PDF is
+ * deliberately NOT handled here — see `previewPdfBankStatement`/
+ * `confirmPdfBankStatementImport` below for why PDF needs a review step
+ * these single-shot formats don't. */
+export async function importBankStatement(companyId: string, file: File, importedBy = "System"): Promise<ImportOutcome> {
+  if (file.name.toLowerCase().endsWith(".pdf")) {
+    throw new ValidationError("PDF bank statements go through the review screen (preview, then confirm) — use previewPdfBankStatement instead.");
+  }
+
+  const buffer = await file.arrayBuffer();
+  const batchId = generateBatchId();
+
+  const adapter = resolveBankStatementAdapter(file.name);
+  if (!adapter) {
+    throw new ValidationError(`Unsupported file type for bank statement import. Supported formats: ${SUPPORTED_EXTENSIONS.join(", ")}.`);
+  }
+  const parseResult: BankStatementParseResult = await adapter.parse(buffer, file.name, batchId);
+  const { transactions, exceptions } = parseResult;
+
+  const { importedCount, duplicateCount, createdTransactionIds, exceptions: commitExceptions } = await commitBankTransactions(companyId, transactions, batchId, file.name);
+  // Master Implementation Tracker — Programme 2, Epic E2, Finding #187.
+  // `commitExceptions` (new-bank-account warnings) are surfaced to the
+  // caller alongside the real parse-time exceptions, but deliberately
+  // excluded from `rowCount`/`exceptionCount` below — those track actual
+  // file rows, not synthetic post-commit warnings.
+  const allExceptions = [...exceptions, ...commitExceptions];
+
+  const batch = await importRepo.insertImportBatch(companyId, {
+    batchId,
+    importType: "bank_transactions",
+    sourceFilename: file.name,
+    rowCount: transactions.length + exceptions.length,
+    importedCount,
+    duplicateCount,
+    exceptionCount: exceptions.length,
+    importedBy,
+  });
+
+  // Commercial Billing Platform — one Usage Engine event per completed
+  // bank-statement import batch (not per row: "Bank Imports" is a plan
+  // usage dimension, and a batch is the real unit of work a customer
+  // performs, matching how the UI/history already counts imports).
+  //
+  // Phase 25I — this used to be unguarded, sitting between two steps
+  // that had already genuinely succeeded (the transactions are already
+  // committed to `ae_bank_transactions`, and the batch audit row above
+  // already exists) and Banking Rules/AI classification still to come. A
+  // transient usage-metering failure here would throw this whole
+  // function, surfacing as an uncaught import failure to the caller even
+  // though the data actually landed — and since the natural-key dedup
+  // makes a retry of this exact file report every row as a duplicate,
+  // Rules/AI would never get another automatic chance at this batch
+  // either. A billing undercount is far preferable to that.
+  await recordUsageEvent(companyId, "bank_imports").catch(() => {});
+
+  // Master Implementation Tracker — Programme 2, Epic E2, Finding #024.
+  // Banking Rules previously only auto-applied on the PDF review-then-
+  // confirm path — CSV/XLSX/OFX/QIF committed with zero rule matching,
+  // silently leaving every newly imported transaction Unallocated.
+  let rulesAutoAllocated = 0;
+  if (createdTransactionIds.length > 0) {
+    const results = await applyRulesToTransactions(companyId, createdTransactionIds, importedBy);
+    rulesAutoAllocated = results.filter((r) => r.autoPosted).length;
+
+    // Phase 22A — AI Transaction Classification. Runs AFTER Banking
+    // Rules, only on whatever Rules/Matching left completely untouched
+    // (see transaction-classification-service.ts's own precedence
+    // documentation). Never allowed to fail this import — it already
+    // never throws internally, but this call site stays defensive
+    // anyway, since nothing about a bank import completing should ever
+    // depend on an AI provider being reachable.
+    await classifyUnallocatedTransactionsWithAi(companyId, createdTransactionIds, importedBy).catch(() => {});
+  }
+
+  return { batch, exceptions: allExceptions, rulesAutoAllocated };
+}
+
+
+
+export type PdfStatementPreview = {
+  batchId: string;
+  sourceFilename: string;
+  pdfDetection: { bankId: string; bankName: string; confidence: number; status: "validated" | "implemented-unvalidated" | "awaiting-validation" };
+  metadata: BankStatementMetadata;
+  transactions: ParsedBankTransaction[];
+  exceptions: ImportExceptionRecord[];
+  validation: StatementValidationResult;
+  /** The prior batch this looks like a re-upload of, if the detected
+   * bank account + statement period already has one on file — null when
+   * there's nothing to warn about, or when the statement's own account
+   * number/period couldn't be determined yet (framework-only banks). */
+  duplicateOfBatch: ImportBatch | null;
+  /** Passed through unchanged to `confirmPdfBankStatementImport` so the
+   * same "missing transactions" check can be re-run against whatever
+   * the user ends up confirming. */
+  expectedTransactionCount: number | null;
+  /** FNB Business Credit Card only (`bankId: "fnb-credit-card-pdf"`) —
+   * see `checkFnbCreditCardReconciliation`'s own docstring. `null` for
+   * every other bank/statement type, or when this statement's own
+   * reconciliation genuinely doesn't match the explained shape. */
+  reconciliationExplanation: FnbCreditCardReconciliationCheck | null;
+};
+
+/** Step 1 of PDF Bank Statement Import's review flow — the Board's own
+ * "Display all extracted transactions for user review before import"
+ * requirement. Parses and validates a PDF statement WITHOUT writing
+ * anything to `ae_bank_transactions`/`ae_import_batches`: purely a
+ * read-only preview the Import Review Screen renders, lets the user
+ * correct, and then either confirms (`confirmPdfBankStatementImport`)
+ * or discards. FNB has a real, implemented-but-unvalidated parser (see
+ * `bank-statement-adapter-registry.ts`); the other 9 named banks still
+ * honestly return zero transactions pending a real sample statement. */
+export async function previewPdfBankStatement(companyId: string, file: File): Promise<PdfStatementPreview> {
+  if (!file.name.toLowerCase().endsWith(".pdf")) {
+    throw new ValidationError("previewPdfBankStatement only accepts .pdf files.");
+  }
+
+  const buffer = await file.arrayBuffer();
+  const batchId = generateBatchId();
+
+  let text: string;
+  try {
+    text = await extractPdfText(buffer);
+  } catch (error) {
+    // "Unsupported PDFs" requirement — a rejected upload must explain
+    // *why*, never a bare "Unsupported file type."
+    if (error instanceof PdfExtractionError) {
+      throw new ValidationError(error.message);
+    }
+    throw error;
+  }
+
+  const detection: PdfBankDetection | null = resolvePdfBankAdapter(text);
+  if (!detection) {
+    throw new ValidationError(
+      "Bank not yet supported, or statement format not recognised — none of the 10 supported banks' name/domain markers were found in this PDF's text. If this is a genuine statement from a supported bank, its letterhead wording may differ from what's currently recognised.",
+    );
+  }
+
+  const parseResult = await detection.adapter.parse(buffer, file.name, batchId);
+  const metadata = parseResult.metadata ?? NULL_STATEMENT_METADATA;
+  const expectedTransactionCount = parseResult.expectedTransactionCount ?? null;
+  const validation = validateStatement(metadata, parseResult.transactions, expectedTransactionCount);
+
+  let duplicateOfBatch: ImportBatch | null = null;
+  if (metadata.accountNumber && metadata.statementPeriodStart && metadata.statementPeriodEnd) {
+    const bankAccount = await bankAccountRepo.findBankAccountByNumber(companyId, metadata.accountNumber);
+    if (bankAccount) {
+      duplicateOfBatch = await importRepo.findMatchingStatementBatch(companyId, bankAccount.id, metadata.statementPeriodStart, metadata.statementPeriodEnd);
+    }
+  }
+
+  const reconciliationExplanation =
+    detection.adapter.id === "fnb-credit-card-pdf" && validation.balanceReconciliation.reconciles === false
+      ? checkFnbCreditCardReconciliation(metadata, parseResult.transactions)
+      : null;
+
+  return {
+    batchId,
+    sourceFilename: file.name,
+    pdfDetection: {
+      bankId: detection.adapter.id,
+      bankName: detection.adapter.label.replace(/ \(PDF\).*/, ""),
+      confidence: detection.confidence,
+      status: detection.adapter.status ?? "awaiting-validation",
+    },
+    metadata,
+    transactions: parseResult.transactions,
+    exceptions: parseResult.exceptions,
+    validation,
+    duplicateOfBatch,
+    expectedTransactionCount,
+    reconciliationExplanation,
+  };
+}
+
+export type ConfirmPdfImportInput = {
+  batchId: string;
+  sourceFilename: string;
+  metadata: BankStatementMetadata;
+  /** The transactions from `previewPdfBankStatement`, after any manual
+   * correction the user made in the Import Review Screen. */
+  transactions: ParsedBankTransaction[];
+  /** Echoed back from the preview response so the "missing transactions"
+   * check can be re-run against whatever the user actually confirms. */
+  expectedTransactionCount?: number | null;
+};
+
+export type ConfirmPdfImportOutcome = {
+  batch: ImportBatch;
+  importedCount: number;
+  duplicateCount: number;
+  /** How many of the newly imported transactions the Banking Rules
+   * engine auto-allocated immediately — the Board's "Integrate fully
+   * with the existing Banking Rules engine so rules can be applied
+   * immediately after extraction" requirement. */
+  rulesAutoAllocated: number;
+  /** Re-run at confirm time (not just at preview) so a user who edited
+   * the transaction list before confirming still gets an accurate
+   * result — never trusted from the client without re-checking. */
+  validation: StatementValidationResult;
+  /** Master Implementation Tracker — Programme 2, Epic E2, Finding #187. */
+  exceptions: ImportExceptionRecord[];
+};
+
+/** Step 2 — commits the (possibly user-corrected) transactions from a
+ * prior `previewPdfBankStatement` call, records the real statement
+ * metadata and its balance-reconciliation result on the import batch,
+ * then immediately runs the newly created transactions through the same
+ * Banking Rules pipeline Phase 5/6's scan-and-apply and the "Apply Rule"
+ * bulk action already use (`applyRulesToTransactions`) — no separate
+ * rule-matching code path for PDF-sourced transactions. */
+export async function confirmPdfBankStatementImport(companyId: string, input: ConfirmPdfImportInput, importedBy = "System"): Promise<ConfirmPdfImportOutcome> {
+  const { metadata, transactions } = input;
+  const validation = validateStatement(metadata, transactions, input.expectedTransactionCount ?? null);
+
+  const { importedCount, duplicateCount, createdTransactionIds, exceptions: commitExceptions } = await commitBankTransactions(companyId, transactions, input.batchId, input.sourceFilename);
+
+  let bankAccountId: number | null = null;
+  const statementExceptions: ImportExceptionRecord[] = [];
+  if (metadata.accountNumber) {
+    const { account, created } = await bankAccountRepo.getOrCreateBankAccountByNumber(companyId, metadata.accountNumber);
+    bankAccountId = account.id;
+    if (created) {
+      statementExceptions.push({
+        sourceFilename: input.sourceFilename,
+        rowNumber: 0,
+        exceptionType: "New Bank Account Created",
+        description: `No existing bank account matches '${metadata.accountNumber}' — a new account was created automatically. Review it under Bank Accounts and set its GL Account.`,
+        beneficiary: metadata.accountNumber,
+      });
+    }
+  }
+
+  const batch = await importRepo.insertImportBatch(companyId, {
+    batchId: input.batchId,
+    importType: "bank_transactions",
+    sourceFilename: input.sourceFilename,
+    rowCount: transactions.length,
+    importedCount,
+    duplicateCount,
+    exceptionCount: 0,
+    importedBy,
+    statement: {
+      bankAccountId,
+      accountHolder: metadata.accountHolder,
+      accountNumber: metadata.accountNumber,
+      periodStart: metadata.statementPeriodStart,
+      periodEnd: metadata.statementPeriodEnd,
+      openingBalance: metadata.openingBalance,
+      closingBalance: metadata.closingBalance,
+      balanceReconciles: validation.balanceReconciliation.reconciles,
+      statementNumber: metadata.statementNumber,
+      creditLimit: metadata.creditLimit,
+      availableBalance: metadata.availableBalance,
+      interestSummary: metadata.interestSummary,
+      vat: metadata.vat,
+      fees: metadata.fees,
+    },
+  });
+
+  // Phase 25I — see the matching comment in importBankStatement above.
+  await recordUsageEvent(companyId, "bank_imports").catch(() => {});
+
+  let rulesAutoAllocated = 0;
+  if (createdTransactionIds.length > 0) {
+    const results = await applyRulesToTransactions(companyId, createdTransactionIds, importedBy);
+    rulesAutoAllocated = results.filter((r) => r.autoPosted).length;
+
+    // Phase 22A — see the matching comment in importBankStatement above.
+    await classifyUnallocatedTransactionsWithAi(companyId, createdTransactionIds, importedBy).catch(() => {});
+  }
+
+  return { batch, importedCount, duplicateCount, rulesAutoAllocated, validation, exceptions: [...commitExceptions, ...statementExceptions] };
+}
+
+export async function listRecentImports(companyId: string): Promise<ImportBatch[]> {
+  return importRepo.listRecentImportBatches(companyId);
+}
