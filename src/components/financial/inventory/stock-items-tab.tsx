@@ -11,12 +11,13 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconArchive, IconPlus } from "@/components/ui/icons";
 import type { StockItem, StockItemStatus, Warehouse } from "@/server/inventory/types";
 import type { VatTreatment } from "@/server/company-management/types";
+import { formatAmount, formatCount } from "@/lib/format";
 
 const STATUS_OPTIONS: (StockItemStatus | "All")[] = ["All", "Active", "Inactive", "Discontinued"];
 const STATUS_TONE: Record<StockItemStatus, "good" | "muted" | "danger"> = { Active: "good", Inactive: "muted", Discontinued: "danger" };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function StockItemFormPanel({
@@ -348,7 +349,7 @@ export function StockItemsTab({
           otherwise be silently invisible with no indication why. */}
       {stockItemsCapped && (
         <p className="text-xs text-vf-warning">
-          The Stock Master has more than {stockItems.length.toLocaleString()} items — this list, and the search above, only cover the first {stockItems.length.toLocaleString()}.
+          The Stock Master has more than {formatCount(stockItems.length)} items — this list, and the search above, only cover the first {formatCount(stockItems.length)}.
         </p>
       )}
 

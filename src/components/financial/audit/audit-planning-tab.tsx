@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { AuditArea, AuditEngagement, AuditProgrammeStep, AuditRiskRegisterEntry, AuditTeamAssignment } from "@/server/audit/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 const RISK_TONE = { Low: "info", Medium: "warn", High: "danger" } as const;

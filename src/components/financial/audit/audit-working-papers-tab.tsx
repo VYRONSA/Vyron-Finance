@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { WorkingPaperContent } from "./working-paper-content";
 import { AUDIT_WORKING_PAPER_TYPES, type AuditWorkingPaper, type AuditWorkingPaperType } from "@/server/audit/types";
+import { formatDateTime } from "@/lib/format";
 
 function GeneratorForm({ companyId, engagementId, periodStart, periodEnd, previewMode }: { companyId: string; engagementId: number | null; periodStart: string; periodEnd: string; previewMode: boolean }) {
   const router = useRouter();
@@ -67,7 +68,7 @@ function PaperCard({ paper }: { paper: AuditWorkingPaper }) {
             <Badge tone="info">{paper.paperType}</Badge>
             <p className="text-sm font-medium text-vf-ink">{paper.title}</p>
           </div>
-          <p className="mt-1 text-xs text-vf-ink-faint">Generated {new Date(paper.generatedAt).toLocaleString()} by {paper.generatedBy}</p>
+          <p className="mt-1 text-xs text-vf-ink-faint">Generated {formatDateTime(paper.generatedAt)} by {paper.generatedBy}</p>
         </div>
         <Button variant="subtle" size="sm" onClick={() => setExpanded((v) => !v)}>
           {expanded ? "Hide" : "View"}

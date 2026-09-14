@@ -13,9 +13,10 @@ import { useUrlParam } from "@/hooks/use-url-param";
 import type { SupplierMatchingWorkspaceData } from "@/server/services/supplier-matching-service";
 import type { StatementEntry } from "@/server/matching/supplier-statement-engine";
 import type { PurchaseOrder, GoodsReceivedNote } from "@/server/purchasing/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 const SUB_TABS = ["Bills", "Credit Notes", "Debit Notes", "Payments", "Suggestions", "Purchase Orders / GRNs", "Statement"] as const;

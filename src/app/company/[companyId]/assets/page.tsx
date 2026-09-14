@@ -13,13 +13,14 @@ import { buildAssetDashboardSummary } from "@/server/services/asset-dashboard-su
 import { MOCK_COMPANIES_FULL } from "@/lib/mock/company-management-data";
 import { MOCK_ASSET_CLASSES, MOCK_FIXED_ASSETS, MOCK_ASSET_LIFECYCLE_EVENTS, MOCK_DEPRECIATION_RUNS, MOCK_ASSET_FINDINGS } from "@/lib/mock/asset-data";
 import type { AssetLifecycleEvent } from "@/server/assets/types";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Fixed Assets — VYRON FINANCE",
 };
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 export default async function AssetsPage({ params }: { params: Promise<{ companyId: string }> }) {

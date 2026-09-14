@@ -7,6 +7,7 @@ import { IntelligenceCentre } from "@/components/financial/intelligence/intellig
 import { VyronAsk } from "@/components/financial/intelligence/vyron-ask";
 import { IconAlertTriangle, IconBank, IconBarChart, IconClock, IconGrid, IconShieldCheck, IconSparkles } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
+import { formatDateTime } from "@/lib/format";
 import { getCompany } from "@/server/services/company-service";
 import { getCompanyIntelligenceSummary } from "@/server/services/company-intelligence-service";
 import { buildPreviewFinancialIntelligenceSummary } from "@/lib/mock/financial-intelligence-preview";
@@ -47,7 +48,7 @@ export default async function IntelligenceCentrePage({ params }: { params: Promi
   // database. Every finding here is recomputed on this exact request —
   // there is no history to show, so none is fabricated.
   const highestSeverity = FINDING_SEVERITY_ORDER.find((sev) => summary.countBySeverity[sev] > 0) ?? null;
-  const refreshedAt = new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const refreshedAt = formatDateTime(new Date());
   const totalFindings = summary.findings.length;
 
   // Phase 14 — the same pure engine runs in both real and preview mode

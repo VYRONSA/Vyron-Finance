@@ -22,6 +22,7 @@ import type { VatTreatment } from "@/server/company-management/types";
 import { REQUIRED_ACTION_DUPLICATE_PAYMENT } from "@/server/accounting/matching-engine";
 import { MOCK_TRANSACTIONS, MOCK_TRANSACTION_DETAILS } from "@/lib/mock/transaction-explorer-data";
 import { ModalPortal } from "@/components/ui/modal-portal";
+import { UpdateAllocatedButton } from "./update-allocated-button";
 
 const PAGE_SIZE = 50;
 
@@ -1370,6 +1371,14 @@ export function TransactionExplorer({
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          <UpdateAllocatedButton
+            committableCount={committableIds.size}
+            blockedCount={blockedEdits.length}
+            saving={savingSelected}
+            disabled={previewMode}
+            disabledTitle={previewMode ? "Available once a production Supabase project is connected" : undefined}
+            onUpdate={commitPendingAllocations}
+          />
           <Button
             variant="subtle"
             size="sm"

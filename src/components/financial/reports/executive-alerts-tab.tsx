@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconMinus, IconRefresh, IconShieldCheck } from "@/components/ui/icons";
 import type { ExecutiveAlert, ExecutiveAlertPriority } from "@/server/reporting/types";
+import { formatDateTime } from "@/lib/format";
 
 const PRIORITY_TONE: Record<ExecutiveAlertPriority, "info" | "warn" | "danger"> = { Low: "info", Medium: "info", High: "warn", Critical: "danger" };
 const ALERT_LABEL: Record<ExecutiveAlert["alertType"], string> = {
@@ -91,7 +92,7 @@ function AlertCard({ alert, companyId, previewMode }: { alert: ExecutiveAlert; c
 
       {alert.status !== "Open" && (
         <p className="mt-2 text-xs text-vf-ink-faint">
-          {alert.status} by {alert.resolvedBy} {alert.resolvedAt ? `on ${new Date(alert.resolvedAt).toLocaleString()}` : ""}
+          {alert.status} by {alert.resolvedBy} {alert.resolvedAt ? `on ${formatDateTime(alert.resolvedAt)}` : ""}
           {alert.resolutionNote && ` — "${alert.resolutionNote}"`}
         </p>
       )}

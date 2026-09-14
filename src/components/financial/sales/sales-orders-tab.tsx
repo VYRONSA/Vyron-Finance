@@ -20,6 +20,7 @@ import type { SalesOrder, SalesOrderStatus } from "@/server/sales/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import type { StockItem } from "@/server/inventory/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
+import { formatAmount } from "@/lib/format";
 
 const STATUS_OPTIONS: (SalesOrderStatus | "All")[] = ["All", "Draft", "Confirmed", "PartiallyDelivered", "Delivered", "Invoiced", "Cancelled"];
 const STATUS_TONE: Record<SalesOrderStatus, "muted" | "info" | "good" | "danger" | "warn"> = {
@@ -32,7 +33,7 @@ const STATUS_TONE: Record<SalesOrderStatus, "muted" | "info" | "good" | "danger"
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 type EditableLine = { description: string; quantity: string; unitPrice: string; stockItemId: number | null; glAccount: string | null; vatCode: string | null; discount: string };

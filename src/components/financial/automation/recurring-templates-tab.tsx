@@ -16,6 +16,7 @@ import {
   type RecurringTemplate,
 } from "@/server/automation/types";
 import type { RecurrenceFrequency } from "@/server/automation/recurrence";
+import { formatDateTime } from "@/lib/format";
 
 const PAYLOAD_PLACEHOLDER: Record<RecurringDocumentType, string> = {
   CustomerInvoice: `{\n  "customerId": 1,\n  "vatTreatmentCode": "Standard",\n  "lines": [{ "description": "Monthly retainer", "quantity": 1, "unitPrice": 8500 }]\n}`,
@@ -58,7 +59,7 @@ function GeneratedDocumentsPanel({ companyId, templateId }: { companyId: string;
     <ul className="flex flex-col gap-1 text-xs text-vf-ink-faint">
       {docs.map((d) => (
         <li key={d.id}>
-          {new Date(d.generatedAt).toLocaleString()} — <Badge tone={d.status === "Success" ? "good" : "danger"}>{d.status}</Badge>{" "}
+          {formatDateTime(d.generatedAt)} — <Badge tone={d.status === "Success" ? "good" : "danger"}>{d.status}</Badge>{" "}
           {d.status === "Success" ? d.summary : d.errorMessage}
         </li>
       ))}

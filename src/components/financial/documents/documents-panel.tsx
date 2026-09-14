@@ -8,6 +8,7 @@ import { ConfirmActionRow, useConfirmTarget } from "@/components/ui/confirm-acti
 import { IconFileText, IconImport } from "@/components/ui/icons";
 import { DOCUMENT_CATEGORIES, type DocumentEntityType, type DocumentRecord, type VirusScanStatus } from "@/server/documents/types";
 import { MOCK_DOCUMENTS } from "@/lib/mock/documents-data";
+import { formatDate, formatDateTime } from "@/lib/format";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -222,7 +223,7 @@ export function DocumentsPanel({
                       <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-vf-ink-faint">
                         <Badge tone="info">{doc.category}</Badge>
                         <Badge tone={scan.tone}>{scan.label}</Badge>
-                        v{doc.versionNumber} · {formatSize(doc.sizeBytes)} · {doc.uploadedBy} · {new Date(doc.uploadedAt).toLocaleDateString()}
+                        v{doc.versionNumber} · {formatSize(doc.sizeBytes)} · {doc.uploadedBy} · {formatDate(doc.uploadedAt)}
                       </p>
                     </div>
                     {confirmDelete.isConfirming(doc.id) ? (
@@ -269,7 +270,7 @@ export function DocumentsPanel({
                     <ul className="mt-1.5 ml-4 flex flex-col gap-1 border-l border-vf-paper-border pl-3 text-xs text-vf-ink-faint">
                       {versions.map((v) => (
                         <li key={v.id}>
-                          v{v.versionNumber} · {v.filename} · {v.uploadedBy} · {new Date(v.uploadedAt).toLocaleString()} {v.isCurrent && <Badge tone="good">Current</Badge>}
+                          v{v.versionNumber} · {v.filename} · {v.uploadedBy} · {formatDateTime(v.uploadedAt)} {v.isCurrent && <Badge tone="good">Current</Badge>}
                         </li>
                       ))}
                     </ul>

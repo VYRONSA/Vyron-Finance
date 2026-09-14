@@ -22,6 +22,7 @@ import type {
   UnusualGrowthAlert,
 } from "@/server/services/financial-intelligence-service";
 import type { AuditFinding, AuditWorkingPaper } from "@/server/audit/types";
+import { formatAmount } from "@/lib/format";
 
 const FINDING_SEVERITY_TONE: Record<AuditFinding["severity"], "muted" | "info" | "warn" | "danger"> = { Low: "muted", Medium: "info", High: "warn", Critical: "danger" };
 
@@ -35,7 +36,7 @@ const STATUS_TONE: Record<JournalStatus, "muted" | "info" | "good" | "danger"> =
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function SourceTransactions({ companyId, journalId }: { companyId: string; journalId: number }) {

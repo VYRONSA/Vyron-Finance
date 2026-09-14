@@ -2,6 +2,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { IconShieldCheck } from "@/components/ui/icons";
 import type { BillingEvent, SubscriptionStatusHistoryEntry } from "@/server/billing-platform/types";
+import { formatDateTime } from "@/lib/format";
 
 const EVENT_LABELS: Record<string, string> = {
   SubscriptionCreated: "Subscription created", SubscriptionChanged: "Subscription changed", SubscriptionCancelled: "Subscription cancelled",
@@ -27,7 +28,7 @@ export function BillingAuditTab({ events, statusHistory }: { events: BillingEven
             <TableBody>
               {events.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell>{new Date(e.occurredAt).toLocaleString()}</TableCell>
+                  <TableCell>{formatDateTime(e.occurredAt)}</TableCell>
                   <TableCell>{EVENT_LABELS[e.eventType] ?? e.eventType}</TableCell>
                 </TableRow>
               ))}
@@ -46,7 +47,7 @@ export function BillingAuditTab({ events, statusHistory }: { events: BillingEven
             <TableBody>
               {statusHistory.map((h) => (
                 <TableRow key={h.id}>
-                  <TableCell>{new Date(h.occurredAt).toLocaleString()}</TableCell>
+                  <TableCell>{formatDateTime(h.occurredAt)}</TableCell>
                   <TableCell>{h.fromStatus ?? "—"}</TableCell>
                   <TableCell>{h.toStatus}</TableCell>
                   <TableCell className="text-vf-ink-faint">{h.reason}</TableCell>

@@ -9,9 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconFileText, IconPlus } from "@/components/ui/icons";
 import type { VatPayment, VatReturn, VatReturnStatus } from "@/server/vat/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 const STATUS_TONE: Record<VatReturnStatus, "warn" | "info" | "good" | "muted"> = { Draft: "warn", Review: "info", Approved: "info", Submitted: "good" };

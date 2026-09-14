@@ -12,6 +12,7 @@ import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import type { OpeningBalanceEntry, OpeningBalanceGovernance } from "@/server/opening-balances/types";
 import type { BankAccount } from "@/server/accounting/types";
 import { compareGlAccountCodes, type ChartOfAccount } from "@/server/general-ledger/types";
+import { formatAmount } from "@/lib/format";
 
 /**
  * Pilot Review Round 1 (Board revision) — "The Opening Balances Centre
@@ -49,7 +50,7 @@ type GridRow = {
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function buildInitialRows(

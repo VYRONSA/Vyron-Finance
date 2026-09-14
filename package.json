@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "env:backup": "bash scripts/backup-env.sh",
-    "env:pull": "npm run env:backup && vercel env pull"
+    "env:pull": "npm run env:backup && vercel env pull",
+    "pdf:assets": "node scripts/build-pdf-assets.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^147.0.0",

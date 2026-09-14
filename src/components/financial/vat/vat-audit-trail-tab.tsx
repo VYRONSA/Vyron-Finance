@@ -1,6 +1,7 @@
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconBookOpen } from "@/components/ui/icons";
 import type { AutomationAuditLogEntry } from "@/server/automation/types";
+import { formatDateTime } from "@/lib/format";
 
 /** Reuses the shared `automation_audit_log` (Module 7) — no separate VAT
  * audit table. Every VAT Return generation/recalculation/approval/
@@ -22,7 +23,7 @@ export function VatAuditTrailTab({ auditLog }: { auditLog: AutomationAuditLogEnt
           {e.journalIds.length > 0 && ` · Journal(s) ${e.journalIds.join(", ")}`}
           {e.ruleId !== null && ` · Rule #${e.ruleId}`}
           <span className="ml-1 text-xs text-vf-ink-faint">
-            · by {e.performedBy} · {new Date(e.createdAt).toLocaleString()} · {e.isReversible ? "reversible" : "not reversible"}
+            · by {e.performedBy} · {formatDateTime(e.createdAt)} · {e.isReversible ? "reversible" : "not reversible"}
           </span>
         </li>
       ))}

@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { CompanyBankStatementEmail } from "@/server/company-bank-statement-email/types";
+import { formatDateTime } from "@/lib/format";
 
 function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString();
+  return formatDateTime(iso);
 }
 
 /** Phase 21B/21C — Bank Statement Email identity + real operational

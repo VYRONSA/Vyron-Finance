@@ -68,7 +68,7 @@ export async function sendInvoiceEmail(request: Request, companyId: string, invo
   const company = await getCompany(companyId);
   if (!company) throw new NotFoundError("Company not found.");
 
-  const [pdfBuffer, logoDataUri] = await Promise.all([generateInvoicePdf(request, companyId, invoice.id), getCompanyLogoDataUri(companyId)]);
+  const [pdfBuffer, logoDataUri] = await Promise.all([generateInvoicePdf(companyId, invoice.id), getCompanyLogoDataUri(companyId)]);
 
   const documentLabel = DOCUMENT_LABEL[invoice.documentType];
   const filename = invoicePdfFilename(invoice);
@@ -123,7 +123,7 @@ export async function sendStatementEmail(request: Request, companyId: string, cu
 
   const [entries, pdfBuffer, logoDataUri] = await Promise.all([
     getCustomerStatement(companyId, customer.id),
-    generateStatementPdf(request, companyId, customer.id),
+    generateStatementPdf(companyId, customer.id),
     getCompanyLogoDataUri(companyId),
   ]);
   const closingBalance = entries.length > 0 ? entries[entries.length - 1]!.balance : 0;
@@ -186,8 +186,7 @@ export async function sendReportStatementEmail(
   const amountDue = result.summary.find((s) => s.label === "Amount Due")?.value;
   const closingBalance = typeof amountDue === "number" ? amountDue : 0;
 
-  const query = new URLSearchParams({ customerId: String(customer.id), dateFrom: resolved.dateFrom, dateTo: resolved.dateTo }).toString();
-  const [pdfBuffer, logoDataUri] = await Promise.all([generateReportPdf(request, companyId, "customer-statement", query), getCompanyLogoDataUri(companyId)]);
+  const [pdfBuffer, logoDataUri] = await Promise.all([generateReportPdf(companyId, result), getCompanyLogoDataUri(companyId)]);
 
   const filename = statementPdfFilename(customer.name, resolved.dateTo);
   const document = await uploadDocument(

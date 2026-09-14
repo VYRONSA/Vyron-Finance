@@ -15,6 +15,7 @@ import { IconChevronDown, IconChevronLeft, IconFileText, IconPlus } from "@/comp
 import type { Journal, JournalStatus } from "@/server/accounting/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { Branch, CostCentre, Department } from "@/server/company-management/types";
+import { formatAmount, formatDateTime } from "@/lib/format";
 
 const STATUS_OPTIONS: (JournalStatus | "All")[] = ["All", "Draft", "Submitted", "Approved", "Rejected", "Posted", "Cancelled"];
 const JOURNAL_TYPES = ["Manual", "Recurring", "Accrual", "Reversing", "Year-end", "Adjustment", "Correction"];
@@ -29,7 +30,7 @@ const STATUS_TONE: Record<JournalStatus, "muted" | "info" | "good" | "danger"> =
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 type EditableLine = { accountCode: string; debit: string; credit: string; description: string };
@@ -263,7 +264,7 @@ export function AuditTrail({ journal }: { journal: Journal }) {
       {events.map((e) => (
         <li key={e.label}>
           <span className="font-medium text-vf-ink">{e.label}</span>
-          {e.by && ` by ${e.by}`} — {e.at && new Date(e.at).toLocaleString()}
+          {e.by && ` by ${e.by}`} — {e.at && formatDateTime(e.at)}
         </li>
       ))}
       {journal.reversalOfJournalId !== null && <li>Reversal of journal #{journal.reversalOfJournalId}</li>}

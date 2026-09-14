@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { formatMoney } from "@/lib/money";
 import type { BankTransactionRecord } from "@/server/accounting/types";
+import { formatCount } from "@/lib/format";
 
 const SOURCES = ["All", "Imported", "Manual"] as const;
 
@@ -77,7 +78,7 @@ export function EnquiryTab({
         <p className="text-xs text-vf-ink-faint">{filtered.length} of {entries.length} entries.</p>
         {entriesCapped && (
           <p className="text-xs text-vf-warning">
-            The company has more than {entries.length.toLocaleString()} Cashbook entries — this list is capped at the most recent {entries.length.toLocaleString()}. Narrow the date range above to reach older history.
+            The company has more than {formatCount(entries.length)} Cashbook entries — this list is capped at the most recent {formatCount(entries.length)}. Narrow the date range above to reach older history.
           </p>
         )}
 

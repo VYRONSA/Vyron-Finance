@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { IconReceipt } from "@/components/ui/icons";
 import type { BillingCredit, Invoice, InvoiceLine, InvoiceStatus, Payment, PaymentStatus } from "@/server/billing-platform/types";
+import { formatAmount, formatDate } from "@/lib/format";
 
 const INVOICE_STATUS_TONE: Record<InvoiceStatus, "good" | "warn" | "info" | "danger" | "muted"> = {
   draft: "muted", open: "info", paid: "good", void: "muted", uncollectible: "danger",
@@ -16,7 +17,7 @@ const PAYMENT_STATUS_TONE: Record<PaymentStatus, "good" | "warn" | "info" | "dan
 
 function money(amount: number, currencyCode: string): string {
   const symbol = currencyCode === "ZAR" ? "R" : `${currencyCode} `;
-  return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${symbol}${formatAmount(amount)}`;
 }
 
 // Finding #126 (RC-16/E13) — the Invoices table had no detail-view or
@@ -62,7 +63,7 @@ export function BillingInvoicesTab({
                     <TableRow>
                       <TableCell>{inv.invoiceNumber}</TableCell>
                       <TableCell><Badge tone={INVOICE_STATUS_TONE[inv.status]}>{inv.status}</Badge></TableCell>
-                      <TableCell>{inv.issuedAt ? new Date(inv.issuedAt).toLocaleDateString() : "—"}</TableCell>
+                      <TableCell>{inv.issuedAt ? formatDate(inv.issuedAt) : "—"}</TableCell>
                       <TableCell className="font-mono tabular-nums">{money(inv.total, inv.currencyCode)}</TableCell>
                       <TableCell className="text-right">
                         {invoiceLinesById && (
@@ -123,7 +124,7 @@ export function BillingInvoicesTab({
             <TableBody>
               {payments.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell>{new Date(p.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>{formatDate(p.createdAt)}</TableCell>
                   <TableCell><Badge tone={PAYMENT_STATUS_TONE[p.status]}>{p.status}</Badge></TableCell>
                   <TableCell className="font-mono tabular-nums">{money(p.amount, p.currencyCode)}</TableCell>
                 </TableRow>
@@ -143,7 +144,7 @@ export function BillingInvoicesTab({
             <TableBody>
               {credits.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell>{new Date(c.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>{formatDate(c.createdAt)}</TableCell>
                   <TableCell>{c.reason || "—"}</TableCell>
                   <TableCell className="font-mono tabular-nums">{money(c.amount, c.currencyCode)}</TableCell>
                 </TableRow>

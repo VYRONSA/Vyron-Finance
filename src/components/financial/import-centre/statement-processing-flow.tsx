@@ -25,9 +25,10 @@ import {
 import { IconAlertTriangle } from "@/components/ui/icons";
 import type { BankAccountSummary, BankTransactionRecord } from "@/server/accounting/types";
 import type { BankingException, ExceptionType } from "@/server/banking-rules/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 const STEP_CIRCLE_TONE: Record<StepStatus, string> = {

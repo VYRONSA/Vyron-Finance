@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { formatAmount } from "@/lib/format";
 import { render, screen, waitFor } from "@testing-library/react";
 import { InvoiceDocument } from "./invoice-document";
 import type { SalesInvoice, SalesInvoiceLine } from "@/server/sales/types";
@@ -17,12 +18,9 @@ function company(companyId: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** The document's own deterministic accounting format (src/lib/format.ts). */
 function money(value: number): string {
-  // testing-library's default text matcher collapses all whitespace
-  // (including the narrow no-break space some locales use as a
-  // thousands separator) down to a single regular space before
-  // comparing — normalize the same way here so the two never disagree.
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\s/g, " ");
+  return formatAmount(value);
 }
 
 function line(overrides: Partial<SalesInvoiceLine> = {}): SalesInvoiceLine {

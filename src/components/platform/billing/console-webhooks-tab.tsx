@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { IconRefresh } from "@/components/ui/icons";
 import type { BillingProviderConnection, BillingWebhookEvent, BillingWebhookEventStatus } from "@/server/billing-platform/types";
+import { formatDateTime } from "@/lib/format";
 
 const STATUS_TONE: Record<BillingWebhookEventStatus, "good" | "warn" | "info" | "danger" | "muted"> = {
   received: "info", processed: "good", failed: "danger", ignored: "muted", duplicate: "muted",
@@ -17,7 +18,7 @@ export function ConsoleWebhooksTab({ events, providerConnection }: { events: Bil
           <div>
             <div className="text-sm font-medium text-vf-ink">Stripe</div>
             <div className="mt-0.5 text-xs text-vf-ink-faint">
-              {providerConnection?.lastVerifiedAt ? `Last verified ${new Date(providerConnection.lastVerifiedAt).toLocaleString()}` : "Never verified"}
+              {providerConnection?.lastVerifiedAt ? `Last verified ${formatDateTime(providerConnection.lastVerifiedAt)}` : "Never verified"}
             </div>
           </div>
           <Badge tone={providerConnection?.status === "Connected" ? "good" : providerConnection?.status === "Error" ? "danger" : "muted"}>
@@ -36,7 +37,7 @@ export function ConsoleWebhooksTab({ events, providerConnection }: { events: Bil
             <TableBody>
               {events.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell>{new Date(e.receivedAt).toLocaleString()}</TableCell>
+                  <TableCell>{formatDateTime(e.receivedAt)}</TableCell>
                   <TableCell>{e.eventType}</TableCell>
                   <TableCell><Badge tone={STATUS_TONE[e.status]}>{e.status}</Badge></TableCell>
                   <TableCell>{e.signatureVerified ? "Yes" : "No"}</TableCell>

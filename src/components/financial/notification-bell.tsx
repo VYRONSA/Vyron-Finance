@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { IconAlertTriangle, IconBell } from "@/components/ui/icons";
 import { MOCK_NOTIFICATIONS } from "@/lib/mock/automation-data";
 import type { AppNotification } from "@/server/automation/types";
+import { formatDateTime } from "@/lib/format";
 
 const SEVERITY_DOT: Record<AppNotification["severity"], string> = {
   info: "bg-vf-info",
@@ -172,7 +173,7 @@ export function NotificationBell({ companyId, previewMode }: { companyId: string
                         {n.title}
                       </p>
                       {n.message && <p className="mt-0.5 truncate text-xs text-vf-ink-faint">{n.message}</p>}
-                      <p className="mt-0.5 text-[0.65rem] text-vf-ink-faint">{new Date(n.createdAt).toLocaleString()}</p>
+                      <p className="mt-0.5 text-[0.65rem] text-vf-ink-faint">{formatDateTime(n.createdAt)}</p>
                     </div>
                   </button>
                 );

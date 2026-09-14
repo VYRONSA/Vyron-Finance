@@ -2,9 +2,10 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import type { AuditWorkingPaperType } from "@/server/audit/types";
+import { formatAmount, formatDateTime } from "@/lib/format";
 
 function money(value: unknown): string {
-  return typeof value === "number" ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(value ?? "");
+  return typeof value === "number" ? formatAmount(value) : String(value ?? "");
 }
 
 function Fallback({ content }: { content: Record<string, unknown> }) {
@@ -339,7 +340,7 @@ function AuditNoteView({ content }: { content: AuditNoteContent }) {
   return (
     <div className="flex flex-col gap-1">
       <p className="whitespace-pre-wrap text-sm text-vf-ink-soft">{content.note}</p>
-      <p className="text-xs text-vf-ink-faint">{content.author} · {new Date(content.createdAt).toLocaleString()}</p>
+      <p className="text-xs text-vf-ink-faint">{content.author} · {formatDateTime(content.createdAt)}</p>
     </div>
   );
 }

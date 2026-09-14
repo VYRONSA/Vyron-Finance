@@ -20,6 +20,7 @@ import {
 } from "@/server/banking-rules/types";
 import { DOMAIN_ACTION_TYPES, DOMAIN_CONDITION_FIELDS, DOMAIN_RULE_TYPES } from "@/server/banking-rules/automation-rule-domains";
 import type { RuleConflict } from "@/server/banking-rules/conflict-detection";
+import { formatDateTime } from "@/lib/format";
 
 type EditableCondition = { field: ConditionField; operator: ConditionOperator; value: string; value2: string };
 type EditableAction = { actionType: ActionType; targetId: string; targetText: string };
@@ -296,7 +297,7 @@ function VersionHistoryPanel({ companyId, ruleId, previewMode, onRestored }: { c
       {versions.map((v, i) => (
         <li key={v.version} className="flex items-center gap-2">
           <span>
-            v{v.version} — {new Date(v.createdAt).toLocaleString()} by {v.createdBy}
+            v{v.version} — {formatDateTime(v.createdAt)} by {v.createdBy}
           </span>
           {i !== 0 && (
             <Button variant="subtle" size="sm" disabled={previewMode || restoringVersion !== null} title={disabledTitle} onClick={() => restore(v.version)}>

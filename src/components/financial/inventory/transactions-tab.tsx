@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from 
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChevronDown, IconChevronLeft, IconFileText, IconPlus } from "@/components/ui/icons";
 import type { InventoryTransaction, InventoryTransactionStatus, InventoryTransactionType, StockItem, Warehouse } from "@/server/inventory/types";
+import { formatAmount } from "@/lib/format";
 
 const MOVEMENT_TYPES: InventoryTransactionType[] = ["Receipt", "Issue", "Transfer", "Adjustment", "Return", "WriteOff", "OpeningBalance"];
 const NEEDS_COST: InventoryTransactionType[] = ["Receipt", "Return", "OpeningBalance"];
@@ -22,7 +23,7 @@ const STATUS_TONE: Record<InventoryTransactionStatus, "muted" | "info" | "good" 
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 type EditableLine = { stockItemId: number; quantity: string; unitCost: string };

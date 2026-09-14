@@ -4,9 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconListChecks } from "@/components/ui/icons";
 import type { VatDocument } from "@/server/vat/vat-intelligence";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function drillThroughHref(companyId: string, doc: VatDocument): string | null {

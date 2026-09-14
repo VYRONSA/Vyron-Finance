@@ -9,9 +9,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from 
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconAlertTriangle, IconArrowDown, IconBarChart, IconChevronDown, IconChevronLeft } from "@/components/ui/icons";
 import type { TrialBalance, TrialBalanceRow } from "@/server/general-ledger/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 export function TrialBalanceTab({ companyId, trialBalance, previewMode }: { companyId: string; trialBalance: TrialBalance; previewMode: boolean }) {

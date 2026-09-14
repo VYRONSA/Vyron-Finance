@@ -35,13 +35,14 @@ import {
   MOCK_REPORT_DEFINITIONS,
   MOCK_REVENUE_FORECAST,
 } from "@/lib/mock/financial-reporting-data";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Reports — VYRON FINANCE",
 };
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 export default async function ReportsPage({ params }: { params: Promise<{ companyId: string }> }) {

@@ -40,11 +40,12 @@ function txn(overrides: Partial<BankTransactionRecord> = {}): BankTransactionRec
   };
 }
 
-/** The separate "Update Allocated" button was REMOVED: saving and then
- * posting was two clicks for one intention, so "Post to Accounting" now
- * commits pending allocations itself before it posts (see
- * `post-to-accounting-panel.tsx`). What survives is the set of ids that
- * commit acts on — still every pending edit on the page, still
+/** "Update Allocated" is the real toolbar component
+ * `UpdateAllocatedButton` (see `update-allocated-button.test.tsx` — its
+ * earlier removal went unnoticed because this file rendered a stand-in).
+ * "Post to Accounting" also commits pending allocations before it posts
+ * (see `post-to-accounting-panel.tsx`). Both act on the same set of ids —
+ * still every pending edit on the page, still
  * independent of which rows happen to be ticked. */
 describe("1–3. the ids a commit acts on", () => {
   it("no pending allocations → nothing is submitted", () => {
@@ -110,7 +111,11 @@ describe("7. results are reported accurately", () => {
 });
 
 /** Drives the REAL grid: edits rows through its own inline cells, then
- * commits them through the same `saveSelected` the toolbar button calls. */
+ * commits them through the same `saveSelected` the toolbar button calls.
+ * The trigger is deliberately NOT labelled "Update Allocated" — it is a
+ * test driver for the grid's commit path, not the toolbar button (which
+ * `update-allocated-button.test.tsx` and the pending-count test render for
+ * real). A stand-in with the real label is what hid the button's removal. */
 function GridHarness({
   transactions,
   onAllocateRow,
@@ -124,7 +129,7 @@ function GridHarness({
   return (
     <>
       <button type="button" onClick={async () => onDone(await ref.current?.saveSelected(transactions.map((t) => t.id)))}>
-        Update Allocated
+        Commit through saveSelected
       </button>
       <TransactionGrid
         ref={ref}
@@ -169,7 +174,7 @@ describe("4–6, 8–13. committing through the existing authorised path", () =>
     );
 
     // Nothing edited yet: a commit submits nothing at all.
-    fireEvent.click(screen.getByRole("button", { name: "Update Allocated" }));
+    fireEvent.click(screen.getByRole("button", { name: "Commit through saveSelected" }));
     await waitFor(() => expect(summary).not.toBeNull());
     expect(onAllocateRow).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ saved: 0, failed: [] });

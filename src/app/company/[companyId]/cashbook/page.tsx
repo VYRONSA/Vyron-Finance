@@ -14,13 +14,14 @@ import { MOCK_COMPANIES_FULL } from "@/lib/mock/company-management-data";
 import { MOCK_BANK_ACCOUNT_SUMMARIES } from "@/lib/mock/bank-accounts-data";
 import { MOCK_BANK_RECONCILIATIONS, MOCK_CASHBOOK_BATCHES, MOCK_CASHBOOK_TRANSACTIONS, MOCK_RECONCILIATION_SUMMARY } from "@/lib/mock/cashbook-data";
 import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Cashbook — VYRON FINANCE",
 };
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 export default async function CashbookPage({ params }: { params: Promise<{ companyId: string }> }) {

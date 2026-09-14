@@ -15,6 +15,7 @@ import { StatTile } from "@/components/ui/stat-tile";
 import { IconBell, IconFileText } from "@/components/ui/icons";
 import type { CommunicationRecord, CommunicationStatus, CommunicationTemplate } from "@/server/communications/types";
 import type { CommunicationDashboardSummary } from "@/server/communications/dashboard-engine";
+import { formatCount, formatDateTime } from "@/lib/format";
 
 const TABS = ["Dashboard", "Log", "Templates"] as const;
 type Tab = (typeof TABS)[number];
@@ -118,7 +119,7 @@ function LogTab({ companyId, communications, capped, previewMode }: { companyId:
        * on-screen indicator that older communications exist beyond it. */}
       {capped && (
         <p className="text-xs text-vf-warning">
-          Showing the most recent {communications.length.toLocaleString()} communications — narrow the status filter or check the source module for older history.
+          Showing the most recent {formatCount(communications.length)} communications — narrow the status filter or check the source module for older history.
         </p>
       )}
 
@@ -148,7 +149,7 @@ function LogTab({ companyId, communications, capped, previewMode }: { companyId:
                   <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>
                   {c.status === "Failed" && c.failureReason && <p className="mt-1 max-w-[24ch] text-xs text-vf-ink-faint">{c.failureReason}</p>}
                 </TableCell>
-                <TableCell className="text-xs text-vf-ink-faint">{new Date(c.sentAt ?? c.scheduledFor).toLocaleString()}</TableCell>
+                <TableCell className="text-xs text-vf-ink-faint">{formatDateTime(c.sentAt ?? c.scheduledFor)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1.5">
                     {c.status === "PendingApproval" && (

@@ -14,6 +14,7 @@ import { listRecentImports } from "@/server/services/import-service";
 import { MOCK_BANK_ACCOUNT_SUMMARIES, MOCK_RECENT_TRANSACTIONS_BY_ACCOUNT } from "@/lib/mock/bank-accounts-data";
 import { MOCK_IMPORT_BATCHES } from "@/lib/mock/import-centre-data";
 import type { BankAccountStatus } from "@/server/accounting/types";
+import { formatAmount, formatCount, formatDate } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Bank Account — VYRON FINANCE",
@@ -25,7 +26,7 @@ const STATUS_TONE: Record<BankAccountStatus, "good" | "muted"> = {
 };
 
 function money(value: number, currency: string) {
-  return `${currency} ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${currency} ${formatAmount(value)}`;
 }
 
 export default async function BankAccountDetailPage({
@@ -93,7 +94,7 @@ export default async function BankAccountDetailPage({
         <Card tone="dark">
           <CardContent className="p-5">
             <p className="font-mono text-2xl font-semibold tabular-nums text-vf-on-dark" title={summary.transactionCountCapped ? "Capped at the most recent 10,000 — true count may be higher." : undefined}>
-              {summary.transactionCount.toLocaleString()}
+              {formatCount(summary.transactionCount)}
               {summary.transactionCountCapped && "+"}
             </p>
             <p className="mt-1 text-xs text-vf-on-dark-faint">Transactions Imported{summary.transactionCountCapped ? " (capped)" : ""}</p>
@@ -230,7 +231,7 @@ export default async function BankAccountDetailPage({
                     <TableCell tone="dark" className="text-right font-mono tabular-nums">{batch.importedCount}</TableCell>
                     <TableCell tone="dark" className="text-right font-mono tabular-nums">{batch.duplicateCount}</TableCell>
                     <TableCell tone="dark" className="text-right font-mono tabular-nums">{batch.exceptionCount}</TableCell>
-                    <TableCell tone="dark">{new Date(batch.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell tone="dark">{formatDate(batch.createdAt)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

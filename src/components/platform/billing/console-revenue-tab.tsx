@@ -1,9 +1,10 @@
 import { StatTile } from "@/components/ui/stat-tile";
 import { Badge } from "@/components/ui/badge";
 import type { CommercialReportingSnapshot, RevenueMetric } from "@/server/billing-platform/engine/commercial-reporting-engine";
+import { formatAmount } from "@/lib/format";
 
 function money(amount: number): string {
-  return `R ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(amount)}`;
 }
 
 function MetricTile({ label, metric, format }: { label: string; metric: RevenueMetric; format?: (v: number) => string }) {

@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 import { IconArrowDown, IconArrowUp, IconRefresh } from "@/components/ui/icons";
 import { ConfirmActionRow, useConfirmTarget } from "@/components/ui/confirm-action";
 import type { PlanKey, Subscription, SubscriptionPlan, SubscriptionPlanPrice } from "@/server/billing-platform/types";
+import { formatAmount, formatDate } from "@/lib/format";
 
 function money(amount: number, currencyCode: string): string {
   const symbol = currencyCode === "ZAR" ? "R" : `${currencyCode} `;
-  return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${symbol}${formatAmount(amount)}`;
 }
 
 export function BillingPlanTab({
@@ -73,7 +74,7 @@ export function BillingPlanTab({
             {plan?.name ?? "—"} {currentPrice && <span className="font-normal text-vf-ink-faint">— {money(currentPrice.unitAmount, currentPrice.currencyCode)}/{subscription.billingCycle}</span>}
           </div>
           {subscription.cancelAtPeriodEnd && (
-            <Badge tone="warn" className="mt-2">Cancels on {subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString() : "period end"}</Badge>
+            <Badge tone="warn" className="mt-2">Cancels on {subscription.currentPeriodEnd ? formatDate(subscription.currentPeriodEnd) : "period end"}</Badge>
           )}
         </div>
         <div className="flex gap-2">

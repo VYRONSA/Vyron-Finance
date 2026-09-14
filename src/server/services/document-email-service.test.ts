@@ -211,7 +211,7 @@ describe("sendInvoiceEmail — tenant isolation", () => {
     expect(getSalesInvoice).toHaveBeenCalledWith("company-b", 501);
     expect(getCustomer).toHaveBeenCalledWith("company-b", 42);
     expect(getCompany).toHaveBeenCalledWith("company-b");
-    expect(generateInvoicePdf).toHaveBeenCalledWith(expect.anything(), "company-b", 501);
+    expect(generateInvoicePdf).toHaveBeenCalledWith("company-b", 501);
     const uploadCall = vi.mocked(uploadDocument).mock.calls[0]![0];
     expect(uploadCall.companyId).toBe("company-b");
     expect(queueCommunication).toHaveBeenCalledWith("company-b", expect.anything());

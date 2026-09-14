@@ -16,6 +16,7 @@ import type { BankAccount, Supplier } from "@/server/accounting/types";
 import type { Customer } from "@/server/customer-management/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import { GlOpeningBalancesGrid } from "./gl-opening-balances-grid";
+import { formatAmount } from "@/lib/format";
 
 /** General Ledger, Bank Accounts, VAT Control, and Loans are now
  * captured on the Chart-of-Accounts grid above (Board revision, Pilot
@@ -37,7 +38,7 @@ const CATEGORY_LABELS: Record<OpeningBalanceCategory, string> = {
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function targetLabel(entry: OpeningBalanceEntry, bankAccounts: BankAccount[], customers: Customer[], suppliers: Supplier[], accounts: ChartOfAccount[]): string {

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconBank } from "@/components/ui/icons";
 import type { BankAccountSummary, BankAccountStatus } from "@/server/accounting/types";
+import { formatAmount, formatCount } from "@/lib/format";
 
 const STATUS_TONE: Record<BankAccountStatus, "good" | "muted"> = {
   Active: "good",
@@ -20,7 +21,7 @@ type StatusFilter = BankAccountStatus | typeof ALL_STATUSES;
 type SortKey = "name" | "balance";
 
 function money(value: number, currency: string) {
-  return `${currency} ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${currency} ${formatAmount(value)}`;
 }
 
 function maskAccountNumber(accountNumber: string): string {
@@ -152,7 +153,7 @@ function AccountCard({ summary, companyId }: { summary: BankAccountSummary; comp
             <dd className="text-right text-vf-ink-soft">{account.currency || "Not available"}</dd>
             <dt className="text-vf-ink-faint">Transactions</dt>
             <dd className="text-right font-mono tabular-nums text-vf-ink-soft" title={summary.transactionCountCapped ? "Capped at the most recent 10,000 — true count may be higher." : undefined}>
-              {summary.transactionCount.toLocaleString()}
+              {formatCount(summary.transactionCount)}
               {summary.transactionCountCapped && "+"}
             </dd>
             <dt className="text-vf-ink-faint">Last Import</dt>

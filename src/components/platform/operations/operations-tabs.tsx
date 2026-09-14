@@ -15,6 +15,7 @@ import { IconAlertTriangle, IconShieldCheck } from "@/components/ui/icons";
 import { MetricValue } from "./metric-value";
 import type { CompanyOperationsSnapshot } from "@/server/services/operations-service";
 import type { AlertStatus, EngineStatus, EventSeverity } from "@/server/operations/types";
+import { formatDateTime } from "@/lib/format";
 
 const TABS = [
   "Platform Health", "Engine Health", "Background Processing", "Integration Health", "Communication Health",
@@ -103,10 +104,10 @@ function EngineHealthTab({ snapshot }: { snapshot: CompanyOperationsSnapshot }) 
             <TableCell className="font-medium text-vf-ink">{e.name}</TableCell>
             <TableCell><Badge tone={ENGINE_STATUS_TONE[e.status]}>{e.status}</Badge></TableCell>
             <TableCell><MetricValue metric={e.queueDepth} /></TableCell>
-            <TableCell><MetricValue metric={e.lastExecutionAt} format={(v) => new Date(v as string).toLocaleString()} /></TableCell>
+            <TableCell><MetricValue metric={e.lastExecutionAt} format={(v) => formatDateTime(v as string)} /></TableCell>
             <TableCell><MetricValue metric={e.errorCount} /></TableCell>
             <TableCell><MetricValue metric={e.avgExecutionTimeMs} format={(v) => `${v}ms`} /></TableCell>
-            <TableCell><MetricValue metric={e.lastSuccessfulRunAt} format={(v) => new Date(v as string).toLocaleString()} /></TableCell>
+            <TableCell><MetricValue metric={e.lastSuccessfulRunAt} format={(v) => formatDateTime(v as string)} /></TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -128,7 +129,7 @@ function BackgroundProcessingTab({ snapshot }: { snapshot: CompanyOperationsSnap
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-vf-ink-faint">Long-Running Jobs (10+ min)</p>
         {backgroundJobs.longRunning.length === 0 ? <p className="text-sm text-vf-ink-faint">None.</p> : (
           <ul className="flex flex-col gap-1 text-sm">
-            {backgroundJobs.longRunning.map((r) => <li key={r.id}>Run #{r.id} — started {new Date(r.startedAt).toLocaleString()}</li>)}
+            {backgroundJobs.longRunning.map((r) => <li key={r.id}>Run #{r.id} — started {formatDateTime(r.startedAt)}</li>)}
           </ul>
         )}
       </div>
@@ -138,7 +139,7 @@ function BackgroundProcessingTab({ snapshot }: { snapshot: CompanyOperationsSnap
           <ul className="flex flex-col gap-1 text-sm">
             {backgroundJobs.stuckJobs.map((r) => (
               <li key={r.id} className="flex items-center justify-between rounded-vf-sm border border-vf-paper-border px-3 py-2">
-                <span>Run #{r.id} — started {new Date(r.startedAt).toLocaleString()}</span>
+                <span>Run #{r.id} — started {formatDateTime(r.startedAt)}</span>
                 <span className="text-xs text-vf-ink-faint">Retry from Recurring Templates / Automation Dashboard’s own “Run Now” action</span>
               </li>
             ))}
@@ -244,7 +245,7 @@ function SecurityTab({ snapshot }: { snapshot: CompanyOperationsSnapshot }) {
                 <div className="flex items-center gap-2">
                   <Badge tone={SEVERITY_TONE[e.severity]}>{e.severity}</Badge>
                   <span className="font-medium text-vf-ink">{e.eventType}</span>
-                  <span className="text-xs text-vf-ink-faint">{new Date(e.createdAt).toLocaleString()}</span>
+                  <span className="text-xs text-vf-ink-faint">{formatDateTime(e.createdAt)}</span>
                 </div>
                 <p className="mt-1 text-xs text-vf-ink-faint">{e.actor ?? "Unknown actor"} — {e.detail}</p>
               </li>
@@ -314,7 +315,7 @@ function AuditTab({ snapshot }: { snapshot: CompanyOperationsSnapshot }) {
           <ul className="flex flex-col gap-1.5">
             {a.recentCriticalEntries.map((e) => (
               <li key={e.id} className="rounded-vf-sm border border-vf-paper-border p-3 text-sm">
-                <span className="font-medium text-vf-ink">{e.actionType}</span> — {e.performedBy} — <span className="text-xs text-vf-ink-faint">{new Date(e.createdAt).toLocaleString()}</span>
+                <span className="font-medium text-vf-ink">{e.actionType}</span> — {e.performedBy} — <span className="text-xs text-vf-ink-faint">{formatDateTime(e.createdAt)}</span>
               </li>
             ))}
           </ul>
@@ -370,7 +371,7 @@ function AlertCentreTab({ companyId, snapshot, previewMode }: { companyId: strin
             <TableCell>{a.sourceEngine}</TableCell>
             <TableCell className="max-w-[32ch]">{a.title}</TableCell>
             <TableCell><Badge tone={ALERT_STATUS_TONE[a.status]}>{a.status}</Badge></TableCell>
-            <TableCell className="text-xs text-vf-ink-faint">{new Date(a.createdAt).toLocaleString()}</TableCell>
+            <TableCell className="text-xs text-vf-ink-faint">{formatDateTime(a.createdAt)}</TableCell>
             <TableCell className="text-right">
               <div className="flex justify-end gap-1.5">
                 {a.status === "Open" && <Button variant="subtle" size="sm" disabled={previewMode || loadingId === a.id} title={disabledTitle} onClick={() => act(a.id, "acknowledge")}>Acknowledge</Button>}

@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { formatMoney } from "@/lib/money";
 import type { BankTransactionRecord } from "@/server/accounting/types";
+import { formatCount } from "@/lib/format";
 
 /** Receipts Cashbook (direction="credit") and Payments Cashbook
  * (direction="debit") are the SAME real view over `ae_bank_transactions`
@@ -55,7 +56,7 @@ export function CashbookLedgerTab({
 
         {entriesCapped && (
           <p className="text-xs text-vf-warning">
-            Showing the most recent {entries.length.toLocaleString()} entries — use Enquiry&apos;s date filter to see older history.
+            Showing the most recent {formatCount(entries.length)} entries — use Enquiry&apos;s date filter to see older history.
           </p>
         )}
 

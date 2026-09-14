@@ -6,6 +6,7 @@ import { Input, Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { IconCopy, IconPlus, IconTrash } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
+import { formatAmount } from "@/lib/format";
 
 /**
  * Pilot Review Round 1, Phase 4 — the one reusable spreadsheet-style
@@ -332,7 +333,7 @@ export function BatchEntryGrid<TRow extends Record<string, unknown>>({
               <TableCell colSpan={columns.length - totalValues.length}>Totals</TableCell>
               {totalValues.map((t) => (
                 <TableCell key={t.key} className="text-right tabular-nums">
-                  {t.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {formatAmount(t.value)}
                 </TableCell>
               ))}
               {allowRowManagement && <TableCell />}

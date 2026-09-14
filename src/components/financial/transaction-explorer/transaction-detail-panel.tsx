@@ -18,9 +18,10 @@ import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import type { AllocateRowPayload } from "./transaction-grid";
 import { ModalPortal } from "@/components/ui/modal-portal";
+import { formatAmount, formatDateTime } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 /**
@@ -450,7 +451,7 @@ export function TransactionDetailPanel({
                 <ul className="flex flex-col gap-2 text-xs text-vf-ink-soft">
                   {detail.matchHistory.map((h) => (
                     <li key={h.id} className="border-t border-vf-paper-border pt-2 first:border-0 first:pt-0">
-                      {h.previousStatus ?? "—"} → {h.newStatus} ({h.confidence ?? 0}%) — {h.reason} · {new Date(h.createdAt).toLocaleString()}
+                      {h.previousStatus ?? "—"} → {h.newStatus} ({h.confidence ?? 0}%) — {h.reason} · {formatDateTime(h.createdAt)}
                     </li>
                   ))}
                 </ul>
@@ -467,7 +468,7 @@ export function TransactionDetailPanel({
                     <li key={h.id} className="border-t border-vf-paper-border pt-2 first:border-0 first:pt-0">
                       {h.previousStatus ?? "—"} → {h.newStatus} · GL {h.previousGlAccount ?? "—"} → {h.newGlAccount ?? "—"} · {h.allocationReason}
                       {h.confidence !== null && ` (${h.confidence}% confidence)`}
-                      {h.isManualOverride && " (manual)"} · {new Date(h.createdAt).toLocaleString()}
+                      {h.isManualOverride && " (manual)"} · {formatDateTime(h.createdAt)}
                     </li>
                   ))}
                 </ul>
@@ -483,7 +484,7 @@ export function TransactionDetailPanel({
                   {detail.reviewHistory.map((h) => (
                     <li key={h.id} className="border-t border-vf-paper-border pt-2 first:border-0 first:pt-0">
                       {h.previousReviewStatus ?? "—"} → {h.newReviewStatus} by {h.performedBy}
-                      {h.note && ` — "${h.note}"`} · {new Date(h.createdAt).toLocaleString()}
+                      {h.note && ` — "${h.note}"`} · {formatDateTime(h.createdAt)}
                     </li>
                   ))}
                 </ul>

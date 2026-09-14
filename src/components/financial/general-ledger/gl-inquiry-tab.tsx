@@ -9,9 +9,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconSearch } from "@/components/ui/icons";
 import type { ChartOfAccount, GlInquiryPage } from "@/server/general-ledger/types";
 import type { Branch, CostCentre, Department } from "@/server/company-management/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 export function GlInquiryTab({

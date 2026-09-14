@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconMinus, IconRefresh, IconShieldCheck } from "@/components/ui/icons";
 import type { AuditFinding, AuditFindingCategory, AuditFindingSeverity } from "@/server/audit/types";
 import { SendCommunicationButton } from "@/components/financial/communications/send-communication-button";
+import { formatDateTime } from "@/lib/format";
 
 const SEVERITY_TONE: Record<AuditFindingSeverity, "info" | "warn" | "danger"> = { Low: "info", Medium: "info", High: "warn", Critical: "danger" };
 
@@ -108,7 +109,7 @@ function FindingCard({
 
       {finding.status !== "Open" && (
         <p className="mt-2 text-xs text-vf-ink-faint">
-          {finding.status} by {finding.reviewedBy} {finding.reviewedAt ? `on ${new Date(finding.reviewedAt).toLocaleString()}` : ""}
+          {finding.status} by {finding.reviewedBy} {finding.reviewedAt ? `on ${formatDateTime(finding.reviewedAt)}` : ""}
           {finding.reviewNote && ` — "${finding.reviewNote}"`}
         </p>
       )}

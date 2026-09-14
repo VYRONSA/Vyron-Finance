@@ -10,6 +10,7 @@ import { money } from "./statement-views";
 import { REPORTING_PACKAGE_TYPES, type ReportingPackage, type ReportingPackageType } from "@/server/disclosures/types";
 import type { ReportingPackageContents } from "@/server/reporting/reporting-package-engine";
 import { SendCommunicationButton } from "@/components/financial/communications/send-communication-button";
+import { formatDateTime } from "@/lib/format";
 
 const SENDABLE_PACKAGE_TEMPLATES: Partial<Record<ReportingPackageType, string>> = {
   ManagementPack: "ManagementPackEmail",
@@ -45,7 +46,7 @@ function PackageCard({ pkg, companyId, previewMode }: { pkg: ReportingPackage; c
             <p className="text-sm font-medium text-vf-ink">{pkg.periodStart} to {pkg.periodEnd}</p>
           </div>
           <p className="mt-1 text-xs text-vf-ink-faint">
-            Generated {new Date(pkg.generatedAt).toLocaleString()} by {pkg.generatedBy} · {pkg.financialYearLabel}
+            Generated {formatDateTime(pkg.generatedAt)} by {pkg.generatedBy} · {pkg.financialYearLabel}
           </p>
         </div>
         <Button variant="subtle" size="sm" onClick={() => setExpanded((v) => !v)}>

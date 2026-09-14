@@ -14,14 +14,11 @@ import { listBankAccountSummaries } from "@/server/services/bank-account-service
 import { MOCK_IMPORT_BATCHES } from "@/lib/mock/import-centre-data";
 import { MOCK_BANK_ACCOUNT_SUMMARIES } from "@/lib/mock/bank-accounts-data";
 import type { ImportBatch } from "@/server/accounting/types";
+import { formatDateTime } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Import Centre — VYRON FINANCE",
 };
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
 
 export default async function ImportCentrePage({ params }: { params: Promise<{ companyId: string }> }) {
   const { companyId } = await params;

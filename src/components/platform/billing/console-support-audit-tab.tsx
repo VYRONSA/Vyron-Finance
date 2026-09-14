@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from 
 import { Button } from "@/components/ui/button";
 import { IconShieldCheck } from "@/components/ui/icons";
 import type { BillingEvent, BillingSupportNote } from "@/server/billing-platform/types";
+import { formatDateTime } from "@/lib/format";
 
 const EVENT_LABELS: Record<string, string> = {
   SubscriptionCreated: "Subscription created", SubscriptionChanged: "Subscription changed", SubscriptionCancelled: "Subscription cancelled",
@@ -100,7 +101,7 @@ export function ConsoleSupportAuditTab({
             <TableBody>
               {notes.map((n) => (
                 <TableRow key={n.id}>
-                  <TableCell>{new Date(n.createdAt).toLocaleString()}</TableCell>
+                  <TableCell>{formatDateTime(n.createdAt)}</TableCell>
                   <TableCell>{n.note}</TableCell>
                   <TableCell>{n.createdBy}</TableCell>
                 </TableRow>
@@ -120,7 +121,7 @@ export function ConsoleSupportAuditTab({
             <TableBody>
               {events.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell>{new Date(e.occurredAt).toLocaleString()}</TableCell>
+                  <TableCell>{formatDateTime(e.occurredAt)}</TableCell>
                   <TableCell>{EVENT_LABELS[e.eventType] ?? e.eventType}</TableCell>
                 </TableRow>
               ))}

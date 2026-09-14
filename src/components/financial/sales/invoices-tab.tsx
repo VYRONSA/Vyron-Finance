@@ -19,6 +19,7 @@ import type { Customer } from "@/server/customer-management/types";
 import type { SalesInvoice, SalesInvoiceDocumentType, SalesInvoiceStatus } from "@/server/sales/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
+import { formatAmount, formatDateTime } from "@/lib/format";
 
 const INVOICE_TEMPLATE_BY_DOCUMENT: Record<SalesInvoiceDocumentType, string> = {
   Invoice: "InvoiceEmail",
@@ -37,7 +38,7 @@ const STATUS_TONE: Record<SalesInvoiceStatus, "muted" | "info" | "good" | "dange
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 type EditableLine = { description: string; quantity: string; unitPrice: string; glAccount: string | null; vatCode: string | null; discount: string };
@@ -410,10 +411,10 @@ export function InvoicesTab({
                           </div>
                           <div className="text-xs text-vf-ink-faint">
                             <p className="mb-1.5 font-medium uppercase tracking-wide">History</p>
-                            {i.submittedAt && <p>Submitted {i.submittedBy ? `by ${i.submittedBy} ` : ""}— {new Date(i.submittedAt).toLocaleString()}</p>}
-                            {i.approvedAt && <p>Approved {i.approvedBy ? `by ${i.approvedBy} ` : ""}— {new Date(i.approvedAt).toLocaleString()}</p>}
-                            {i.postedAt && <p>Posted — {new Date(i.postedAt).toLocaleString()}</p>}
-                            {i.cancelledAt && <p>Cancelled {i.cancelledBy ? `by ${i.cancelledBy} ` : ""}— {new Date(i.cancelledAt).toLocaleString()}</p>}
+                            {i.submittedAt && <p>Submitted {i.submittedBy ? `by ${i.submittedBy} ` : ""}— {formatDateTime(i.submittedAt)}</p>}
+                            {i.approvedAt && <p>Approved {i.approvedBy ? `by ${i.approvedBy} ` : ""}— {formatDateTime(i.approvedAt)}</p>}
+                            {i.postedAt && <p>Posted — {formatDateTime(i.postedAt)}</p>}
+                            {i.cancelledAt && <p>Cancelled {i.cancelledBy ? `by ${i.cancelledBy} ` : ""}— {formatDateTime(i.cancelledAt)}</p>}
                             {i.journalId !== null && <p className="mt-1">Journal #{i.journalId}</p>}
                           </div>
                         </div>

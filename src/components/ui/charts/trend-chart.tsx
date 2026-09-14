@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
+import { formatDayMonth } from "@/lib/format";
 
 export type TrendPoint = { date: string; value: number };
 
@@ -16,7 +17,7 @@ export function TrendChart({
   color = "var(--color-vf-red-400)",
   suffix = "",
   height = 160,
-  formatDate = (d: string) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  formatDate = formatDayMonth,
 }: {
   data: TrendPoint[];
   color?: string;

@@ -15,6 +15,7 @@ import type {
   BillingAccount, BillingCredit, BillingEvent, CompanyLifecycleState, Entitlements, Invoice, InvoiceLine, Payment,
   Subscription, SubscriptionPlan, SubscriptionPlanPrice, SubscriptionStatusHistoryEntry, UsageMetricKey,
 } from "@/server/billing-platform/types";
+import { formatDate } from "@/lib/format";
 
 const TABS = ["Overview", "Plan", "Usage", "Invoices & Payments", "Billing Contact", "Audit History"] as const;
 type Tab = (typeof TABS)[number];
@@ -111,7 +112,7 @@ export function BillingTabs({
                   <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-vf-ink-faint">
                     <IconClock className="h-3.5 w-3.5" /> Trial ends in
                   </div>
-                  <StatTile value={`${daysUntil(subscription.trialEndsAt)} days`} label={new Date(subscription.trialEndsAt).toLocaleDateString()} className="mt-1" />
+                  <StatTile value={`${daysUntil(subscription.trialEndsAt)} days`} label={formatDate(subscription.trialEndsAt)} className="mt-1" />
                 </div>
               )}
               <div className="rounded-xl border border-vf-paper-border p-4">

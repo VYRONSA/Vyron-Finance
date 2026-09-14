@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmActionRow, useConfirmTarget } from "@/components/ui/confirm-action";
 import type { CopilotBriefing } from "@/server/copilot/types";
 import type { ExecutiveBriefing, ScoreBand } from "@/server/copilot/executive-briefing-engine";
+import { formatDateTime } from "@/lib/format";
 
 function bandTone(label: ScoreBand["label"]) {
   return label === "Strong" ? "good" : label === "Adequate" ? "info" : label === "Weak" ? "warn" : "danger";
@@ -31,7 +32,7 @@ function BriefingView({ briefing }: { briefing: CopilotBriefing }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-xs text-vf-ink-faint">
-        Generated {new Date(briefing.generatedAt).toLocaleString()} by {briefing.generatedBy} for {briefing.briefingDate}. Every statement below is
+        Generated {formatDateTime(briefing.generatedAt)} by {briefing.generatedBy} for {briefing.briefingDate}. Every statement below is
         traceable to live data.
       </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

@@ -1,3 +1,5 @@
+import { formatAmount } from "@/lib/format";
+
 /**
  * Master Implementation Tracker — Programme 2, Root Cause RC-13. The
  * one shared, currency-aware money formatter — no such thing existed
@@ -29,5 +31,5 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
  * Rand default. */
 export function formatMoney(value: number, currencyCode: string): string {
   const symbol = CURRENCY_SYMBOLS[currencyCode] ?? currencyCode;
-  return `${symbol} ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${symbol} ${formatAmount(value)}`;
 }

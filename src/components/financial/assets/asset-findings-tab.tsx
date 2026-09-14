@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconMinus, IconRefresh, IconShieldCheck } from "@/components/ui/icons";
 import type { AssetFinding, FixedAsset } from "@/server/assets/types";
+import { formatDateTime } from "@/lib/format";
 
 function FindingCard({ finding, asset, companyId, previewMode }: { finding: AssetFinding; asset: FixedAsset | undefined; companyId: string; previewMode: boolean }) {
   const router = useRouter();
@@ -74,7 +75,7 @@ function FindingCard({ finding, asset, companyId, previewMode }: { finding: Asse
 
       {finding.status !== "Open" && (
         <p className="mt-2 text-xs text-vf-ink-faint">
-          {finding.status} by {finding.resolvedBy} {finding.resolvedAt ? `on ${new Date(finding.resolvedAt).toLocaleString()}` : ""}
+          {finding.status} by {finding.resolvedBy} {finding.resolvedAt ? `on ${formatDateTime(finding.resolvedAt)}` : ""}
           {finding.resolutionNote && ` — "${finding.resolutionNote}"`}
         </p>
       )}

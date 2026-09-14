@@ -15,6 +15,7 @@ import { DownloadTemplateButton } from "@/components/financial/shared/download-t
 import { useUrlParam } from "@/hooks/use-url-param";
 import type { Customer, CustomerType, RiskRating } from "@/server/customer-management/types";
 import { CUSTOMER_IMPORT_TEMPLATE_HEADERS } from "@/server/import-centre/customer-supplier-import-parser";
+import { formatAmount } from "@/lib/format";
 
 const CUSTOMER_TYPES: CustomerType[] = ["Company", "Individual"];
 const RISK_RATINGS: RiskRating[] = ["Low", "Medium", "High"];
@@ -24,7 +25,7 @@ type StatusFilter = "Active" | "Inactive" | typeof ALL;
 type RiskFilter = RiskRating | typeof ALL;
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 export function CustomerWorkspace({ companyId, customers, previewMode }: { companyId: string; customers: Customer[]; previewMode: boolean }) {

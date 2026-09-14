@@ -16,6 +16,7 @@ import type {
   SupplierPaymentRow,
   UnknownPaymentRow,
 } from "@/server/accounting/reconciliation-report-shapes";
+import { formatAmount } from "@/lib/format";
 
 type ReportRows = {
   "supplier-allocation": SupplierAllocationRow[];
@@ -38,7 +39,7 @@ const TABS: { type: ReportType; label: string }[] = [
 const PAGE_SIZE = 50;
 
 function money(value: number) {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 /** Finding #052 — none of these 5 reports had search/sort/pagination/

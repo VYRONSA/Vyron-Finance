@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmActionRow, useConfirmTarget } from "@/components/ui/confirm-action";
 import { SCENARIO_TYPES, type CopilotScenario, type ScenarioType } from "@/server/copilot/types";
 import type { ScenarioImpact } from "@/server/copilot/scenario-engine";
+import { formatDateTime } from "@/lib/format";
 
 const SCENARIO_LABELS: Record<ScenarioType, string> = {
   SalesIncrease: "Increase Sales by %",
@@ -133,7 +134,7 @@ function ScenarioCard({ companyId, scenario, previewMode }: { companyId: string;
           </Button>
         )}
       </div>
-      <p className="mt-1 text-xs text-vf-ink-faint">Modeled {new Date(scenario.createdAt).toLocaleString()} by {scenario.createdBy}. Isolated — never modifies live accounting data.</p>
+      <p className="mt-1 text-xs text-vf-ink-faint">Modeled {formatDateTime(scenario.createdAt)} by {scenario.createdBy}. Isolated — never modifies live accounting data.</p>
       <ImpactSummary impact={scenario.results as unknown as ScenarioImpact} />
     </div>
   );

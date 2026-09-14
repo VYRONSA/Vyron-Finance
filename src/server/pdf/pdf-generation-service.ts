@@ -1,121 +1,100 @@
 /**
- * Phase 24A — server-generated PDF documents. The ONE place that turns
- * an existing, already-approved document view into real PDF bytes.
+ * Server-generated PDF documents — invoices, customer statements, Reporting
+ * Centre reports and Document Centre documents, for download and as email
+ * attachments.
  *
- * Approach, and why: headless Chromium (`puppeteer-core` +
- * `@sparticuz/chromium`, the established Vercel-compatible pattern —
- * `@sparticuz/chromium` ships a Chromium build packaged specifically for
- * serverless deployment, and this project already has a proven pattern
- * for shipping a native-binary Node package through Vercel's file
- * tracing, applied identically here — see `next.config.ts`) navigates to
- * a REAL, unmodified render of the EXISTING `InvoiceDocument`/
- * `StatementDocument` components (via the new `pdf-view` pages) and
- * calls `page.pdf()`. This was chosen over `@react-pdf/renderer` or a
- * from-scratch HTML string precisely because it requires ZERO changes to
- * those components: `DocumentBrandingHeader`/`useCustomerAddress` are
- * client components that self-fetch via `useEffect` — a real browser
- * (which is what Chromium is) runs that code exactly as a user's own
- * browser would, forwarded cookies and all, where a static
- * `renderToStaticMarkup()` approach would render them permanently empty
- * (effects never fire during a static server render). `page.pdf()` also
- * emulates PRINT media by default, so the exact same `@media print`
- * rule `document-preview-overlay.tsx` already uses to hide its own
- * toolbar/backdrop for `window.print()` applies here too, with no
- * separate "print mode" ever needed for PDF capture.
+ * HOW: the document is built on the server as ONE self-contained HTML page
+ * (`pdf-documents.tsx` → `print-html.ts`) and handed to headless Chromium
+ * with `page.setContent()`. No URL is ever loaded.
  *
- * On-demand generation, not stored (this ticket's own section 13
- * decision): a Company's invoices/statements can change (a credit note
- * against an invoice, a new receipt affecting a statement), so a stored
- * PDF would risk silently going stale. Nothing in this codebase's
- * existing architecture (no document-storage table for invoices/
- * statements) suggested a compelling reason to add one for this phase.
+ * PRODUCTION DEFECT this replaces: Chromium used to navigate to an internal
+ * `pdf-view` page on `https://${VERCEL_URL}`, forwarding the user's cookie.
+ * `VERCEL_URL` is the deployment's own hostname, which Vercel Deployment
+ * Protection puts behind Vercel's login — so every PDF, downloaded or
+ * emailed, was a picture of the "Log in to Vercel" page. It also made every
+ * document depend on a network round-trip to a public URL.
+ *
+ * Now:
+ *  - the data is read by the SAME services the app's routes use, under the
+ *    signed-in user's own Supabase session — RLS applies, no service role;
+ *  - Chromium receives only the finished HTML, with JavaScript disabled and
+ *    every network request refused: it cannot fetch anything, and no URL,
+ *    cookie or credential is ever given to it;
+ *  - Deployment Protection and the app's authentication are unchanged.
+ *
+ * Chromium comes from `@sparticuz/chromium` (the Vercel-compatible build,
+ * see `next.config.ts`); `PDF_BROWSER_PATH` points at a locally installed
+ * Chrome/Edge instead, for local development and the PDF regression tests.
  */
 
 import type { Browser } from "puppeteer-core";
+import type { BusinessDocument } from "@/server/report-centre/documents";
+import type { ReportResult } from "@/server/report-centre/types";
+import { businessDocumentPdfHtml, invoicePdfHtml, reportPdfHtml, statementPdfHtml } from "./pdf-documents";
 
 export class PdfGenerationError extends Error {}
 
-const NAVIGATION_TIMEOUT_MS = 20_000;
+const RENDER_TIMEOUT_MS = 20_000;
+/** Top/bottom page margins so continuation pages don't start at the paper
+ * edge; the document bodies supply their own side padding. */
+const PAGE_MARGIN = { top: "10mm", right: "0", bottom: "10mm", left: "0" };
 
-/** Lazily imports both the Chromium binary locator and `puppeteer-core`
- * itself — mirrors this codebase's own established "never touch a heavy
- * external dependency at module import time" convention (see
- * `vyron-ai-engine.ts::getDefaultAIProvider`), so importing this file
- * (e.g. from a test) never triggers a real Chromium binary resolution. */
+/** Lazily imports both the Chromium binary locator and `puppeteer-core` —
+ * importing this file (e.g. from a test) never resolves a Chromium binary. */
 async function launchBrowser() {
   const [{ default: chromium }, { default: puppeteer }] = await Promise.all([import("@sparticuz/chromium"), import("puppeteer-core")]);
-  const executablePath = await chromium.executablePath();
-  return puppeteer.launch({
-    args: chromium.args,
-    executablePath,
-    headless: true,
-  });
+  const localBrowser = process.env.PDF_BROWSER_PATH;
+  if (localBrowser) return puppeteer.launch({ executablePath: localBrowser, headless: true });
+  return puppeteer.launch({ args: chromium.args, executablePath: await chromium.executablePath(), headless: true });
 }
 
-/** Prefers Vercel's own deployment hostname (always correct in
- * production, including preview deployments) over the incoming
- * request's own `Host` header — a `Host` header is attacker-influenceable
- * in theory, and this URL determines exactly what content gets rendered
- * into a PDF, so it's safer to prefer the platform's own authoritative
- * value where one exists. Falls back to the incoming request's host only
- * for local development, where `VERCEL_URL` is never set. */
-function resolveBaseUrl(request: Request): string {
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) return `https://${vercelUrl}`;
-  const host = request.headers.get("host") ?? "localhost:3000";
-  const proto = request.headers.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
-
-/** Renders one internal `pdf-view` path to PDF bytes. Forwards the
- * INCOMING request's own `Cookie` header (the same session that already
- * passed `requireSession()`/`requirePermission()` in the calling route)
- * so the `pdf-view` page's own, independent auth check succeeds — never
- * a service-role bypass, never a second authentication mechanism. */
-async function renderPagePdf(request: Request, path: string): Promise<Buffer> {
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const url = `${resolveBaseUrl(request)}${path}`;
-
+/** Renders a complete HTML document to PDF bytes, fully offline: the page
+ * is given the HTML directly, JavaScript is off, and any request other
+ * than an inline `data:` resource is refused. */
+export async function renderHtmlToPdf(html: string): Promise<Buffer> {
   let browser: Browser | undefined;
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
-    if (cookieHeader) await page.setExtraHTTPHeaders({ cookie: cookieHeader });
-
-    const response = await page.goto(url, { waitUntil: "networkidle0", timeout: NAVIGATION_TIMEOUT_MS });
-    if (!response || !response.ok()) {
-      throw new PdfGenerationError(`The document could not be rendered for PDF generation (status ${response?.status() ?? "unknown"}).`);
-    }
-
-    const pdfBytes = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
+    await page.setJavaScriptEnabled(false);
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      if (request.url().startsWith("data:")) void request.continue();
+      else void request.abort("blockedbyclient");
+    });
+    await page.setContent(html, { waitUntil: "load", timeout: RENDER_TIMEOUT_MS });
+    const pdfBytes = await page.pdf({ format: "A4", printBackground: true, margin: PAGE_MARGIN });
     return Buffer.from(pdfBytes);
   } catch (error) {
     if (error instanceof PdfGenerationError) throw error;
     // Never a raw Puppeteer/Chromium stack trace or file-system path
-    // reaching a caller — this ticket's own section 18/19 requirement.
+    // reaching a caller.
     throw new PdfGenerationError("PDF generation failed. Please try again.");
   } finally {
     await browser?.close().catch(() => {});
   }
 }
 
-export function generateInvoicePdf(request: Request, companyId: string, invoiceId: number): Promise<Buffer> {
-  return renderPagePdf(request, `/company/${companyId}/documents/invoice/${invoiceId}/pdf-view`);
+function requireDocument(html: string | null): string {
+  if (html === null) throw new PdfGenerationError("The document could not be found for PDF generation.");
+  return html;
 }
 
-export function generateStatementPdf(request: Request, companyId: string, customerId: number): Promise<Buffer> {
-  return renderPagePdf(request, `/company/${companyId}/documents/statement/${customerId}/pdf-view`);
+export async function generateInvoicePdf(companyId: string, invoiceId: number): Promise<Buffer> {
+  return renderHtmlToPdf(requireDocument(await invoicePdfHtml(companyId, invoiceId)));
 }
 
-/** Reporting Centre — any report, rendered by its print view with the
- * same filters, so the PDF is exactly the report the user is looking at.
- * `query` is the report's filter query string (without a leading `?`). */
-export function generateReportPdf(request: Request, companyId: string, reportId: string, query: string): Promise<Buffer> {
-  return renderPagePdf(request, `/company/${companyId}/reporting/print/${encodeURIComponent(reportId)}${query ? `?${query}` : ""}`);
+export async function generateStatementPdf(companyId: string, customerId: number): Promise<Buffer> {
+  return renderHtmlToPdf(requireDocument(await statementPdfHtml(companyId, customerId)));
 }
 
-/** Reporting Centre Document Centre — reprint of any customer/supplier
- * document by its document view. */
-export function generateBusinessDocumentPdf(request: Request, companyId: string, docType: string, docId: number): Promise<Buffer> {
-  return renderPagePdf(request, `/company/${companyId}/reporting/documents/${encodeURIComponent(docType)}/${docId}?print=1`);
+/** Reporting Centre — the report the caller already ran with the user's
+ * filters, so the PDF is exactly the report on screen. */
+export async function generateReportPdf(companyId: string, result: ReportResult): Promise<Buffer> {
+  return renderHtmlToPdf(await reportPdfHtml(companyId, result));
+}
+
+/** Document Centre — reprint of a customer/supplier document the caller loaded. */
+export async function generateBusinessDocumentPdf(companyId: string, document: BusinessDocument): Promise<Buffer> {
+  return renderHtmlToPdf(await businessDocumentPdfHtml(companyId, document));
 }

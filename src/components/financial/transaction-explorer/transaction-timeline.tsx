@@ -1,4 +1,5 @@
 import type { TransactionDetail } from "@/server/accounting/types";
+import { formatDateTime } from "@/lib/format";
 
 type TimelineEvent = {
   key: string;
@@ -84,7 +85,7 @@ export function TransactionTimeline({ detail }: { detail: TransactionDetail }) {
           <div>
             <p className={`text-sm font-medium ${event.reached ? "text-vf-ink" : "text-vf-ink-faint"}`}>{event.label}</p>
             <p className="text-xs text-vf-ink-faint">{event.detail}</p>
-            {event.timestamp && <p className="text-[0.65rem] text-vf-ink-faint">{new Date(event.timestamp).toLocaleString()}</p>}
+            {event.timestamp && <p className="text-[0.65rem] text-vf-ink-faint">{formatDateTime(event.timestamp)}</p>}
           </div>
         </li>
       ))}

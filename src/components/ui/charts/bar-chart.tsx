@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatWeekdayShort } from "@/lib/format";
 
 export type BarPoint = { date: string; count: number };
 
@@ -14,7 +15,7 @@ export function ActivityBarChart({
   data,
   color = "var(--color-vf-red-400)",
   height = 160,
-  formatDate = (d: string) => new Date(d).toLocaleDateString(undefined, { weekday: "short" }),
+  formatDate = formatWeekdayShort,
 }: {
   data: BarPoint[];
   color?: string;

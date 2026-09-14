@@ -12,6 +12,7 @@ import { glAccountOptions, vatCodeOptions } from "@/lib/account-picker-options";
 import type { AllocationStatus, BankTransactionRecord, Supplier, TransactionExplorerFilters } from "@/server/accounting/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
+import { formatAmount } from "@/lib/format";
 
 type MinimalCustomer = { id: number; name: string };
 
@@ -164,7 +165,7 @@ type RecodeOutcome = {
 type RecodeSelection = { mode: "ids"; transactionIds: number[] } | { mode: "all-matching"; filters: TransactionExplorerFilters };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 // Phase 25F — Saved Filter Presets. A preset stores exactly the same

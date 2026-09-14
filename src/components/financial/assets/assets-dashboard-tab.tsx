@@ -1,9 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { IconShieldCheck } from "@/components/ui/icons";
 import type { AssetDashboardSummary } from "@/server/services/asset-dashboard-summary-service";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: "good" | "warn" | "danger" }) {

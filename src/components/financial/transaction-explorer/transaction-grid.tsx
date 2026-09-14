@@ -26,6 +26,7 @@ import type { VatTreatment } from "@/server/company-management/types";
 import { REQUIRED_ACTION_DUPLICATE_PAYMENT } from "@/server/accounting/matching-engine";
 // Phase 29 — MATCH_TYPE_LABELS is a runtime value (used to render the rule preview tooltip); RuleCreationOptions stays type-only.
 import { MATCH_TYPE_LABELS, type RuleCreationOptions } from "./transaction-bulk-action-bar";
+import { formatAmount } from "@/lib/format";
 
 type MatchStatusTone = "good" | "warn" | "info" | "danger" | "muted" | "critical";
 
@@ -103,7 +104,7 @@ export function needsAiAcceptAction(t: BankTransactionRecord): boolean {
 
 function money(value: number | null): string {
   if (value === null) return "—";
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 type MinimalCustomer = { id: number; name: string; customerCode: string };

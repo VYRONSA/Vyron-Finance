@@ -3,9 +3,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconShieldCheck } from "@/components/ui/icons";
 import type { VatDashboardSummary } from "@/server/services/vat-summary-service";
 import type { VatException, VatReturn } from "@/server/vat/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 export function VatDashboardTab({ summary, exceptions, vatReturns }: { summary: VatDashboardSummary; exceptions: VatException[]; vatReturns: VatReturn[] }) {

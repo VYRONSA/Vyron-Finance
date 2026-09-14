@@ -12,9 +12,10 @@ import type { IncomeStatement, StatementSection } from "@/server/reporting/incom
 import type { BalanceSheet } from "@/server/reporting/balance-sheet-engine";
 import type { CashFlowStatement } from "@/server/reporting/cash-flow-engine";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 function SectionRows({ section, generalLedgerHref }: { section: StatementSection; generalLedgerHref: string }) {

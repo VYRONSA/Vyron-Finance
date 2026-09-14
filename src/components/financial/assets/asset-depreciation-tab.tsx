@@ -11,9 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from 
 import { IconArrowDown } from "@/components/ui/icons";
 import { downloadCsv } from "@/lib/csv-export";
 import type { DepreciationRun, DepreciationRunLine, FixedAsset } from "@/server/assets/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 /** Finding #110 — the depreciation SCHEDULE (per-asset lines within a

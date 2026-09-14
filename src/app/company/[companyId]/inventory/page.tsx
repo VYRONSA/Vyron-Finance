@@ -22,6 +22,7 @@ import {
   MOCK_WAREHOUSES,
 } from "@/lib/mock/inventory-data";
 import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Inventory — VYRON FINANCE",
@@ -67,7 +68,7 @@ export default async function InventoryPage({ params }: { params: Promise<{ comp
   );
 
   function money(value: number): string {
-    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatAmount(value);
   }
 
   return (

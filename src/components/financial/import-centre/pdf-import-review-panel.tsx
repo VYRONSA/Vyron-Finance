@@ -11,6 +11,7 @@ import type { BankStatementMetadata, ImportExceptionRecord, ParsedBankTransactio
 import type { StatementValidationResult } from "@/server/import-centre/pdf-statement-validation";
 import type { FnbCreditCardReconciliationCheck } from "@/server/import-centre/parsers/fnb-credit-card-statement-parser";
 import type { ImportBatch } from "@/server/accounting/types";
+import { formatAmount } from "@/lib/format";
 
 export type PdfStatementPreview = {
   batchId: string;
@@ -27,7 +28,7 @@ export type PdfStatementPreview = {
 
 function formatMoney(value: number | null): string {
   if (value === null) return "—";
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function MetadataField({ label, value }: { label: string; value: string }) {
@@ -189,7 +190,7 @@ export function PdfImportReviewPanel({
           )}
           {balanceReconciliation.reconciles === false && !preview.reconciliationExplanation?.explainedByUnnettedCardholderCredit && (
             <Badge tone="danger">
-              Opening + transactions ≠ closing balance (off by {balanceReconciliation.delta?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              Opening + transactions ≠ closing balance (off by {typeof balanceReconciliation.delta === "number" ? formatAmount(balanceReconciliation.delta) : ""})
             </Badge>
           )}
           {balanceReconciliation.reconciles === true && <Badge tone="good">Balances reconcile</Badge>}

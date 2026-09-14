@@ -14,9 +14,10 @@ import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { StatementSection } from "@/server/reporting/income-statement-engine";
 import type { Budget } from "@/server/reporting/types";
 import type { Branch, CostCentre, Department, Project } from "@/server/company-management/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 /** Finding #107 — a Budget was always compared against the *whole

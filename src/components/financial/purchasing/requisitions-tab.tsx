@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconChevronDown, IconChevronLeft, IconFileText, IconPlus } from "@/components/ui/icons";
 import type { Supplier } from "@/server/accounting/types";
 import type { PurchaseRequisition, PurchaseRequisitionStatus } from "@/server/purchasing/types";
+import { formatAmount } from "@/lib/format";
 
 const STATUS_OPTIONS: (PurchaseRequisitionStatus | "All")[] = ["All", "Draft", "Submitted", "Approved", "Rejected", "Converted", "Cancelled"];
 const STATUS_TONE: Record<PurchaseRequisitionStatus, "muted" | "info" | "good" | "danger" | "warn"> = {
@@ -27,7 +28,7 @@ const STATUS_TONE: Record<PurchaseRequisitionStatus, "muted" | "info" | "good" |
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 type EditableLine = { description: string; quantity: string; estimatedUnitPrice: string };

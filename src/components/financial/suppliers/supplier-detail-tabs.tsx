@@ -23,6 +23,7 @@ import type { SupplierAddress, SupplierAddressType, SupplierContact } from "@/se
 import type { SupplierFinancialSummary, SupplierIntelligenceSignal } from "@/server/services/supplier-financial-service";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
+import { formatAmount } from "@/lib/format";
 
 const TABS = ["Overview", "Contacts", "Addresses", "Age Analysis", "Purchase History", "Documents", "Intelligence"] as const;
 type Tab = (typeof TABS)[number];
@@ -38,7 +39,7 @@ function tabFromSlug(slug: string): Tab {
 const ADDRESS_TYPES: SupplierAddressType[] = ["Billing", "Delivery", "Postal", "Physical"];
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function EditSupplierOverviewForm({
@@ -229,7 +230,7 @@ function OverviewTab({
     ["Bank Account Number", supplier.bankAccountNumber || "—"],
     ["Bank Branch Code", supplier.bankBranchCode || "—"],
     ["Payment Terms", `${supplier.paymentTermsDays} days`],
-    ["Spending Limit", supplier.spendingLimit > 0 ? supplier.spendingLimit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "Not set"],
+    ["Spending Limit", supplier.spendingLimit > 0 ? formatAmount(supplier.spendingLimit) : "Not set"],
     ["Alternative Names", supplier.alternativeNames.join(", ") || "—"],
   ];
 

@@ -13,9 +13,10 @@ import { downloadCsv } from "@/lib/csv-export";
 import { AssetAcquireForm } from "./asset-acquire-form";
 import { AssetDetailPanel } from "./asset-detail-panel";
 import type { AssetClass, AssetLifecycleEvent, FixedAssetWithNetBookValue } from "@/server/assets/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 const PAGE_SIZE = 50;

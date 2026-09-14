@@ -8,7 +8,8 @@ expect.extend(toHaveNoViolations);
 // jsdom doesn't implement Element.scrollTo — needed by any test that
 // renders FinancialWorkspaceShell (workspace-shell.tsx resets <main>'s
 // own scroll position on every route change).
-if (!Element.prototype.scrollTo) {
+// Guarded: node-environment test files (PDF rendering, source guards) have no DOM.
+if (typeof Element !== "undefined" && !Element.prototype.scrollTo) {
   Element.prototype.scrollTo = () => {};
 }
 

@@ -10,6 +10,7 @@ import { SplitTransactionForm } from "./split-transaction-form";
 import { useUrlParam } from "@/hooks/use-url-param";
 import type { MatchingQueueItem, MatchingQueueItemType } from "@/server/services/matching-queue-service";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
+import { formatAmount } from "@/lib/format";
 
 const TYPE_LABELS: Record<MatchingQueueItemType, string> = {
   BankTransaction: "Bank Transaction",
@@ -25,7 +26,7 @@ const TYPE_LABELS: Record<MatchingQueueItemType, string> = {
 const ALL_TYPES = "All";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 /** "Every unmatched item in the system must appear here. Not in

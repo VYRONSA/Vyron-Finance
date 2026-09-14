@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmActionRow, useConfirmTarget } from "@/components/ui/confirm-action";
 import { NARRATIVE_TYPES, type CopilotNarrative, type NarrativeType } from "@/server/copilot/types";
+import { formatDateTime } from "@/lib/format";
 
 function GeneratorForm({
   companyId,
@@ -106,7 +107,7 @@ function NarrativeCard({ narrative, companyId, previewMode }: { narrative: Copil
             <p className="text-sm font-medium text-vf-ink">{narrative.title}</p>
           </div>
           <p className="mt-1 text-xs text-vf-ink-faint">
-            Generated {new Date(narrative.generatedAt).toLocaleString()} by {narrative.generatedBy}
+            Generated {formatDateTime(narrative.generatedAt)} by {narrative.generatedBy}
           </p>
         </div>
         {deleteConfirm.isConfirming(narrative.id) ? (

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { formatAmount } from "@/lib/format";
 import { totalBalanceLabel } from "./page";
 
 // Master Implementation Tracker — Programme 2, Root Cause RC-13, Finding
-// #018. Number punctuation is locale-dependent (`toLocaleString(undefined, ...)`)
-// — assert on the currency-grouping behavior, not exact separator characters.
+// #018. Amounts use VYRON's deterministic accounting format
+// (`src/lib/format.ts`) — identical on the server and in every browser.
 function fmt(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 describe("totalBalanceLabel", () => {

@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { Entitlements, LimitKey, UsageMetricKey } from "@/server/billing-platform/types";
+import { formatCount } from "@/lib/format";
 
 const LIMIT_ROWS: { limitKey: LimitKey; usageKey: UsageMetricKey; label: string }[] = [
   { limitKey: "max_users", usageKey: "users", label: "Users" },
@@ -28,7 +29,7 @@ function UsageBar({ label, used, limit }: { label: string; used: number; limit: 
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between text-sm">
         <span className="text-vf-ink-soft">{label}</span>
-        <span className="font-mono tabular-nums text-vf-ink-faint">{used.toLocaleString()} / {limit === null ? "Unlimited" : limit.toLocaleString()}</span>
+        <span className="font-mono tabular-nums text-vf-ink-faint">{formatCount(used)} / {limit === null ? "Unlimited" : formatCount(limit)}</span>
       </div>
       {limit !== null && (
         <div className="h-2 overflow-hidden rounded-full bg-vf-paper-alt">
@@ -57,7 +58,7 @@ export function BillingUsageTab({ entitlements, usage }: { entitlements: Entitle
         <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
           {OTHER_METRICS.map((m) => (
             <div key={m.usageKey} className="rounded-xl border border-vf-paper-border p-3">
-              <div className="font-mono text-xl font-semibold tabular-nums text-vf-ink">{(usage[m.usageKey] ?? 0).toLocaleString()}</div>
+              <div className="font-mono text-xl font-semibold tabular-nums text-vf-ink">{formatCount((usage[m.usageKey] ?? 0))}</div>
               <div className="mt-0.5 text-xs text-vf-ink-faint">{m.label}</div>
             </div>
           ))}

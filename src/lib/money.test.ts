@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { formatAmount } from "@/lib/format";
 import { formatMoney } from "./money";
 
 function fmt(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 // Master Implementation Tracker — Programme 2, Root Cause RC-13.

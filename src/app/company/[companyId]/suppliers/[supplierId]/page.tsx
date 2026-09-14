@@ -19,6 +19,7 @@ import { MOCK_PURCHASE_BILLS, MOCK_SUPPLIER_PAYMENTS } from "@/lib/mock/purchasi
 import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 import type { SupplierRiskRating } from "@/server/accounting/types";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Supplier — VYRON FINANCE",
@@ -79,7 +80,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
           </div>
           <div className="text-right">
             <p className="font-mono text-4xl font-semibold tabular-nums text-vf-on-dark">
-              {financialSummary.outstandingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatAmount(financialSummary.outstandingBalance)}
             </p>
             <p className="mt-1 text-sm text-vf-on-dark-soft">Outstanding Balance</p>
           </div>

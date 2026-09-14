@@ -6,6 +6,7 @@ import { IconAlertTriangle, IconBanknote, IconBuilding, IconImport, IconShieldCh
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { listCustomers } from "@/server/services/customer-service";
 import { MOCK_CUSTOMERS } from "@/lib/mock/customer-management-data";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Customers — VYRON FINANCE",
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
 function money(value: number): string {
   if (Math.abs(value) >= 1_000_000) return `R ${(value / 1_000_000).toFixed(2)}M`;
   if (Math.abs(value) >= 1_000) return `R ${(value / 1_000).toFixed(1)}K`;
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 export default async function CustomersPage({ params }: { params: Promise<{ companyId: string }> }) {

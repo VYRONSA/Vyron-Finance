@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconBank, IconClock, IconRefresh } from "@/components/ui/icons";
+import { formatAmount, formatDateTime } from "@/lib/format";
 
 export type ConnectedBankRow = {
   connectionId: number;
@@ -22,12 +23,11 @@ export type ConnectedBankRow = {
 };
 
 function money(value: number, currency: string) {
-  return `${currency} ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${currency} ${formatAmount(value)}`;
 }
 
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "Never";
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+function formatSyncTime(iso: string | null): string {
+  return iso ? formatDateTime(iso) : "Never";
 }
 
 const CONNECTION_STATUS_TONE: Record<ConnectedBankRow["status"], "good" | "warn" | "danger" | "muted"> = {
@@ -162,11 +162,11 @@ export function ConnectedBanksCard({ companyId, rows, previewMode }: { companyId
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-vf-ink-faint">
                     <span className="flex items-center gap-1">
                       <IconClock className="h-3.5 w-3.5" />
-                      Last sync {formatDateTime(row.lastSyncAt)}
+                      Last sync {formatSyncTime(row.lastSyncAt)}
                     </span>
                     <span className="flex items-center gap-1">
                       <IconClock className="h-3.5 w-3.5" />
-                      Last transaction {formatDateTime(row.lastTransactionReceivedAt)}
+                      Last transaction {formatSyncTime(row.lastTransactionReceivedAt)}
                     </span>
                   </div>
                 </div>

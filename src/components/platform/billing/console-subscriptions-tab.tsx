@@ -6,6 +6,7 @@ import { IconBanknote } from "@/components/ui/icons";
 import { useSearchAndSort, SortableHeadCell } from "@/components/financial/matching/sortable-document-table";
 import type { ConsoleSubscriptionRow } from "@/app/platform/billing/page";
 import type { SubscriptionStatus } from "@/server/billing-platform/types";
+import { formatDate } from "@/lib/format";
 
 const STATUS_TONE: Record<SubscriptionStatus, "good" | "warn" | "info" | "danger" | "muted"> = {
   trial: "info", active: "good", past_due: "warn", grace_period: "warn", suspended: "danger", cancelled: "muted", expired: "muted", archived: "muted",
@@ -79,7 +80,7 @@ export function ConsoleSubscriptionsTab({ rows }: { rows: ConsoleSubscriptionRow
               <TableCell>{row.plan}</TableCell>
               <TableCell className="capitalize">{row.cycle}</TableCell>
               <TableCell><Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge></TableCell>
-              <TableCell>{row.trialEndsAt ? new Date(row.trialEndsAt).toLocaleDateString() : "—"}</TableCell>
+              <TableCell>{row.trialEndsAt ? formatDate(row.trialEndsAt) : "—"}</TableCell>
               <TableCell className="capitalize">{row.provider}</TableCell>
             </TableRow>
           ))}

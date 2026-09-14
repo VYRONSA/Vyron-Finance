@@ -5,8 +5,9 @@ import { isDocumentType, loadBusinessDocument } from "@/server/report-centre/doc
 import { generateBusinessDocumentPdf, PdfGenerationError } from "@/server/pdf/pdf-generation-service";
 
 /** Document Centre — download any customer/supplier document again as a
- * PDF, rendered from its document view. Read-only. */
-export async function GET(request: Request, { params }: { params: Promise<{ companyId: string; docType: string; docId: string }> }) {
+ * PDF, rendered from the same document body the on-screen view shows.
+ * Read-only. */
+export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; docType: string; docId: string }> }) {
   const { companyId, docType, docId } = await params;
   const denied = await authoriseReporting(companyId);
   if (denied) return denied;
@@ -16,7 +17,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ comp
   if (!document) return NextResponse.json({ error: "Document not found." }, { status: 404 });
 
   try {
-    const pdf = await generateBusinessDocumentPdf(request, companyId, docType, document.id);
+    const pdf = await generateBusinessDocumentPdf(companyId, document);
     const filename = `${document.title}-${document.number}`.replace(/[^A-Za-z0-9-]+/g, "-");
     return new Response(new Uint8Array(pdf), {
       headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${filename}.pdf"`, "Content-Length": String(pdf.length) },

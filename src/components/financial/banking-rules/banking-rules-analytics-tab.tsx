@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconBarChart } from "@/components/ui/icons";
+import { formatDateTime } from "@/lib/format";
 
 type RuleAnalyticsRow = {
   ruleId: number;
@@ -54,7 +55,7 @@ function HistoryPanel({ companyId, ruleId, onClose }: { companyId: string; ruleI
             <li key={`${h.bankTransactionId}-${i}`} className="flex items-center gap-2">
               <Badge tone={h.succeeded ? "good" : "warn"}>{h.succeeded ? "Succeeded" : "Failed"}</Badge>
               <span>Transaction #{h.bankTransactionId}</span>
-              <span className="text-vf-ink-faint">{new Date(h.appliedAt).toLocaleString()}</span>
+              <span className="text-vf-ink-faint">{formatDateTime(h.appliedAt)}</span>
             </li>
           ))}
         </ul>
@@ -154,7 +155,7 @@ export function BankingRulesAnalyticsTab({ companyId, previewMode }: { companyId
               <TableCell className="text-right">
                 <RateBadge percent={r.failureRatePercent} good={false} />
               </TableCell>
-              <TableCell className="text-xs text-vf-ink-faint">{r.lastAppliedAt ? new Date(r.lastAppliedAt).toLocaleString() : "Never"}</TableCell>
+              <TableCell className="text-xs text-vf-ink-faint">{r.lastAppliedAt ? formatDateTime(r.lastAppliedAt) : "Never"}</TableCell>
               <TableCell>
                 <Button variant="subtle" size="sm" onClick={() => setHistoryRuleId(historyRuleId === r.ruleId ? null : r.ruleId)}>
                   {historyRuleId === r.ruleId ? "Hide" : "View"}

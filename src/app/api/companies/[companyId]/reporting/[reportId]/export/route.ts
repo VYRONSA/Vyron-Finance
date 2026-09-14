@@ -7,9 +7,9 @@ import { ReportInputError } from "@/server/report-centre/types";
 import { generateReportPdf, PdfGenerationError } from "@/server/pdf/pdf-generation-service";
 
 /** Reporting Centre — download a report as CSV, Excel or PDF, with the
- * same filters the viewer is showing. PDF is rendered by the report's
- * print view (the same page the in-app Print uses), so the file is
- * exactly the report on screen. Read-only. */
+ * same filters the viewer is showing. The PDF renders this same report
+ * result through `ReportDocument` (the document the in-app Print shows),
+ * so the file is exactly the report on screen. Read-only. */
 export async function GET(request: Request, { params }: { params: Promise<{ companyId: string; reportId: string }> }) {
   const { companyId, reportId } = await params;
   const denied = await authoriseReporting(companyId);
@@ -21,12 +21,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ comp
   const source = reportSourceForCompany(companyId);
 
   try {
-    const { result, filters: resolved } = await runReport(source, reportId, filters);
+    const { result } = await runReport(source, reportId, filters);
     const company = await source.company();
 
     if (format === "pdf") {
-      const query = new URLSearchParams(Object.entries(resolved).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== "")).toString();
-      const pdf = await generateReportPdf(request, companyId, reportId, query);
+      const pdf = await generateReportPdf(companyId, result);
       return new Response(new Uint8Array(pdf), {
         headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${reportFilename(result, company, "pdf")}"`, "Content-Length": String(pdf.length) },
       });

@@ -18,6 +18,7 @@ import type { Customer } from "@/server/customer-management/types";
 import type { Quotation, QuotationStatus } from "@/server/sales/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import { vatCodeOptions } from "@/lib/account-picker-options";
+import { formatAmount } from "@/lib/format";
 
 const STATUS_OPTIONS: (QuotationStatus | "All")[] = ["All", "Draft", "Sent", "Accepted", "Rejected", "Expired", "Converted"];
 const STATUS_TONE: Record<QuotationStatus, "muted" | "info" | "good" | "danger" | "warn"> = {
@@ -30,7 +31,7 @@ const STATUS_TONE: Record<QuotationStatus, "muted" | "info" | "good" | "danger" 
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 type EditableLine = { description: string; quantity: string; unitPrice: string; vatCode: string | null };

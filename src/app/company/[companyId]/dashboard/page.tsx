@@ -78,6 +78,7 @@ import { MOCK_INCOME_STATEMENT } from "@/lib/mock/financial-reporting-data";
 import { MOCK_AUDIT_FINDINGS } from "@/lib/mock/audit-data";
 import { MOCK_ASSET_FINDINGS } from "@/lib/mock/asset-data";
 import type { JournalStatus } from "@/server/accounting/types";
+import { formatAmount, formatTime } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Dashboard — VYRON FINANCE",
@@ -109,7 +110,7 @@ function money(value: number, compact = false) {
     if (Math.abs(value) >= 1_000_000) return `R ${(value / 1_000_000).toFixed(2)}M`;
     if (Math.abs(value) >= 1_000) return `R ${(value / 1_000).toFixed(1)}K`;
   }
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 function greetingForHour(hour: number): string {
@@ -435,7 +436,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
                   </span>
                   <span className="flex items-center gap-1.5">
                     <IconRefresh className="h-3.5 w-3.5" />
-                    Updated {new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                    Updated {formatTime(new Date())}
                   </span>
                 </div>
               </div>
@@ -588,7 +589,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
             <ol className="relative flex flex-col gap-5 border-l border-white/10 pl-5">
               {recentActivity.slice(0, 8).map((a) => {
                 const Icon = ACTIVITY_ICON[a.category] ?? IconImport;
-                const time = a.timestamp.includes(" ") ? a.timestamp.split(" ")[1] : new Date(a.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                const time = a.timestamp.includes(" ") ? a.timestamp.split(" ")[1] : formatTime(a.timestamp);
                 return (
                   <li key={a.id} className="relative">
                     <span className="absolute top-1 -left-[1.65rem] flex h-6 w-6 items-center justify-center rounded-full border-2 border-vf-red-900 bg-white/10 text-vf-red-300" aria-hidden>

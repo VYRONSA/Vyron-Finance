@@ -7,7 +7,7 @@ import { statementPdfFilename } from "@/server/pdf/pdf-filename";
 
 /** Phase 24A — Customer Statement PDF download. Same `Sales:View`
  * permission and reasoning as the invoice PDF route. */
-export async function GET(request: Request, { params }: { params: Promise<{ companyId: string; customerId: string }> }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; customerId: string }> }) {
   const session = await requireSession();
   if (!session.ok) return session.response;
 
@@ -20,7 +20,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ comp
   if (!customer) return NextResponse.json({ error: "Customer not found." }, { status: 404 });
 
   try {
-    const pdf = await generateStatementPdf(request, companyId, customer.id);
+    const pdf = await generateStatementPdf(companyId, customer.id);
     const asOfDate = new Date().toISOString().slice(0, 10);
     return new Response(new Uint8Array(pdf), {
       headers: {

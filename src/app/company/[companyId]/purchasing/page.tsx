@@ -27,6 +27,7 @@ import {
   MOCK_PURCHASE_REQUISITIONS,
   MOCK_SUPPLIER_PAYMENTS,
 } from "@/lib/mock/purchasing-data";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Purchasing — VYRON FINANCE",
@@ -72,7 +73,7 @@ export default async function PurchasingPage({ params }: { params: Promise<{ com
   const summary = buildPurchasingDashboardSummary(bills, orders, suppliers, today, payments);
 
   function money(value: number): string {
-    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatAmount(value);
   }
 
   return (

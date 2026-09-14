@@ -17,6 +17,7 @@ import { ConfirmActionRow, useConfirmTarget } from "@/components/ui/confirm-acti
 import type { Customer } from "@/server/customer-management/types";
 import type { CustomerReceipt, CustomerReceiptStatus, SalesInvoice } from "@/server/sales/types";
 import type { BankAccount } from "@/server/accounting/types";
+import { formatAmount, formatDateTime } from "@/lib/format";
 
 const STATUS_TONE: Record<CustomerReceiptStatus, "muted" | "info" | "good" | "danger"> = {
   Draft: "muted",
@@ -27,7 +28,7 @@ const STATUS_TONE: Record<CustomerReceiptStatus, "muted" | "info" | "good" | "da
 const STATUS_OPTIONS: (CustomerReceiptStatus | "All")[] = ["All", "Draft", "Approved", "Posted", "Cancelled"];
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function round2(value: number): number {
@@ -378,7 +379,7 @@ export function ReceiptsTab({
                                 <tr key={a.id} className="border-b border-vf-paper-border/60">
                                   <td className="py-1 pr-2 font-mono text-vf-ink-soft">{invoiceNumber(a.invoiceId)}</td>
                                   <td className="py-1 pr-2 text-right font-mono tabular-nums">{money(a.amountAllocated)}</td>
-                                  <td className="py-1 pr-2 text-right text-vf-ink-faint">{new Date(a.createdAt).toLocaleString()}</td>
+                                  <td className="py-1 pr-2 text-right text-vf-ink-faint">{formatDateTime(a.createdAt)}</td>
                                   <td className="py-1 text-right">
                                     {unallocateConfirm.isConfirming(a.id) ? (
                                       <ConfirmActionRow

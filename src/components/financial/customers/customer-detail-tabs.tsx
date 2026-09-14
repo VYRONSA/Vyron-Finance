@@ -19,6 +19,7 @@ import { CommunicationHistoryPanel } from "@/components/financial/communications
 import type { AddressType, Customer, CustomerAddress, CustomerContact } from "@/server/customer-management/types";
 import type { CustomerFinancialSummary, CustomerIntelligenceSignal } from "@/server/services/customer-financial-service";
 import type { SalesInvoice, SalesInvoiceStatus } from "@/server/sales/types";
+import { formatAmount } from "@/lib/format";
 
 const TABS = ["Overview", "Contacts", "Addresses", "Financial", "Sales History", "Documents", "Intelligence"] as const;
 type Tab = (typeof TABS)[number];
@@ -41,7 +42,7 @@ const INVOICE_STATUS_TONE: Record<SalesInvoiceStatus, "muted" | "info" | "good" 
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function EditCustomerOverviewForm({ companyId, customer, onDone }: { companyId: string; customer: Customer; onDone: () => void }) {

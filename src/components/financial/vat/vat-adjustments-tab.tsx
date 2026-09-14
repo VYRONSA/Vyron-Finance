@@ -11,9 +11,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconPlus, IconReceipt } from "@/components/ui/icons";
 import type { VatAdjustment, VatAdjustmentDirection, VatAdjustmentTarget } from "@/server/vat/types";
 import type { VatTreatment } from "@/server/company-management/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 function NewAdjustmentForm({ companyId, vatTreatments, onDone, onCancel }: { companyId: string; vatTreatments: VatTreatment[]; onDone: () => void; onCancel: () => void }) {

@@ -31,6 +31,7 @@ import {
   type TransactionGridHandle,
 } from "./transaction-grid";
 import { allocationUpdateSucceeded, pendingAllocationIds, summarizeAllocationUpdate } from "./transaction-explorer";
+import { UpdateAllocatedButton } from "./update-allocated-button";
 import type { BankTransactionRecord } from "@/server/accounting/types";
 
 const originalRect = HTMLElement.prototype.getBoundingClientRect;
@@ -105,17 +106,17 @@ function Harness({
   );
   return (
     <>
-      {/* Mirrors the real toolbar: the count and the disabled state come
-          from the COMMITTABLE ids, never from the raw pending-edit count. */}
-      <button
-        type="button"
-        disabled={committable.size === 0}
-        onClick={async () => {
+      {/* The REAL toolbar component, wired exactly as `transaction-explorer.tsx`
+          wires it: the count and the disabled state come from the
+          COMMITTABLE ids, never from the raw pending-edit count. */}
+      <UpdateAllocatedButton
+        committableCount={committable.size}
+        blockedCount={blocked.length}
+        saving={false}
+        onUpdate={async () => {
           await ref.current?.saveSelected(pendingAllocationIds(committable));
         }}
-      >
-        {committable.size > 0 ? `Update Allocated (${committable.size})` : "Update Allocated"}
-      </button>
+      />
       <button type="button" onClick={() => ref.current?.discardEdits(blocked.map((b) => b.id))}>
         Discard blocked
       </button>

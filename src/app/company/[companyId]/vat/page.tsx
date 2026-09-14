@@ -22,6 +22,7 @@ import {
 } from "@/lib/mock/vat-data";
 import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 import { MOCK_AUDIT_LOG } from "@/lib/mock/automation-data";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "VAT — VYRON FINANCE",
@@ -70,7 +71,7 @@ export default async function VatPage({ params }: { params: Promise<{ companyId:
   const summary = buildVatDashboardSummary(latestReturn, vatReturns, exceptions, highRiskCount);
 
   function money(value: number): string {
-    return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `R ${formatAmount(value)}`;
   }
 
   return (

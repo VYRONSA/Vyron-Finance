@@ -16,6 +16,7 @@ import { BatchEntryGrid, type GridColumn } from "@/components/financial/shared/b
 import type { BillPostingStatus, ImportedBill, PurchaseBillLine, Supplier } from "@/server/accounting/types";
 import type { CostCentre, Department, Project, VatTreatment } from "@/server/company-management/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
+import { formatAmount, formatDateTime } from "@/lib/format";
 
 const DOCUMENT_TYPES: ImportedBill["documentType"][] = ["Bill", "Credit Note", "Debit Note"];
 const STATUS_OPTIONS: (BillPostingStatus | "All")[] = ["All", "Draft", "Submitted", "Approved", "Posted", "Cancelled"];
@@ -28,7 +29,7 @@ const STATUS_TONE: Record<BillPostingStatus, "muted" | "info" | "good" | "danger
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 /** One capture-grid row — "Additional Requirement: Purchase
@@ -568,10 +569,10 @@ export function BillsTab({
                         <div className="text-xs text-vf-ink-faint">
                           <p>Subtotal {money(b.total - b.vat)} · VAT {money(b.vat)} · Total {money(b.total)}</p>
                           {b.purchaseOrderId !== null && <p className="mt-1">From Purchase Order #{b.purchaseOrderId}</p>}
-                          {b.submittedAt && <p className="mt-1">Submitted {b.submittedBy ? `by ${b.submittedBy} ` : ""}— {new Date(b.submittedAt).toLocaleString()}</p>}
-                          {b.approvedAt && <p>Approved {b.approvedBy ? `by ${b.approvedBy} ` : ""}— {new Date(b.approvedAt).toLocaleString()}</p>}
-                          {b.postedAt && <p>Posted — {new Date(b.postedAt).toLocaleString()}</p>}
-                          {b.cancelledAt && <p>Cancelled {b.cancelledBy ? `by ${b.cancelledBy} ` : ""}— {new Date(b.cancelledAt).toLocaleString()}</p>}
+                          {b.submittedAt && <p className="mt-1">Submitted {b.submittedBy ? `by ${b.submittedBy} ` : ""}— {formatDateTime(b.submittedAt)}</p>}
+                          {b.approvedAt && <p>Approved {b.approvedBy ? `by ${b.approvedBy} ` : ""}— {formatDateTime(b.approvedAt)}</p>}
+                          {b.postedAt && <p>Posted — {formatDateTime(b.postedAt)}</p>}
+                          {b.cancelledAt && <p>Cancelled {b.cancelledBy ? `by ${b.cancelledBy} ` : ""}— {formatDateTime(b.cancelledAt)}</p>}
                           {b.journalId !== null && <p className="mt-1">Journal #{b.journalId}</p>}
                         </div>
                         <div className="mt-3">

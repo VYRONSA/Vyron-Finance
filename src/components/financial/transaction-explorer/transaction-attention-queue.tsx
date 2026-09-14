@@ -17,9 +17,10 @@ import { IconShieldCheck } from "@/components/ui/icons";
 import { MOCK_TRANSACTION_DETAILS } from "@/lib/mock/transaction-explorer-data";
 import type { BankTransactionRecord, TransactionDetail } from "@/server/accounting/types";
 import type { BankingException, ExceptionType } from "@/server/banking-rules/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 const GROUP_BADGE: Record<ReviewGroupKey, "warn" | "info"> = {

@@ -22,6 +22,7 @@ import {
 import { MOCK_FINANCIAL_YEARS } from "@/lib/mock/company-management-data";
 import { MOCK_AUDIT_FINDINGS, MOCK_AUDIT_WORKING_PAPERS } from "@/lib/mock/audit-data";
 import type { GlInquiryFilters } from "@/server/general-ledger/types";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Account Activity — VYRON FINANCE",
@@ -133,7 +134,7 @@ export default async function AccountActivityPage({
           </div>
           <div className="text-right">
             <p className="font-mono text-4xl font-semibold tabular-nums text-vf-on-dark">
-              {activity.closingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatAmount(activity.closingBalance)}
             </p>
             <p className="mt-1 text-sm text-vf-on-dark-soft">Closing Balance</p>
           </div>

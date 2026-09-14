@@ -8,9 +8,10 @@ import { Input, Select } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { DocumentsPanel } from "@/components/financial/documents/documents-panel";
 import { DEPRECIATION_METHODS, type AssetLifecycleEvent, type FixedAssetWithNetBookValue } from "@/server/assets/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return `R ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${formatAmount(value)}`;
 }
 
 type ActionForm = "capitalise" | "improve" | "transfer" | "revalue" | "dispose" | "edit" | null;

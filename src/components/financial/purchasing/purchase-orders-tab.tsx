@@ -20,6 +20,7 @@ import type { Supplier } from "@/server/accounting/types";
 import type { PurchaseOrder, PurchaseOrderLine, PurchaseOrderStatus } from "@/server/purchasing/types";
 import type { CostCentre, Department, Project, VatTreatment } from "@/server/company-management/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
+import { formatAmount } from "@/lib/format";
 
 const STATUS_OPTIONS: (PurchaseOrderStatus | "All")[] = ["All", "Draft", "Submitted", "Approved", "Rejected", "PartiallyReceived", "Received", "Billed", "Cancelled"];
 const STATUS_TONE: Record<PurchaseOrderStatus, "muted" | "info" | "good" | "danger" | "warn"> = {
@@ -34,7 +35,7 @@ const STATUS_TONE: Record<PurchaseOrderStatus, "muted" | "info" | "good" | "dang
 };
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 /** One capture-grid row — Product Review Board: the same multi-line

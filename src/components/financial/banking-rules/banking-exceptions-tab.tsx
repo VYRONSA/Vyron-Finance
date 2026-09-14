@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconMinus, IconShieldCheck } from "@/components/ui/icons";
 import { EXCEPTION_LABEL, type BankingException, type ExceptionStatus, type ExceptionType } from "@/server/banking-rules/types";
+import { formatDateTime } from "@/lib/format";
 
 export { EXCEPTION_LABEL };
 
@@ -111,7 +112,7 @@ function ExceptionCard({
 
       {exception.status !== "Open" && (
         <p className="mt-2 text-xs text-vf-ink-faint">
-          {exception.status} by {exception.resolvedBy} {exception.resolvedAt ? `on ${new Date(exception.resolvedAt).toLocaleString()}` : ""}
+          {exception.status} by {exception.resolvedBy} {exception.resolvedAt ? `on ${formatDateTime(exception.resolvedAt)}` : ""}
           {exception.resolutionNote && ` — "${exception.resolutionNote}"`}
         </p>
       )}

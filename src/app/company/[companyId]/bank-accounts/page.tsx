@@ -44,13 +44,14 @@ import { MOCK_TRANSACTION_SUMMARY, MOCK_BANKING_AGGREGATE } from "@/lib/mock/tra
 import { MOCK_BANKING_EXCEPTIONS, MOCK_BANKING_RULES } from "@/lib/mock/banking-automation-data";
 import { MOCK_MATCHING_QUEUE } from "@/lib/mock/matching-data";
 import { MOCK_BANK_RECONCILIATIONS } from "@/lib/mock/cashbook-data";
+import { formatAmount, formatCount, formatDate } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Banking Command Centre — VYRON FINANCE",
 };
 
 function money(value: number, currency: string) {
-  return `${currency} ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${currency} ${formatAmount(value)}`;
 }
 
 /** Master Implementation Tracker — Programme 2, Root Cause RC-13,
@@ -78,10 +79,6 @@ function mostRecentDate(dates: (string | null)[]): string | null {
   const real = dates.filter((d): d is string => Boolean(d));
   if (real.length === 0) return null;
   return real.reduce((latest, d) => (d > latest ? d : latest));
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
 /** Phase 7 — Banking Command Centre. Four real states, derived entirely
@@ -447,7 +444,7 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ c
                         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-vf-red-500/10 text-vf-red-600">
                           <Icon className="h-4 w-4" />
                         </span>
-                        <p className="font-mono text-xl font-semibold tabular-nums text-vf-ink">{item.value.toLocaleString()}</p>
+                        <p className="font-mono text-xl font-semibold tabular-nums text-vf-ink">{formatCount(item.value)}</p>
                         <Badge tone={item.tone}>{item.label}</Badge>
                       </div>
                     );
@@ -625,7 +622,7 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ c
                     <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-vf-red-300">
                       <Icon className="h-4 w-4" />
                     </span>
-                    <p className="font-mono text-xl font-semibold tabular-nums text-vf-on-dark">{insight.value.toLocaleString()}</p>
+                    <p className="font-mono text-xl font-semibold tabular-nums text-vf-on-dark">{formatCount(insight.value)}</p>
                     <p className="text-xs font-medium text-vf-on-dark">{insight.label}</p>
                     <p className="text-[0.7rem] leading-snug text-vf-on-dark-faint">{insight.message}</p>
                   </Link>

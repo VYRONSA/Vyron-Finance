@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { ForecastResult } from "@/server/reporting/forecast-engine";
+import { formatAmount } from "@/lib/format";
 
 function confidenceTone(confidence: number): "good" | "warn" | "danger" {
   if (confidence >= 0.6) return "good";
@@ -27,7 +28,7 @@ function ForecastCard({ title, forecast, unit = "" }: { title: string; forecast:
                 <span className="text-vf-ink-soft">{p.period}</span>
                 <span className="font-mono tabular-nums text-vf-ink">
                   {unit}
-                  {p.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {formatAmount(p.value)}
                 </span>
               </div>
             ))}

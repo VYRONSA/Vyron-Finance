@@ -11,12 +11,11 @@ import { invoicePdfFilename } from "@/server/pdf/pdf-filename";
  * — downloading a PDF is a form of viewing, not a distinct capability,
  * so no new permission was created. Fetches the invoice once (needed for
  * an honest 404 and the real filename) — `pdf-generation-service.ts`
- * then reuses this same data by having its own internal `pdf-view` page
- * fetch it again server-side (a second, cheap, tenant-scoped read of a
- * single row — not the "duplicate invoice query" this ticket's section
- * 14 warns against, which is about N+1s over many rows).
+ * then builds the document server-side under this same session (a
+ * second, cheap, tenant-scoped read of a single row) and renders it
+ * without loading any URL.
  */
-export async function GET(request: Request, { params }: { params: Promise<{ companyId: string; invoiceId: string }> }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; invoiceId: string }> }) {
   const session = await requireSession();
   if (!session.ok) return session.response;
 
@@ -29,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ comp
   if (!invoice) return NextResponse.json({ error: "Sales invoice not found." }, { status: 404 });
 
   try {
-    const pdf = await generateInvoicePdf(request, companyId, invoice.id);
+    const pdf = await generateInvoicePdf(companyId, invoice.id);
     return new Response(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",

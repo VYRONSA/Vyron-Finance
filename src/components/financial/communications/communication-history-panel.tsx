@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconBell } from "@/components/ui/icons";
 import type { CommunicationRecord, CommunicationStatus } from "@/server/communications/types";
 import type { DocumentRecord } from "@/server/documents/types";
+import { formatDateTime } from "@/lib/format";
 
 const STATUS_TONE: Record<CommunicationStatus, "muted" | "info" | "good" | "danger" | "warn"> = {
   Draft: "muted", PendingApproval: "warn", Rejected: "danger", Queued: "info",
@@ -81,7 +82,7 @@ export function CommunicationHistoryPanel({
                     <p className="truncate font-medium text-vf-ink">{c.subject ?? c.body.slice(0, 60)}</p>
                     <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-vf-ink-faint">
                       <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>
-                      {c.channel} · To: {c.recipients.map((r) => r.name).join(", ") || "—"} · {new Date(c.sentAt ?? c.scheduledFor).toLocaleString()}
+                      {c.channel} · To: {c.recipients.map((r) => r.name).join(", ") || "—"} · {formatDateTime(c.sentAt ?? c.scheduledFor)}
                     </p>
                     {c.status === "Failed" && c.failureReason && <p className="mt-0.5 text-xs text-vf-danger">{c.failureReason}</p>}
                   </div>

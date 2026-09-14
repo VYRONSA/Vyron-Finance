@@ -9,9 +9,10 @@ import { buildVat201Summary } from "@/server/vat/vat-201-engine";
 import type { VatReturn } from "@/server/vat/types";
 import type { VatDocument } from "@/server/vat/vat-intelligence";
 import type { VatTreatment } from "@/server/company-management/types";
+import { formatAmount } from "@/lib/format";
 
 function money(value: number): string {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(value);
 }
 
 const CATEGORY_LABEL: Record<string, string> = {

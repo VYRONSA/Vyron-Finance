@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Combobox } from "@/components/ui/combobox";
 import { glAccountOptions } from "@/lib/account-picker-options";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
+import { formatAmount } from "@/lib/format";
 
 type SplitLine = {
   amount: string;
@@ -110,7 +111,7 @@ export function SplitTransactionForm({ companyId, transactionId, amount, chartOf
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-vf-ink-faint">
-        Split {amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} across GL Account, Customer, Supplier, VAT Code, Branch, Department, Cost Centre, Project, and Inventory Item — lines must sum exactly.
+        Split {formatAmount(amount)} across GL Account, Customer, Supplier, VAT Code, Branch, Department, Cost Centre, Project, and Inventory Item — lines must sum exactly.
       </p>
       {lines.map((line, i) => (
         <div key={i} className="rounded-vf-sm border border-vf-paper-border/70 bg-vf-paper-alt/40 p-2.5">

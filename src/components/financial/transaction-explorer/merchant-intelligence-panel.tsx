@@ -8,10 +8,11 @@ import type { BankTransactionRecord } from "@/server/accounting/types";
 import type { BankingRule, Merchant } from "@/server/banking-rules/types";
 import type { MerchantStats } from "@/server/services/transaction-explorer-service";
 import { ModalPortal } from "@/components/ui/modal-portal";
+import { formatAmount } from "@/lib/format";
 
 function money(t: BankTransactionRecord): string {
   const amount = t.debit > 0 ? t.debit : t.credit;
-  return amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatAmount(amount);
 }
 
 /** Pilot Review Board follow-up — combines "Merchant Intelligence Panel"

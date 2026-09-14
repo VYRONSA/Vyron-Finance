@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { IntegrationConnection } from "@/server/inventory/types";
+import { formatDateTime } from "@/lib/format";
 
 const SYSTEM_LABEL: Record<IntegrationConnection["systemName"], string> = { VYRON_COST: "VYRON COST", VYRON_CORE: "VYRON CORE" };
 const STATUS_TONE: Record<IntegrationConnection["status"], "muted" | "good" | "danger"> = { "Not Connected": "muted", Connected: "good", Error: "danger" };
@@ -24,7 +25,7 @@ export function IntegrationCentreTab({ connections }: { connections: Integration
               <div>
                 <p className="text-sm font-medium text-vf-ink">{SYSTEM_LABEL[connection.systemName]}</p>
                 <p className="mt-1 text-xs text-vf-ink-faint">
-                  {connection.lastSyncedAt ? `Last synced ${new Date(connection.lastSyncedAt).toLocaleString()}` : "Never synced"}
+                  {connection.lastSyncedAt ? `Last synced ${formatDateTime(connection.lastSyncedAt)}` : "Never synced"}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">

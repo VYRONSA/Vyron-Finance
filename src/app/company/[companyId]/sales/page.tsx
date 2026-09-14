@@ -20,6 +20,7 @@ import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 import { MOCK_CUSTOMER_RECEIPTS, MOCK_DELIVERIES, MOCK_QUOTATIONS, MOCK_SALES_INVOICES, MOCK_SALES_ORDERS } from "@/lib/mock/sales-data";
 import { MOCK_STOCK_ITEMS } from "@/lib/mock/inventory-data";
 import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
+import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Sales — VYRON FINANCE",
@@ -48,7 +49,7 @@ export default async function SalesPage({ params }: { params: Promise<{ companyI
   const summary = buildSalesDashboardSummary(invoices, orders, customers, today);
 
   function money(value: number): string {
-    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatAmount(value);
   }
 
   return (

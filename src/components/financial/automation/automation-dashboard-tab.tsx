@@ -11,6 +11,7 @@ import { IconRefresh } from "@/components/ui/icons";
 import type { AutomationTask, AutomationTaskRun } from "@/server/automation/types";
 import type { AutomationAuditLogEntry } from "@/server/automation/types";
 import { categorizeAiSweepRun } from "@/server/services/automation-dashboard-summary-service";
+import { formatDateTime } from "@/lib/format";
 
 const STATUS_TONE: Record<string, "good" | "warn" | "danger" | "muted" | "info"> = {
   Queued: "info", Running: "info", Success: "good", Failed: "danger", Paused: "muted", Disabled: "muted",
@@ -79,9 +80,9 @@ function TaskRow({ task, companyId, previewMode, lastRun }: { task: AutomationTa
           return <Badge tone={badge.tone}>{badge.label}</Badge>;
         })()}
       </TableCell>
-      <TableCell>{new Date(task.nextRunAt).toLocaleString()}</TableCell>
+      <TableCell>{formatDateTime(task.nextRunAt)}</TableCell>
       <TableCell>
-        {task.lastRunAt ? new Date(task.lastRunAt).toLocaleString() : "Never"}
+        {task.lastRunAt ? formatDateTime(task.lastRunAt) : "Never"}
         {lastRun && summaryText(lastRun.summary) && (
           <p className="mt-0.5 text-xs text-vf-ink-faint" title="What the last run actually did — not just whether it succeeded">
             {summaryText(lastRun.summary)}
@@ -202,7 +203,7 @@ export function AutomationDashboardTab({
                   <span className="font-medium text-vf-ink">{e.actionType}</span> — {e.reason || "No reason recorded."}
                   {e.documentType && ` · ${e.documentType} #${e.documentId}`}
                   {e.journalIds.length > 0 && ` · Journal(s) ${e.journalIds.join(", ")}`}
-                  {e.durationMs !== null && ` · ${e.durationMs}ms`} · by {e.performedBy} · {new Date(e.createdAt).toLocaleString()}
+                  {e.durationMs !== null && ` · ${e.durationMs}ms`} · by {e.performedBy} · {formatDateTime(e.createdAt)}
                 </li>
               ))}
             </ul>

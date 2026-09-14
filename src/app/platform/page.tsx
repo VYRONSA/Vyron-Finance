@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatTile } from "@/components/ui/stat-tile";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { formatLongDate } from "@/lib/format";
 import {
   IconAlertTriangle,
   IconArchive,
@@ -224,7 +225,7 @@ export default async function PlatformOverviewPage() {
   const now = new Date();
   const greeting = greetingForHour(now.getHours());
   const firstName = friendlyFirstName(userEmail);
-  const formattedDate = now.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const formattedDate = formatLongDate(now);
   const workspaceStatusLabel = companies.length === 0 ? "Getting Started" : onboardingCompanies > 0 ? `${onboardingCompanies} Onboarding` : "All Active";
   const primaryCompany = companies[0];
 
