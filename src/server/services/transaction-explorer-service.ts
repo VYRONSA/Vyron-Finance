@@ -325,6 +325,19 @@ export type AllocateRowInput = {
   allocationNotes: string;
   /** Phase 31A — `null` means "unchanged"; see `repo.AllocateRowFields`. */
   description: string | null;
+  /** Supplier Invoice Matching Override (migration 0095). `null` means
+   * "unchanged, omit from the UPDATE" — the same convention `description`
+   * uses — so an ordinary allocation commit never silently clears an
+   * override the accountant set earlier. `true`/`false` is a deliberate
+   * change. It lifts only the invoice-matching requirement; it never
+   * creates an invoice, a bill or a match, and never classifies.
+   *
+   * REQUIRED, not optional, and deliberately so: while it was optional,
+   * `allocateRow` below could — and did — forget to forward it to the
+   * repository with no type error at all, so a ticked override was
+   * reported as saved and never written. A caller with nothing to say
+   * about the override passes `null` explicitly. */
+  overrideSupplierInvoiceMatching: boolean | null;
 };
 
 export type AllocateRowResult = repo.AllocateRowResult;
@@ -387,6 +400,17 @@ export async function allocateRow(companyId: string, transactionIds: number[], i
         vatCode: input.vatCode,
         allocationNotes: input.allocationNotes,
         description: input.description,
+        // PRODUCTION DEFECT: this field was accepted by the route, typed
+        // on `AllocateRowInput`, written by the repository — and silently
+        // dropped right here, because this object is built field by field
+        // and this one was never added to it. The accountant ticked
+        // "Override Supplier Invoice Matching", saw "allocations updated
+        // successfully", and the posting preflight still refused the
+        // payment for having no invoice: the override had never reached
+        // the database at all. TypeScript could not catch it — omitting a
+        // property from an object literal that satisfies a type with that
+        // property optional-by-position is not an error.
+        overrideSupplierInvoiceMatching: input.overrideSupplierInvoiceMatching,
       },
       performedBy,
     );

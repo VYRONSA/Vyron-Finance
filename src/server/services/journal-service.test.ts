@@ -63,6 +63,9 @@ function txn(overrides: Partial<BankTransactionRecord> = {}): BankTransactionRec
     reviewHoldReason: "",
     reviewHoldBy: null,
     reviewHoldAt: null,
+    overrideSupplierInvoiceMatching: false,
+    overrideSupplierInvoiceMatchingBy: null,
+    overrideSupplierInvoiceMatchingAt: null,
     ...overrides,
   };
 }
@@ -142,7 +145,13 @@ describe("buildJournalLinesForSplitTransaction", () => {
       ],
       null,
     );
-    expect(result).toEqual({ ok: false, reason: "Bank account has no GL account configured — set one under Bank Accounts before generating a journal." });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    // The message must name the actual bank account and distinguish the
+    // bank's own control account from the one allocated to the row.
+    expect(result.reason).toContain("has no GL account configured");
+    expect(result.reason).toContain("Configure it under Bank Accounts");
+    expect(result.reason).toContain("separate from the GL account allocated to the transaction");
   });
 });
 
@@ -213,7 +222,13 @@ describe("buildJournalLinesForTransaction", () => {
   describe("bank account GL requirement", () => {
     it("blocks generation when the bank account has no GL account configured", () => {
       const result = buildJournalLinesForTransaction(txn(), { glAccount: "", accountNumber: "62050837304" });
-      expect(result).toEqual({ ok: false, reason: "Bank account has no GL account configured — set one under Bank Accounts before generating a journal." });
+      expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    // The message must name the actual bank account and distinguish the
+    // bank's own control account from the one allocated to the row.
+    expect(result.reason).toContain("has no GL account configured");
+    expect(result.reason).toContain("Configure it under Bank Accounts");
+    expect(result.reason).toContain("separate from the GL account allocated to the transaction");
     });
 
     it("blocks generation when there is no bank account at all", () => {

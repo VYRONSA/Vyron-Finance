@@ -229,6 +229,10 @@ export type BankTransactionRow = {
   review_hold_reason: string;
   review_hold_by: string | null;
   review_hold_at: string | null;
+  // Supplier Invoice Matching Override — migration 0095.
+  override_supplier_invoice_matching: boolean;
+  override_supplier_invoice_matching_by: string | null;
+  override_supplier_invoice_matching_at: string | null;
   // Present only when the query embeds the FK-related supplier (see
   // transaction-explorer-repository.ts) — undefined otherwise.
   matched_supplier?: { name: string } | null;
@@ -290,6 +294,9 @@ export function bankTransactionFromRow(row: BankTransactionRow): BankTransaction
     reviewHoldReason: row.review_hold_reason ?? "",
     reviewHoldBy: row.review_hold_by ?? null,
     reviewHoldAt: row.review_hold_at ?? null,
+    overrideSupplierInvoiceMatching: row.override_supplier_invoice_matching ?? false,
+    overrideSupplierInvoiceMatchingBy: row.override_supplier_invoice_matching_by ?? null,
+    overrideSupplierInvoiceMatchingAt: row.override_supplier_invoice_matching_at ?? null,
   };
 }
 

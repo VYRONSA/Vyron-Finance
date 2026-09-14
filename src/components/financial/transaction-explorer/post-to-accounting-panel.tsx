@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmActionRow } from "@/components/ui/confirm-action";
 import { transactionPostingStatus, type BankTransactionRecord } from "@/server/accounting/types";
+import type { BulkSaveSummary } from "./transaction-grid";
 
 /**
  * "Post to Accounting" — the action that takes processed bank
@@ -25,7 +26,20 @@ import { transactionPostingStatus, type BankTransactionRecord } from "@/server/a
  * 3. The result is reported in the four categories that mean different
  *    things to an accountant: posted, already posted, not ready, and
  *    needs attention. Nothing is summarised away.
+ *
+ * 4. It SAVES FIRST. An accountant who has just classified rows on screen
+ *    should not have to press a separate "commit my classification"
+ *    button before pressing this one — that was double work for a single
+ *    intention, and it is what this panel now does itself: any unsaved
+ *    allocation edit is committed through the ordinary allocate-row write
+ *    path, the page is refreshed, and only then is the posting preview
+ *    taken. Saving and posting remain two distinct accounting operations
+ *    with their own audit trails; what changed is that one click performs
+ *    both, in the right order. "Save Selected" still exists for saving
+ *    WITHOUT posting.
  */
+
+const EMPTY_IDS: Set<number> = new Set();
 
 type Exclusion = { transactionId: number; reason: string };
 
@@ -80,6 +94,9 @@ export function PostToAccountingPanel({
   disabled,
   disabledTitle,
   onPosted,
+  pendingAllocationIds = EMPTY_IDS,
+  onCommitPendingAllocations,
+  summarizeSave,
 }: {
   companyId: string;
   selected: BankTransactionRecord[];
@@ -89,25 +106,39 @@ export function PostToAccountingPanel({
    * refetch — a posted transaction's status, journal link and posting
    * batch all change. */
   onPosted: () => void | Promise<void>;
+  /** Rows carrying an unsaved allocation edit the grid will accept. They
+   * count towards this button because pressing it commits them first —
+   * without this the button would read "(0)" and sit disabled over work
+   * the accountant can plainly see on screen. */
+  pendingAllocationIds?: Set<number>;
+  /** Commits those edits (the ordinary allocate-row path) and refreshes
+   * the page, before any posting preview is taken. */
+  onCommitPendingAllocations?: () => Promise<BulkSaveSummary | null>;
+  summarizeSave?: (summary: BulkSaveSummary) => string;
 }) {
   const [preview, setPreview] = useState<PostingPreview | null>(null);
   const [outcome, setOutcome] = useState<PostingOutcome | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveSummary, setSaveSummary] = useState<BulkSaveSummary | null>(null);
+  /** The ids this run is acting on, captured BEFORE the save-and-refetch
+   * so a refreshed page (or a cleared selection) cannot change what the
+   * confirmation dialog is about to post. */
+  const [targetIds, setTargetIds] = useState<number[]>([]);
 
   // Client-side count for the button label only — the server independently
   // re-derives it and is the authority on what actually posts.
-  const readyCount = selected.filter((t) => transactionPostingStatus(t) === "Ready to Post").length;
+  const readyCount = selected.filter((t) => transactionPostingStatus(t) === "Ready to Post" || pendingAllocationIds.has(t.id)).length;
   const postedCount = selected.filter((t) => {
     const status = transactionPostingStatus(t);
     return status === "Posted" || status === "Reconciled";
   }).length;
 
-  async function call(body: Record<string, unknown>) {
+  async function call(transactionIds: number[], body: Record<string, unknown>) {
     const res = await fetch(`/api/companies/${companyId}/transactions/post`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transactionIds: selected.map((t) => t.id), ...body }),
+      body: JSON.stringify({ transactionIds, ...body }),
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
@@ -118,8 +149,19 @@ export function PostToAccountingPanel({
     setLoading(true);
     setError(null);
     setOutcome(null);
+    setSaveSummary(null);
+    const ids = selected.map((t) => t.id);
+    setTargetIds(ids);
     try {
-      setPreview((await call({ preview: true })) as PostingPreview);
+      // Save first. A row whose allocation failed to save is not dropped
+      // and not hidden: it simply is not yet allocated, so the preview
+      // below reports it as not ready, with its own reason — and the save
+      // failures are shown alongside.
+      if (onCommitPendingAllocations) {
+        const summary = await onCommitPendingAllocations();
+        if (summary && (summary.saved > 0 || summary.failed.length > 0)) setSaveSummary(summary);
+      }
+      setPreview((await call(ids, { preview: true })) as PostingPreview);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't reach the API.");
     } finally {
@@ -131,7 +173,7 @@ export function PostToAccountingPanel({
     setLoading(true);
     setError(null);
     try {
-      const json = await call({});
+      const json = await call(targetIds, {});
       setPreview(null);
       setOutcome(json.outcome as PostingOutcome);
       await onPosted();
@@ -142,19 +184,30 @@ export function PostToAccountingPanel({
     }
   }
 
+  const pendingHere = selected.filter((t) => pendingAllocationIds.has(t.id)).length;
   const buttonTitle =
     disabledTitle ??
     (readyCount === 0
       ? postedCount === selected.length && selected.length > 0
         ? "Every selected transaction has already been posted to the General Ledger."
-        : "No selected transaction is ready to post — assign a GL account (or split it) first."
-      : `Create journals and General Ledger entries for ${readyCount} transaction${readyCount === 1 ? "" : "s"}`);
+        : "No selected transaction is ready to post — allocate it to a GL account, a supplier or a customer first."
+      : pendingHere > 0
+        ? `Save ${pendingHere} unsaved allocation${pendingHere === 1 ? "" : "s"}, then create journals and General Ledger entries for ${readyCount} transaction${readyCount === 1 ? "" : "s"}`
+        : `Create journals and General Ledger entries for ${readyCount} transaction${readyCount === 1 ? "" : "s"}`);
 
   return (
     <>
       <Button variant="primary" size="sm" disabled={disabled || loading || readyCount === 0} title={buttonTitle} onClick={startPreview}>
-        {loading && !preview ? "Checking…" : `Post to Accounting${readyCount > 0 ? ` (${readyCount})` : ""}`}
+        {loading && !preview ? (pendingHere > 0 ? "Saving…" : "Checking…") : `Post to Accounting${readyCount > 0 ? ` (${readyCount})` : ""}`}
       </Button>
+
+      {saveSummary && summarizeSave && (
+        <p className={`w-full text-xs ${saveSummary.failed.length > 0 ? "text-vf-danger" : "text-vf-ink-soft"}`}>
+          {saveSummary.failed.length > 0 ? "! " : "✓ "}
+          {summarizeSave(saveSummary)}
+          {saveSummary.failed.length > 0 ? " — those rows stay unallocated and are listed as not ready below." : " Saved before posting."}
+        </p>
+      )}
 
       {preview && (
         <div className="w-full">
@@ -195,6 +248,7 @@ export function PostToAccountingPanel({
             onCancel={() => {
               setPreview(null);
               setError(null);
+              setSaveSummary(null);
             }}
           />
         </div>

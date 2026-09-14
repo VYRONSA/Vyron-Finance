@@ -81,6 +81,9 @@ function txn(overrides: Partial<BankTransactionRecord> = {}): BankTransactionRec
     reviewHoldReason: "",
     reviewHoldBy: null,
     reviewHoldAt: null,
+    overrideSupplierInvoiceMatching: false,
+    overrideSupplierInvoiceMatchingBy: null,
+    overrideSupplierInvoiceMatchingAt: null,
     ...overrides,
   };
 }
@@ -141,6 +144,8 @@ const OPEN_YEAR: FinancialYear[] = [
 function context(overrides: Partial<PostingPlanContext> = {}): PostingPlanContext {
   return {
     bankAccountsById: new Map([[1, { glAccount: "1000", accountNumber: "METANOIA-HOSPITALITY" }]]),
+    // The seeded "Supplier Payment" / "Customer Receipt" control accounts.
+    controlAccounts: { creditors: "2000", debtors: "1100" },
     splitsByTransactionId: new Map(),
     accountCodes: new Set(ACCOUNTS.map((a) => a.code)),
     financialYears: OPEN_YEAR,
@@ -264,7 +269,8 @@ describe("3. a processed transaction can be posted to the GL", () => {
   it("blocks — rather than guesses — when the bank account has no GL account configured", () => {
     const plan = buildBankPostingPlan([txn()], context({ bankAccountsById: new Map([[1, { glAccount: "", accountNumber: "METANOIA-HOSPITALITY" }]]) }));
     expect(plan.journals).toEqual([]);
-    expect(plan.blocked[0].reason).toContain("Bank account has no GL account configured");
+    expect(plan.blocked[0].reason).toContain("has no GL account configured");
+    expect(plan.blocked[0].reason).toContain("Configure it under Bank Accounts");
   });
 
   it("blocks a transaction dated outside any financial year, rather than posting it into nowhere", () => {

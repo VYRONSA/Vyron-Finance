@@ -12,6 +12,7 @@ import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import { isEligibleForAiClassification } from "@/server/ai/transaction-classification/types";
 import { PostToAccountingPanel } from "./post-to-accounting-panel";
+import type { BulkSaveSummary } from "./transaction-grid";
 
 export type BulkActionId =
   | "assign-merchant"
@@ -148,6 +149,9 @@ export function TransactionBulkActionBar({
   onSaveSelected,
   saveSelectedDirtyCount,
   savingSelected,
+  pendingAllocationIds,
+  onCommitPendingAllocations,
+  summarizeSave,
   loading,
   previewMode,
   companyId,
@@ -194,6 +198,13 @@ export function TransactionBulkActionBar({
    * transaction's status, journal link and posting batch. */
   companyId: string;
   onPosted: () => void | Promise<void>;
+  /** Rows with an unsaved allocation edit, and the commit that writes
+   * them. "Post to Accounting" saves before it posts, so the accountant
+   * does not press two buttons for one intention — see the panel's own
+   * doc comment. */
+  pendingAllocationIds: Set<number>;
+  onCommitPendingAllocations: () => Promise<BulkSaveSummary | null>;
+  summarizeSave: (summary: BulkSaveSummary) => string;
 }) {
   const [inlineForm, setInlineForm] = useState<InlineForm>(null);
   const [inputValue, setInputValue] = useState("");
@@ -287,7 +298,16 @@ export function TransactionBulkActionBar({
          * deliberately a separate action from "Generate Journal": that
          * one creates a Draft journal for the manual approval workflow,
          * this one posts to the ledger. */}
-        <PostToAccountingPanel companyId={companyId} selected={selected} disabled={actionsDisabled} disabledTitle={disabledTitle} onPosted={onPosted} />
+        <PostToAccountingPanel
+          companyId={companyId}
+          selected={selected}
+          disabled={actionsDisabled}
+          disabledTitle={disabledTitle}
+          onPosted={onPosted}
+          pendingAllocationIds={pendingAllocationIds}
+          onCommitPendingAllocations={onCommitPendingAllocations}
+          summarizeSave={summarizeSave}
+        />
 
         <Button variant="subtle" size="sm" disabled={actionsDisabled} title={disabledTitle} onClick={() => setInlineForm("assign-merchant")}>
           Assign Merchant

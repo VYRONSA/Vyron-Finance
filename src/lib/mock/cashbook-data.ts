@@ -35,6 +35,9 @@ function baseTransaction(overrides: Partial<BankTransactionRecord>): BankTransac
     reviewHoldReason: "",
     reviewHoldBy: null,
     reviewHoldAt: null,
+    overrideSupplierInvoiceMatching: false,
+    overrideSupplierInvoiceMatchingBy: null,
+    overrideSupplierInvoiceMatchingAt: null,
     ...overrides,
   };
 }

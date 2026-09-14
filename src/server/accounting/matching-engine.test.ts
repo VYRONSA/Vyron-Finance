@@ -132,6 +132,9 @@ function txn(
     reviewHoldReason: "",
     reviewHoldBy: null,
     reviewHoldAt: null,
+    overrideSupplierInvoiceMatching: false,
+    overrideSupplierInvoiceMatchingBy: null,
+    overrideSupplierInvoiceMatchingAt: null,
   };
 }
 

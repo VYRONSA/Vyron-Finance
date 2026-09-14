@@ -50,7 +50,7 @@ function txn(id: number): BankTransactionRecord {
     isManualOverride: false, reviewStatus: null, reviewedBy: null, reviewedAt: null, reviewNote: null,
     journalId: null, matchedCustomerId: null, matchedMerchantId: null, ruleId: null,
     allocationType: null, allocationNotes: "", entrySource: "Imported", captureStatus: null,
-    cashbookBatchId: null, reconciliationId: null, reversalOfTransactionId: null, isSplit: false, postedFlag: false, postedAt: null, postingBatchId: null, sourceOccurrence: 1, reviewHold: false, reviewHoldReason: "", reviewHoldBy: null, reviewHoldAt: null,
+    cashbookBatchId: null, reconciliationId: null, reversalOfTransactionId: null, isSplit: false, postedFlag: false, postedAt: null, postingBatchId: null, sourceOccurrence: 1, reviewHold: false, reviewHoldReason: "", reviewHoldBy: null, reviewHoldAt: null, overrideSupplierInvoiceMatching: false, overrideSupplierInvoiceMatchingBy: null, overrideSupplierInvoiceMatchingAt: null,
   };
 }
 
@@ -694,6 +694,9 @@ function SelectionHarness({ transactions, onDeleteTransactions }: { transactions
         onSaveSelected={() => {}}
         saveSelectedDirtyCount={0}
         savingSelected={false}
+        pendingAllocationIds={new Set()}
+        onCommitPendingAllocations={async () => null}
+        summarizeSave={() => ""}
         loading={false}
         previewMode={false}
       />
@@ -717,7 +720,7 @@ function SelectionHarness({ transactions, onDeleteTransactions }: { transactions
  * (which removed a real but separate `router.refresh()` defect). Source-
  * level evidence: `TransactionGrid`'s own effect —
  *   useEffect(() => { onPendingEditsChange?.(pendingEdits.size, new
- *   Set(pendingEdits.keys())); }, [pendingEdits, onPendingEditsChange])
+ *   Set(pendingEdits.keys()), triage); }, [pendingEdits, onPendingEditsChange])
  * — re-runs whenever `onPendingEditsChange`'s REFERENCE changes, not only
  * when `pendingEdits` itself changes. Before this phase, the parent
  * (`transaction-explorer.tsx`) passed a brand-new inline arrow function on
@@ -736,13 +739,21 @@ function SelectionHarness({ transactions, onDeleteTransactions }: { transactions
  * Each re-render here is driven manually by the test, never by the
  * component's own effect calling back into itself, so this cannot hang —
  * it's a controlled reproduction of the mechanism, not a live loop.
+ *
+ * This is also why the effect deliberately reads the current rows through
+ * `transactionsRef` instead of taking `transactions` as a dependency:
+ * `transactions` gets a fresh array identity on every parent render, so
+ * depending on it would re-arm exactly the loop described above.
  */
 describe("onPendingEditsChange — infinite render loop fix (Phase 46)", () => {
   it("a STABLE callback (the production fix) is invoked once on mount and NEVER again across unrelated re-renders", () => {
     const stableCallback = vi.fn();
     const { rerender } = render(<TransactionGrid {...baseGridProps({ onPendingEditsChange: stableCallback })} />);
     expect(stableCallback).toHaveBeenCalledTimes(1);
-    expect(stableCallback).toHaveBeenCalledWith(0, new Set());
+    // The third argument (added when "Update Allocated" learned to count
+    // only the pending edits the grid will actually commit) is the triage
+    // of those edits — empty here, because nothing is pending.
+    expect(stableCallback).toHaveBeenCalledWith(0, new Set(), { committableIds: new Set(), blocked: [] });
 
     // Five unrelated re-renders (the SAME callback reference, only some
     // other prop changes) — exactly what happens every time ANY other
@@ -1064,30 +1075,30 @@ describe("Save without Set Rule — no rule, no company-wide effect (Phase 51, T
 
 describe("isAllocationMissing (Phase 29, exported Phase 31)", () => {
   it("missing when Type has never been chosen", () => {
-    expect(isAllocationMissing({ type: null, accountCode: "", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false })).toBe(true);
+    expect(isAllocationMissing({ type: null, accountCode: "", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false, overrideSupplierInvoiceMatching: false })).toBe(true);
   });
 
   it("missing for Type G with no account code", () => {
-    expect(isAllocationMissing({ type: "G", accountCode: "  ", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false })).toBe(true);
+    expect(isAllocationMissing({ type: "G", accountCode: "  ", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false, overrideSupplierInvoiceMatching: false })).toBe(true);
   });
 
   it("missing for Type S with no supplier chosen", () => {
-    expect(isAllocationMissing({ type: "S", accountCode: "", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false })).toBe(true);
+    expect(isAllocationMissing({ type: "S", accountCode: "", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false, overrideSupplierInvoiceMatching: false })).toBe(true);
   });
 
   it("missing for Type C with no customer chosen", () => {
-    expect(isAllocationMissing({ type: "C", accountCode: "", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false })).toBe(true);
+    expect(isAllocationMissing({ type: "C", accountCode: "", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false, overrideSupplierInvoiceMatching: false })).toBe(true);
   });
 
   it("not missing once a real target is chosen for the row's Type", () => {
-    expect(isAllocationMissing({ type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false })).toBe(false);
-    expect(isAllocationMissing({ type: "S", accountCode: "", supplierId:7, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false })).toBe(false);
-    expect(isAllocationMissing({ type: "C", accountCode: "", supplierId: null, customerId:42, vatCode: "", allocationNotes: "", description: "", setRule: false })).toBe(false);
+    expect(isAllocationMissing({ type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false, overrideSupplierInvoiceMatching: false })).toBe(false);
+    expect(isAllocationMissing({ type: "S", accountCode: "", supplierId:7, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false, overrideSupplierInvoiceMatching: false })).toBe(false);
+    expect(isAllocationMissing({ type: "C", accountCode: "", supplierId: null, customerId:42, vatCode: "", allocationNotes: "", description: "", setRule: false, overrideSupplierInvoiceMatching: false })).toBe(false);
   });
 });
 
 describe("selectDirtyIds (Phase 31)", () => {
-  const edit = { type: "G" as const, accountCode: "6100", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false };
+  const edit = { type: "G" as const, accountCode: "6100", supplierId: null, customerId: null, vatCode: "", allocationNotes: "", description: "", setRule: false, overrideSupplierInvoiceMatching: false };
 
   it("50 selected / 10 dirty — only the 10 with a real pending edit are returned", () => {
     const selectedIds = Array.from({ length: 50 }, (_, i) => i + 1);
@@ -1217,7 +1228,7 @@ describe("Description editing — dirty tracking and Set Rule independence (Phas
     isManualOverride: true, reviewStatus: null, reviewedBy: null, reviewedAt: null, reviewNote: null,
     journalId: null, matchedCustomerId: null, matchedMerchantId: null, ruleId: null,
     allocationType: "G", allocationNotes: "", entrySource: "Imported", captureStatus: null,
-    cashbookBatchId: null, reconciliationId: null, reversalOfTransactionId: null, isSplit: false, postedFlag: false, postedAt: null, postingBatchId: null, sourceOccurrence: 1, reviewHold: false, reviewHoldReason: "", reviewHoldBy: null, reviewHoldAt: null,
+    cashbookBatchId: null, reconciliationId: null, reversalOfTransactionId: null, isSplit: false, postedFlag: false, postedAt: null, postingBatchId: null, sourceOccurrence: 1, reviewHold: false, reviewHoldReason: "", reviewHoldBy: null, reviewHoldAt: null, overrideSupplierInvoiceMatching: false, overrideSupplierInvoiceMatchingBy: null, overrideSupplierInvoiceMatchingAt: null,
   };
 
   it("item 1/2 — a description edit is a real PendingRowEdit field, distinct from allocationNotes and Set Rule's own search text", () => {
@@ -1261,7 +1272,7 @@ function unallocatedTxn(overrides: Partial<BankTransactionRecord> = {}): BankTra
     isManualOverride: false, reviewStatus: null, reviewedBy: null, reviewedAt: null, reviewNote: null,
     journalId: null, matchedCustomerId: null, matchedMerchantId: null, ruleId: null,
     allocationType: null, allocationNotes: "", entrySource: "Imported", captureStatus: null,
-    cashbookBatchId: null, reconciliationId: null, reversalOfTransactionId: null, isSplit: false, postedFlag: false, postedAt: null, postingBatchId: null, sourceOccurrence: 1, reviewHold: false, reviewHoldReason: "", reviewHoldBy: null, reviewHoldAt: null,
+    cashbookBatchId: null, reconciliationId: null, reversalOfTransactionId: null, isSplit: false, postedFlag: false, postedAt: null, postingBatchId: null, sourceOccurrence: 1, reviewHold: false, reviewHoldReason: "", reviewHoldBy: null, reviewHoldAt: null, overrideSupplierInvoiceMatching: false, overrideSupplierInvoiceMatchingBy: null, overrideSupplierInvoiceMatchingAt: null,
     ...overrides,
   };
 }

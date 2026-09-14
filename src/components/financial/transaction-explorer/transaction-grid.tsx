@@ -20,7 +20,7 @@ import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { AddGlAccountModal } from "./add-gl-account-modal";
 import { SetRuleModal } from "./set-rule-modal";
 import { cn } from "@/lib/utils";
-import { transactionPostingStatus, type BankTransactionRecord, type Supplier, type TransactionPostingStatus } from "@/server/accounting/types";
+import { isSubjectToSupplierInvoiceMatching, transactionPostingStatus, type BankTransactionRecord, type Supplier, type TransactionPostingStatus } from "@/server/accounting/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import { REQUIRED_ACTION_DUPLICATE_PAYMENT } from "@/server/accounting/matching-engine";
@@ -133,6 +133,11 @@ export type PendingRowEdit = {
   supplierId: number | null;
   customerId: number | null;
   vatCode: string;
+  /** Supplier Invoice Matching Override (migration 0095) — part of the
+   * pending edit so ticking it marks the row dirty and "Update
+   * Allocated" commits it alongside any allocation change, through the
+   * same single write path. */
+  overrideSupplierInvoiceMatching: boolean;
   allocationNotes: string;
   /** Phase 31A — the transaction's own editable Description/Narration
    * (`ae_bank_transactions.description`, already a plain writable text
@@ -163,6 +168,13 @@ export type AllocateRowPayload = {
    * description on every commit — see `computeDescriptionUpdate`). A
    * string (including `""`) means "write this value." */
   description: string | null;
+  /** Supplier Invoice Matching Override (migration 0095). `null` means
+   * "unchanged, omit from the UPDATE" — the same convention `description`
+   * uses — so an ordinary allocation commit never silently clears an
+   * override the accountant set earlier. `true`/`false` is a deliberate
+   * change. It lifts only the invoice-matching requirement; it never
+   * creates an invoice, a bill or a match, and never classifies. */
+  overrideSupplierInvoiceMatching?: boolean | null;
 };
 
 /** Shared between the actual rule-creation call (`transaction-explorer.tsx`)
@@ -223,6 +235,7 @@ export function initialEdit(t: BankTransactionRecord): PendingRowEdit {
     vatCode: t.suggestedVatCode ?? "",
     allocationNotes: t.allocationNotes ?? "",
     description: t.description ?? "",
+    overrideSupplierInvoiceMatching: t.overrideSupplierInvoiceMatching,
     setRule: false,
   };
 }
@@ -261,6 +274,55 @@ export function computeCommitEligibility(edit: PendingRowEdit, transaction: Pick
   }
   if (computeDescriptionUpdate(edit, transaction) === null) return { ok: false, reason: "No changes to save" };
   return { ok: true };
+}
+
+export type BlockedPendingEdit = { id: number; reason: string };
+/** Every pending edit, split by whether `commitRow` would actually accept
+ * it. Both halves matter to the accountant, for different reasons.
+ *
+ * PRODUCTION DEFECT this exists to close: "Update Allocated" counted, and
+ * offered to commit, EVERY pending edit — including ones
+ * `computeCommitEligibility` refuses outright (a row whose only change is
+ * Notes on a still-unallocated transaction; a row with a Type chosen but
+ * no account yet). Committing those is a guaranteed no-op, so the row
+ * stayed in `pendingEdits`, the toolbar count never moved, and the button
+ * could be clicked forever with nothing changing — exactly what was
+ * reported. The count has to be a count of work that CAN be done, and
+ * whatever cannot be done has to say so instead of hiding inside it.
+ *
+ * Pure and exported so this is directly unit-testable without rendering
+ * the (virtualized, jsdom-hostile) grid — same convention as
+ * `prunePendingEdits`/`selectDirtyIds` above. Edits whose row is no
+ * longer on the page are ignored here; `prunePendingEdits` removes them. */
+export function triagePendingEdits(
+  pendingEdits: Map<number, PendingRowEdit>,
+  visibleTransactions: Pick<BankTransactionRecord, "id" | "description">[],
+): { committableIds: Set<number>; blocked: BlockedPendingEdit[] } {
+  const byId = new Map(visibleTransactions.map((t) => [t.id, t]));
+  const committableIds = new Set<number>();
+  const blocked: BlockedPendingEdit[] = [];
+  for (const [id, edit] of pendingEdits) {
+    const transaction = byId.get(id);
+    if (!transaction) continue;
+    const eligibility = computeCommitEligibility(edit, transaction);
+    if (eligibility.ok) committableIds.add(id);
+    else blocked.push({ id, reason: eligibility.reason });
+  }
+  return { committableIds, blocked };
+}
+
+/** The accountant-facing explanation of a refusal. `computeCommitEligibility`'s
+ * own reasons are terse internal states ("No changes to save") that, shown
+ * against a row the accountant demonstrably DID change, read as a
+ * contradiction. This says what is actually required instead. */
+export function blockedEditExplanation(reason: string): string {
+  if (reason === "No changes to save") {
+    return "Notes or VAT alone cannot be saved on an unallocated transaction — choose a Type and account, or change the Description.";
+  }
+  if (reason === "Missing account, supplier, or customer") {
+    return "The allocation is incomplete — choose the account, supplier or customer for the Type selected.";
+  }
+  return reason;
 }
 
 // Pilot Review Board follow-up — "the user must be able to type 15, 0,
@@ -411,7 +473,7 @@ export const POSTING_STATUS_TONE: Record<TransactionPostingStatus, "muted" | "in
 export const ALL_COLUMN_IDS = [
   "transactionDate", "description", "reference", "debit", "credit", "balance", "bankAccount",
   "merchant", "type", "accountCode", "accountDescription", "vatCode", "allocationNotes", "setRule", "split",
-  "supplier", "customer", "sourceGlAccount", "glAccount", "vatTreatment", "allocationStatus", "postingStatus",
+  "supplier", "customer", "sourceGlAccount", "glAccount", "vatTreatment", "overrideInvoiceMatch", "allocationStatus", "postingStatus",
   "rulesApplied", "journalStatus", "confidenceScore", "requiredAction",
 ] as const;
 
@@ -436,6 +498,7 @@ export const COLUMN_LABELS: Record<(typeof ALL_COLUMN_IDS)[number], string> = {
   sourceGlAccount: "Source Account (as imported)",
   glAccount: "GL Account",
   vatTreatment: "VAT Treatment",
+  overrideInvoiceMatch: "Override Supplier Invoice Matching",
   allocationStatus: "Matching Status",
   postingStatus: "Posting Status",
   rulesApplied: "Rule Applied",
@@ -855,6 +918,9 @@ function DescriptionCell({
  * does not compose the way it used to). No `forwardRef` needed or used. */
 export type TransactionGridHandle = {
   saveSelected: (selectedIds: number[]) => Promise<BulkSaveSummary>;
+  /** Drop pending edits the grid will never accept, so the toolbar's
+   * pending count can actually reach zero. Discards only — never writes. */
+  discardEdits: (ids: number[]) => void;
 };
 
 export function TransactionGrid({
@@ -950,7 +1016,7 @@ export function TransactionGrid({
    * also reports the dirty ids themselves (not just the count) so the
    * parent can compute how many of the CURRENTLY SELECTED rows are dirty,
    * for the new "Save Selected" button's enabled state/label. */
-  onPendingEditsChange?: (count: number, dirtyIds: Set<number>) => void;
+  onPendingEditsChange?: (count: number, dirtyIds: Set<number>, triage: { committableIds: Set<number>; blocked: BlockedPendingEdit[] }) => void;
   /** Phase 31 — React 19 ref-as-prop (see the doc comment on
    * `TransactionGridHandle` above for why this isn't `forwardRef`). */
   ref?: Ref<TransactionGridHandle>;
@@ -958,9 +1024,25 @@ export function TransactionGrid({
   const data = useMemo(() => transactions, [transactions]);
 
   const [pendingEdits, setPendingEdits] = useState<Map<number, PendingRowEdit>>(new Map());
+  // Phase 46 (see `transaction-grid.test.tsx`, "infinite render loop fix")
+  // is the reason `transactions` is deliberately NOT a dependency of this
+  // effect: `transactions` gets a fresh array identity on every parent
+  // render, and re-firing this callback on every parent render is exactly
+  // the self-sustaining loop that froze the page in production. The
+  // triage still needs the CURRENT rows, so they are read through a ref.
+  const transactionsRef = useRef(transactions);
   useEffect(() => {
-    onPendingEditsChange?.(pendingEdits.size, new Set(pendingEdits.keys()));
+    onPendingEditsChange?.(pendingEdits.size, new Set(pendingEdits.keys()), triagePendingEdits(pendingEdits, transactionsRef.current));
   }, [pendingEdits, onPendingEditsChange]);
+  useEffect(() => {
+    transactionsRef.current = transactions;
+    // Re-triage only when there is actually something pending to re-triage
+    // — with no pending edits the result is empty whatever the rows are,
+    // so an idle page never calls back merely because it re-rendered.
+    if (pendingEdits.size === 0) return;
+    onPendingEditsChange?.(pendingEdits.size, new Set(pendingEdits.keys()), triagePendingEdits(pendingEdits, transactions));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions]);
   useEffect(() => {
     setPendingEdits((prev) => prunePendingEdits(prev, transactions));
   }, [transactions]);
@@ -999,7 +1081,15 @@ export function TransactionGrid({
   // Phase 31A — `description` excluded from Ctrl+D's replay, same
   // reasoning as `allocationNotes`/`setRule`: it's transaction-specific,
   // never something that should silently propagate onto a different row.
-  const [lastAllocation, setLastAllocation] = useState<Omit<PendingRowEdit, "allocationNotes" | "setRule" | "description"> | null>(null);
+  // "Repeat the last allocation" deliberately excludes
+  // `overrideSupplierInvoiceMatching`: an override is a per-transaction
+  // accounting judgement about one specific payment, not a coding pattern
+  // to propagate. Copying it onto the next row would assert something the
+  // accountant never said about that transaction.
+  const [lastAllocation, setLastAllocation] = useState<Omit<
+    PendingRowEdit,
+    "allocationNotes" | "setRule" | "description" | "overrideSupplierInvoiceMatching"
+  > | null>(null);
   // "17 similar transactions found. Apply allocation?" — distinct from
   // `sessionSuggestions` (which quietly pre-fills same-beneficiary rows):
   // this is the louder, explicit prompt for rows that share the
@@ -1072,6 +1162,11 @@ export function TransactionGrid({
         vatCode: edit.vatCode.trim() || null,
         allocationNotes: edit.allocationNotes,
         description: computeDescriptionUpdate(edit, t),
+        // Only sent when it actually differs from what is stored, so an
+        // ordinary allocation commit never rewrites (or clears) an
+        // override the accountant set earlier.
+        overrideSupplierInvoiceMatching:
+          edit.overrideSupplierInvoiceMatching === t.overrideSupplierInvoiceMatching ? null : edit.overrideSupplierInvoiceMatching,
       },
       ruleOptions,
     );
@@ -1170,6 +1265,27 @@ export function TransactionGrid({
         });
 
         return summarizeBulkSaveOutcomes(outcomes, unchangedCount);
+      },
+      discardEdits(ids: number[]) {
+        const drop = new Set(ids);
+        setPendingEdits((prev) => {
+          const next = new Map(prev);
+          let changed = false;
+          for (const id of drop) if (next.delete(id)) changed = true;
+          return changed ? next : prev;
+        });
+        setRuleOptionsByTransaction((prev) => {
+          const next = new Map(prev);
+          let changed = false;
+          for (const id of drop) if (next.delete(id)) changed = true;
+          return changed ? next : prev;
+        });
+        setDuplicateRuleNames((prev) => {
+          const next = new Map(prev);
+          let changed = false;
+          for (const id of drop) if (next.delete(id)) changed = true;
+          return changed ? next : prev;
+        });
       },
     }),
     [pendingEdits, savingIds, transactions, commitRow],
@@ -1578,6 +1694,36 @@ export function TransactionGrid({
       }),
       helper.accessor("suggestedGlAccount", { id: "glAccount", size: 160, header: "GL Account", cell: (c) => c.getValue() ?? "—" }),
       helper.accessor("suggestedVatCode", { id: "vatTreatment", size: 130, header: "VAT Treatment", cell: (c) => c.getValue() ?? "—" }),
+      // Supplier Invoice Matching Override — an explicit, per-transaction
+      // accounting decision. Editing it here marks the row dirty like any
+      // other inline edit, so "Update Allocated" commits it in bulk; the
+      // accountant never has to open transactions one at a time. Shown
+      // only where the requirement actually applies (a supplier payment),
+      // so it never invites a meaningless tick on a customer receipt.
+      helper.display({
+        id: "overrideInvoiceMatch", size: 200, header: "Override Supplier Invoice Matching",
+        cell: ({ row }) => {
+          const t = row.original;
+          if (!isSubjectToSupplierInvoiceMatching(t)) return <span className="text-vf-ink-faint">n/a</span>;
+          if (t.postedFlag || t.reconciliationId !== null) {
+            return <span className="text-vf-ink-faint">{t.overrideSupplierInvoiceMatching ? "Overridden" : "—"}</span>;
+          }
+          const edit = getEdit(t);
+          return (
+            <label className="flex items-center gap-1.5 text-xs text-vf-ink-soft">
+              <input
+                type="checkbox"
+                checked={edit.overrideSupplierInvoiceMatching}
+                aria-label="Override Supplier Invoice Matching"
+                disabled={savingIds.has(t.id)}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => updateEdit(t, { overrideSupplierInvoiceMatching: e.target.checked })}
+              />
+              {t.matchedBillId !== null ? "Invoice linked" : "No invoice"}
+            </label>
+          );
+        },
+      }),
       helper.display({
         id: "allocationStatus", size: 190, header: "Matching Status",
         cell: ({ row }) => {

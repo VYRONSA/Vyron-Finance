@@ -40,8 +40,94 @@ const BALANCE_TOLERANCE = 0.01;
  * already relies on for VAT settlement journals. */
 const VAT_CONTROL_ACCOUNT_CODE = "2300";
 
+/**
+ * The bank side of every bank journal comes from the BANK ACCOUNT's own
+ * GL account, which is a different thing from the GL account the
+ * accountant allocated the transaction to. A payment allocated to "2600
+ * Credit Card" still credits the bank's own control account, and if that
+ * is not configured there is no cash side to post — so the check is
+ * correct and must not be bypassed.
+ *
+ * What was wrong was the message. It said only "Bank account has no GL
+ * account configured", which — on a screen showing the transaction's own
+ * GL account of 2600 — reads as though VYRON cannot see an account that
+ * is plainly there. Naming the actual bank account, and saying which GL
+ * account is missing, is the difference between an actionable error and
+ * a confusing one.
+ */
+export function bankAccountGlMissingReason(bankAccountName: string): string {
+  const named = bankAccountName?.trim() ? `Bank account "${bankAccountName.trim()}"` : "This transaction's bank account";
+  return `${named} has no GL account configured. Configure it under Bank Accounts before posting — this is the bank's own control account, separate from the GL account allocated to the transaction.`;
+}
+
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * A bank transaction can be told where it belongs in two different ways,
+ * and until now only one of them could actually post.
+ *
+ * 1. DIRECT GL ALLOCATION — the accountant picks an account ("3030 Bank
+ *    Charges"). `suggested_gl_account` holds it, and this transaction is
+ *    the tax point, so any VAT on it is split out.
+ *
+ * 2. SUBSIDIARY-LEDGER ALLOCATION — the accountant says "this payment is
+ *    to supplier X" (or "this receipt is from customer Y"). There is no
+ *    expense account to pick: the expense was recognised when the
+ *    INVOICE was captured, and the payment settles a control-account
+ *    balance. The double entry is DR Creditors / CR Bank for a supplier
+ *    payment and DR Bank / CR Debtors for a customer receipt — exactly
+ *    what the company's own seeded `posting_rules` already say
+ *    ("Supplier Payment", "Customer Receipt" — migration 0007).
+ *
+ * PRODUCTION DEFECT this closes: case 2 had no GL account at all, so
+ * `transactionPostingStatus` called it Unprocessed and "Post to
+ * Accounting" stayed disabled forever. On Northwood that is 194
+ * transactions an accountant had genuinely allocated to a supplier and
+ * then could not post, with no way forward and no explanation.
+ *
+ * The control account is NEVER invented here — it is read from the
+ * company's own posting rules, and when a company has none configured
+ * this reports that as the configuration problem it is rather than
+ * guessing an account code into a client's ledger. A directly assigned
+ * GL account always wins, so no transaction that can post today changes
+ * how it posts.
+ */
+export type LedgerControlAccounts = { creditors: string | null; debtors: string | null };
+
+export const CREDITORS_CONTROL_MISSING_REASON =
+  'Creditors control account is not configured — this payment is allocated to a supplier, so it posts against the supplier ledger. Set the creditors account on the "Supplier Payment" posting rule before posting.';
+
+export const DEBTORS_CONTROL_MISSING_REASON =
+  'Debtors control account is not configured — this receipt is allocated to a customer, so it posts against the customer ledger. Set the debtors account on the "Customer Receipt" posting rule before posting.';
+
+export type ResolvedGlAccount =
+  | { ok: true; accountCode: string; viaControlAccount: boolean }
+  | { ok: false; reason: string };
+
+/** Pure and exported: which GL account does this transaction's non-bank
+ * side hit, and is that a subsidiary-ledger control account? */
+export function resolveTransactionGlAccount(
+  transaction: Pick<BankTransactionRecord, "suggestedGlAccount" | "allocationType" | "matchedSupplierId" | "matchedCustomerId">,
+  controlAccounts: LedgerControlAccounts,
+): ResolvedGlAccount {
+  const assigned = transaction.suggestedGlAccount?.trim();
+  if (assigned) return { ok: true, accountCode: assigned, viaControlAccount: false };
+
+  if (transaction.allocationType === "S" && transaction.matchedSupplierId !== null) {
+    const creditors = controlAccounts.creditors?.trim();
+    if (!creditors) return { ok: false, reason: CREDITORS_CONTROL_MISSING_REASON };
+    return { ok: true, accountCode: creditors, viaControlAccount: true };
+  }
+
+  if (transaction.allocationType === "C" && transaction.matchedCustomerId !== null) {
+    const debtors = controlAccounts.debtors?.trim();
+    if (!debtors) return { ok: false, reason: DEBTORS_CONTROL_MISSING_REASON };
+    return { ok: true, accountCode: debtors, viaControlAccount: true };
+  }
+
+  return { ok: false, reason: "No GL account assigned" };
 }
 
 /** The bank-side control-account code: the account's own configured
@@ -65,15 +151,18 @@ export function resolveBankGlAccount(bankAccount: BankAccountGlInfo | null, fall
  * is treated as not-really-VAT-bearing and falls back to the original
  * single-line behavior rather than guessing or blocking generation). */
 export function buildJournalLinesForTransaction(
-  transaction: Pick<BankTransactionRecord, "id" | "bankAccount" | "debit" | "credit" | "description" | "suggestedGlAccount" | "journalId" | "vat">,
+  transaction: Pick<
+    BankTransactionRecord,
+    "id" | "bankAccount" | "debit" | "credit" | "description" | "suggestedGlAccount" | "journalId" | "vat" | "allocationType" | "matchedSupplierId" | "matchedCustomerId"
+  >,
   bankAccount: BankAccountGlInfo | null,
+  controlAccounts: LedgerControlAccounts = { creditors: null, debtors: null },
 ): BuildJournalLinesResult {
   if (transaction.journalId !== null) {
     return { ok: false, reason: "Already linked to a journal" };
   }
-  if (!transaction.suggestedGlAccount?.trim()) {
-    return { ok: false, reason: "No GL account assigned" };
-  }
+  const resolved = resolveTransactionGlAccount(transaction, controlAccounts);
+  if (!resolved.ok) return resolved;
   // Master Implementation Tracker — Programme 2, Epic E2, Finding #215.
   // `resolveBankGlAccount` falls back to a synthetic `BANK-{accountNumber}`
   // code so a bank account with no GL account never blocked generation —
@@ -81,7 +170,7 @@ export function buildJournalLinesForTransaction(
   // journal it produced referenced a phantom account. Now blocks instead
   // of silently generating one.
   if (!bankAccount?.glAccount?.trim()) {
-    return { ok: false, reason: "Bank account has no GL account configured — set one under Bank Accounts before generating a journal." };
+    return { ok: false, reason: bankAccountGlMissingReason(transaction.bankAccount) };
   }
   if (transaction.debit > 0 && transaction.credit > 0) {
     return { ok: false, reason: "Ambiguous debit/credit — cannot journal a row that is both" };
@@ -90,12 +179,18 @@ export function buildJournalLinesForTransaction(
     return { ok: false, reason: "No debit or credit amount" };
   }
 
-  const glAccount = transaction.suggestedGlAccount.trim();
+  const glAccount = resolved.accountCode;
   const bankGlAccount = resolveBankGlAccount(bankAccount, transaction.bankAccount);
   const description = transaction.description;
   const gross = transaction.debit > 0 ? transaction.debit : transaction.credit;
   const vatAmount = Math.abs(transaction.vat ?? 0);
-  const hasVat = vatAmount > 0 && vatAmount < gross;
+  // A control-account posting carries no VAT of its own: settling a
+  // supplier invoice (or a customer invoice) moves gross money against a
+  // ledger balance whose VAT was already recognised when the INVOICE was
+  // posted. Splitting VAT out again here would double-count the input or
+  // output tax. VAT is only ever separated on a direct GL allocation,
+  // which is the only case where this transaction IS the tax point.
+  const hasVat = !resolved.viaControlAccount && vatAmount > 0 && vatAmount < gross;
   const netAmount = hasVat ? round2(gross - vatAmount) : gross;
 
   if (transaction.debit > 0) {
@@ -130,7 +225,7 @@ export function buildJournalLinesForSplitTransaction(
   if (transaction.journalId !== null) return { ok: false, reason: "Already linked to a journal" };
   // Master Implementation Tracker — Programme 2, Epic E2, Finding #215.
   if (!bankAccount?.glAccount?.trim()) {
-    return { ok: false, reason: "Bank account has no GL account configured — set one under Bank Accounts before generating a journal." };
+    return { ok: false, reason: bankAccountGlMissingReason(transaction.bankAccount) };
   }
   if (transaction.debit > 0 && transaction.credit > 0) return { ok: false, reason: "Ambiguous debit/credit — cannot journal a row that is both" };
   if (transaction.debit === 0 && transaction.credit === 0) return { ok: false, reason: "No debit or credit amount" };
@@ -164,9 +259,25 @@ export type GenerateJournalOutcome = {
  * construction — still defensively re-checked before insert). Ineligible
  * transactions are skipped and reported, never silently dropped. */
 export function generateJournalDraft(
-  transactions: Pick<BankTransactionRecord, "id" | "bankAccount" | "bankAccountId" | "debit" | "credit" | "description" | "suggestedGlAccount" | "journalId" | "isSplit" | "vat">[],
+  transactions: Pick<
+    BankTransactionRecord,
+    | "id"
+    | "bankAccount"
+    | "bankAccountId"
+    | "debit"
+    | "credit"
+    | "description"
+    | "suggestedGlAccount"
+    | "journalId"
+    | "isSplit"
+    | "vat"
+    | "allocationType"
+    | "matchedSupplierId"
+    | "matchedCustomerId"
+  >[],
   bankAccountsById: Map<number, BankAccountGlInfo>,
   splitsByTransactionId: Map<number, { amount: number; description: string; glAccount: string }[]> = new Map(),
+  controlAccounts: LedgerControlAccounts = { creditors: null, debtors: null },
 ): { lines: JournalLineDraft[]; includedTransactionIds: number[]; skipped: { transactionId: number; reason: string }[] } {
   const lines: JournalLineDraft[] = [];
   const includedTransactionIds: number[] = [];
@@ -174,7 +285,9 @@ export function generateJournalDraft(
 
   for (const txn of transactions) {
     const bankAccount = txn.bankAccountId !== null ? (bankAccountsById.get(txn.bankAccountId) ?? null) : null;
-    const result = txn.isSplit ? buildJournalLinesForSplitTransaction(txn, splitsByTransactionId.get(txn.id) ?? [], bankAccount) : buildJournalLinesForTransaction(txn, bankAccount);
+    const result = txn.isSplit
+      ? buildJournalLinesForSplitTransaction(txn, splitsByTransactionId.get(txn.id) ?? [], bankAccount)
+      : buildJournalLinesForTransaction(txn, bankAccount, controlAccounts);
     if (!result.ok) {
       skipped.push({ transactionId: txn.id, reason: result.reason });
       continue;

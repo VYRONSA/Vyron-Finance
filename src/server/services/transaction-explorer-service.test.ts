@@ -142,6 +142,9 @@ function txn(overrides: Partial<BankTransactionRecord> & Pick<BankTransactionRec
     reviewHoldReason: "",
     reviewHoldBy: null,
     reviewHoldAt: null,
+    overrideSupplierInvoiceMatching: false,
+    overrideSupplierInvoiceMatchingBy: null,
+    overrideSupplierInvoiceMatchingAt: null,
     ...overrides,
   };
 }
@@ -343,31 +346,31 @@ describe("encodeCursor / decodeCursor", () => {
 describe("allocateRow validation", () => {
   it("rejects an unknown allocation type", async () => {
     await expect(
-      allocateRow("company-1", [1], { type: "X" as never, accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester"),
+      allocateRow("company-1", [1], { type: "X" as never, accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow(ValidationError);
   });
 
   it("rejects an empty transaction id list", async () => {
     await expect(
-      allocateRow("company-1", [], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester"),
+      allocateRow("company-1", [], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow(ValidationError);
   });
 
   it("rejects a GL allocation with no account code", async () => {
     await expect(
-      allocateRow("company-1", [1], { type: "G", accountCode: "   ", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester"),
+      allocateRow("company-1", [1], { type: "G", accountCode: "   ", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow(ValidationError);
   });
 
   it("rejects a Supplier allocation with no supplier id", async () => {
     await expect(
-      allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester"),
+      allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow(ValidationError);
   });
 
   it("rejects a Customer allocation with no customer id", async () => {
     await expect(
-      allocateRow("company-1", [1], { type: "C", accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester"),
+      allocateRow("company-1", [1], { type: "C", accountCode: null, supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow(ValidationError);
   });
 });
@@ -386,10 +389,10 @@ describe("allocateRow / assignSupplier — Inactive supplier rejected server-sid
   it("allocateRow (inline single-row path) rejects an Inactive supplier id and never reaches the repository", async () => {
     vi.mocked(getSupplier).mockResolvedValue(supplier({ id: 9, name: "Deactivated Duplicate", status: "Inactive" }));
     await expect(
-      allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: 9, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester"),
+      allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: 9, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow(ValidationError);
     await expect(
-      allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: 9, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester"),
+      allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: 9, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow(/Inactive/);
     expect(repoAllocateRow).not.toHaveBeenCalled();
   });
@@ -398,7 +401,7 @@ describe("allocateRow / assignSupplier — Inactive supplier rejected server-sid
     vi.mocked(getSupplier).mockResolvedValue(supplier({ id: 1, name: "Active Supplies", status: "Active" }));
     vi.mocked(repoAllocateRow).mockResolvedValue({ updatedIds: [1], blockedIds: [] });
 
-    const result = await allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: 1, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester");
+    const result = await allocateRow("company-1", [1], { type: "S", accountCode: null, supplierId: 1, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester");
 
     expect(result).toEqual({ updatedIds: [1], blockedIds: [] });
     expect(repoAllocateRow).toHaveBeenCalled();
@@ -431,7 +434,7 @@ describe("allocateRow — updatedIds/blockedIds pass-through (Phase 31)", () => 
     vi.mocked(listChartOfAccounts).mockResolvedValue([{ accountCode: "6100" } as never]);
     vi.mocked(repoAllocateRow).mockResolvedValue({ updatedIds: [1], blockedIds: [] });
 
-    const result = await allocateRow("company-1", [1], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester");
+    const result = await allocateRow("company-1", [1], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester");
 
     expect(result).toEqual({ updatedIds: [1], blockedIds: [] });
   });
@@ -440,7 +443,7 @@ describe("allocateRow — updatedIds/blockedIds pass-through (Phase 31)", () => 
     vi.mocked(listChartOfAccounts).mockResolvedValue([{ accountCode: "6100" } as never]);
     vi.mocked(repoAllocateRow).mockResolvedValue({ updatedIds: [], blockedIds: [501] });
 
-    const result = await allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester");
+    const result = await allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester");
 
     // The service itself never turns a block into a thrown error — that
     // honest-409 decision belongs to the route (see bulk/route.test.ts),
@@ -459,12 +462,12 @@ describe("allocateRow — description (Phase 31A)", () => {
     vi.mocked(listChartOfAccounts).mockResolvedValue([{ accountCode: "6100" } as never]);
     vi.mocked(repoAllocateRow).mockResolvedValue({ updatedIds: [501], blockedIds: [] });
 
-    await allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: "Ren Remuneration" }, "tester");
+    await allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: "Ren Remuneration", overrideSupplierInvoiceMatching: null }, "tester");
 
     expect(repoAllocateRow).toHaveBeenCalledWith(
       "company-1",
       [501],
-      expect.objectContaining({ description: "Ren Remuneration" }),
+      expect.objectContaining({ description: "Ren Remuneration", overrideSupplierInvoiceMatching: null }),
       "tester",
     );
   });
@@ -473,9 +476,9 @@ describe("allocateRow — description (Phase 31A)", () => {
     vi.mocked(listChartOfAccounts).mockResolvedValue([{ accountCode: "6100" } as never]);
     vi.mocked(repoAllocateRow).mockResolvedValue({ updatedIds: [501], blockedIds: [] });
 
-    await allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null }, "tester");
+    await allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: null, overrideSupplierInvoiceMatching: null }, "tester");
 
-    expect(repoAllocateRow).toHaveBeenCalledWith("company-1", [501], expect.objectContaining({ description: null }), "tester");
+    expect(repoAllocateRow).toHaveBeenCalledWith("company-1", [501], expect.objectContaining({ description: null, overrideSupplierInvoiceMatching: null }), "tester");
   });
 
   it("converts a natural-key collision (23505) into an honest ValidationError, never a raw Postgres error", async () => {
@@ -483,7 +486,7 @@ describe("allocateRow — description (Phase 31A)", () => {
     vi.mocked(repoAllocateRow).mockRejectedValue({ code: "23505", message: 'duplicate key value violates unique constraint "ae_bank_transactions_natural_key"' });
 
     await expect(
-      allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: "Duplicate text" }, "tester"),
+      allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: "Duplicate text", overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow(ValidationError);
   });
 
@@ -492,7 +495,7 @@ describe("allocateRow — description (Phase 31A)", () => {
     vi.mocked(repoAllocateRow).mockRejectedValue(new Error("connection reset"));
 
     await expect(
-      allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: "New text" }, "tester"),
+      allocateRow("company-1", [501], { type: "G", accountCode: "6100", supplierId: null, customerId: null, vatCode: null, allocationNotes: "", description: "New text", overrideSupplierInvoiceMatching: null }, "tester"),
     ).rejects.toThrow("connection reset");
   });
 });

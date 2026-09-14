@@ -118,6 +118,9 @@ function base(id: number, overrides: Partial<BankTransactionRecord>): BankTransa
     reviewHoldReason: "",
     reviewHoldBy: null,
     reviewHoldAt: null,
+    overrideSupplierInvoiceMatching: false,
+    overrideSupplierInvoiceMatchingBy: null,
+    overrideSupplierInvoiceMatchingAt: null,
     ...overrides,
   };
 }

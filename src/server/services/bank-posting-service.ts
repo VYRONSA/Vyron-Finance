@@ -57,8 +57,14 @@ import { getCompany } from "@/server/repositories/company-repository";
 import { getPerformedByLabel } from "@/server/auth/require-session";
 import { checkPostingDate } from "@/server/services/financial-period-service";
 import { computeFinancialPeriod, computeFinancialYearLabel } from "@/server/services/financial-year-service";
-import { buildJournalLinesForSplitTransaction, buildJournalLinesForTransaction, type BankAccountGlInfo } from "@/server/services/journal-service";
-import { transactionPostingStatus, type BankTransactionRecord } from "@/server/accounting/types";
+import { buildJournalLinesForSplitTransaction, buildJournalLinesForTransaction, type BankAccountGlInfo, type LedgerControlAccounts } from "@/server/services/journal-service";
+import * as postingRuleRepo from "@/server/repositories/posting-rule-repository";
+import {
+  satisfiesSupplierInvoiceMatching,
+  transactionPostingStatus,
+  SUPPLIER_INVOICE_MATCHING_REQUIRED_REASON,
+  type BankTransactionRecord,
+} from "@/server/accounting/types";
 import type { PostingBatch } from "@/server/general-ledger/types";
 
 export class ValidationError extends Error {}
@@ -113,6 +119,12 @@ export type BankPostingPlan = {
 
 export type PostingPlanContext = {
   bankAccountsById: Map<number, BankAccountGlInfo>;
+  /** The Creditors/Debtors control accounts this company's own posting
+   * rules name — the destination for a payment allocated to a supplier
+   * or a receipt allocated to a customer, which has no GL account of its
+   * own. Never defaulted to a hardcoded code: a company with no such
+   * rule gets a "not configured" reason, not a guessed ledger entry. */
+  controlAccounts: LedgerControlAccounts;
   splitsByTransactionId: Map<number, { amount: number; description: string; glAccount: string }[]>;
   accountCodes: Set<string>;
   financialYears: Parameters<typeof checkPostingDate>[0];
@@ -171,10 +183,19 @@ export function buildBankPostingPlan(transactions: BankTransactionRecord[], cont
       continue;
     }
 
+    // Supplier invoice matching. A supplier payment is expected to settle
+    // an invoice VYRON can point at; when it genuinely does not, the
+    // accountant says so explicitly with the override rather than being
+    // stuck. Never silently skipped — the reason names both ways out.
+    if (!satisfiesSupplierInvoiceMatching(txn)) {
+      blocked.push({ transactionId: txn.id, reason: SUPPLIER_INVOICE_MATCHING_REQUIRED_REASON, kind: "blocked" });
+      continue;
+    }
+
     const bankAccount = txn.bankAccountId !== null ? (context.bankAccountsById.get(txn.bankAccountId) ?? null) : null;
     const built = txn.isSplit
       ? buildJournalLinesForSplitTransaction(txn, context.splitsByTransactionId.get(txn.id) ?? [], bankAccount)
-      : buildJournalLinesForTransaction(txn, bankAccount);
+      : buildJournalLinesForTransaction(txn, bankAccount, context.controlAccounts);
     if (!built.ok) {
       // `buildJournalLinesForTransaction`'s own reasons already
       // distinguish "you haven't finished classifying this" from "the
@@ -252,17 +273,39 @@ export async function previewBankPosting(companyId: string, transactionIds: numb
   return buildBankPostingPlan(transactions, context);
 }
 
+/** The account code a posting rule's named role points at — e.g. the
+ * `creditors` line of the seeded "Supplier Payment" rule. Returns null
+ * (never a guess) when the company has no such rule or the role carries
+ * no fixed account code, so the caller reports a configuration problem
+ * instead of posting to an account nobody chose. */
+export function controlAccountFromRule(rule: { lines: { role: string; fixedAccountCode: string | null }[] } | null, role: string): string | null {
+  const line = rule?.lines.find((l) => l.role === role);
+  const code = line?.fixedAccountCode?.trim();
+  return code ? code : null;
+}
+
 async function loadPostingContext(companyId: string, transactionIds: number[]): Promise<{ transactions: BankTransactionRecord[]; context: PostingPlanContext }> {
   const transactions = await repo.getTransactionsByIds(companyId, transactionIds);
 
   const bankAccountIds = [...new Set(transactions.map((t) => t.bankAccountId).filter((id): id is number => id !== null))];
-  const [bankAccounts, accounts, company, financialYears, journalNumberBase] = await Promise.all([
+  const [bankAccounts, accounts, company, financialYears, journalNumberBase, supplierPaymentRule, customerReceiptRule] = await Promise.all([
     Promise.all(bankAccountIds.map((id) => bankAccountRepo.getBankAccount(companyId, id))),
     chartOfAccountsRepo.listChartOfAccounts(companyId),
     getCompany(companyId),
     financialYearRepo.listFinancialYears(companyId),
     journalRepo.nextJournalNumber(companyId),
+    postingRuleRepo.getPostingRuleByEventType(companyId, "Supplier Payment"),
+    postingRuleRepo.getPostingRuleByEventType(companyId, "Customer Receipt"),
   ]);
+
+  // Read from the company's OWN rules (seeded by `seed_company_defaults()`
+  // as DR creditors / CR bank and DR bank / CR debtors — migration 0007)
+  // rather than hardcoding "2000"/"1100" here, so a company that has
+  // re-mapped its control accounts posts to the accounts it actually uses.
+  const controlAccounts: LedgerControlAccounts = {
+    creditors: controlAccountFromRule(supplierPaymentRule, "creditors"),
+    debtors: controlAccountFromRule(customerReceiptRule, "debtors"),
+  };
 
   const bankAccountsById = new Map<number, BankAccountGlInfo>();
   bankAccounts.forEach((account) => {
@@ -292,6 +335,7 @@ async function loadPostingContext(companyId: string, transactionIds: number[]): 
     transactions,
     context: {
       bankAccountsById,
+      controlAccounts,
       splitsByTransactionId,
       accountCodes: new Set(accounts.map((a) => a.accountCode)),
       financialYears,

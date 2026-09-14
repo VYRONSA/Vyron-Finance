@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnSizingState, RowSelectionState, SortingState, VisibilityState } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
-import { TransactionGrid, ruleActionsFor, ruleTypeFor, type AllocateRowPayload, type BulkSaveSummary, type TransactionGridHandle } from "./transaction-grid";
+import { TransactionGrid, blockedEditExplanation, ruleActionsFor, ruleTypeFor, type AllocateRowPayload, type BlockedPendingEdit, type BulkSaveSummary, type TransactionGridHandle } from "./transaction-grid";
 import { TransactionFiltersBar, EMPTY_FILTER_DRAFT, type FilterDraft } from "./transaction-filters-bar";
 import { TransactionColumnChooser } from "./transaction-column-chooser";
 import { TransactionBulkActionBar, type MatchType, type RuleCreationOptions } from "./transaction-bulk-action-bar";
@@ -15,7 +15,7 @@ import { AddTransactionForm } from "./add-transaction-form";
 import { ConfirmActionRow } from "@/components/ui/confirm-action";
 import { IconChevronLeft } from "@/components/ui/icons";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
-import { transactionPostingStatus, type BankTransactionRecord, type Supplier, type TransactionDetail } from "@/server/accounting/types";
+import { countsAsAllocated, transactionPostingStatus, type BankTransactionRecord, type Supplier, type TransactionDetail } from "@/server/accounting/types";
 import type { Merchant } from "@/server/banking-rules/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
@@ -184,6 +184,46 @@ function sortMock(transactions: BankTransactionRecord[], sorting: SortingState):
   return desc ? sorted.reverse() : sorted;
 }
 
+/**
+ * "Update Allocated" — the toolbar's primary commit action.
+ *
+ * A PENDING allocation is one the accountant has changed in the Explorer
+ * but not yet written to the database — precisely the grid's own
+ * `pendingEdits` keys, which it already reports upward. This is
+ * deliberately NOT "every Ready to Post transaction in the database":
+ * only the user's actual uncommitted edits are ever submitted, whether
+ * or not their rows happen to be selected.
+ */
+export function pendingAllocationIds(dirtyIds: Set<number>): number[] {
+  return [...dirtyIds];
+}
+
+/** Never a bare "Success": a partial failure must read as a partial
+ * failure, with the failed rows still listed underneath — and a run that
+ * saved NOTHING must never read as a success either.
+ *
+ * PRODUCTION DEFECT this closes: with `saved: 0, failed: []` (every
+ * submitted row turned out to have nothing the grid would write) this
+ * previously rendered the green tick and "0 allocations updated
+ * successfully." An accountant reasonably reads that as "it worked" —
+ * while the pending count sits unchanged and the same click can be
+ * repeated forever. Zero saved is now stated as zero saved. */
+export function summarizeAllocationUpdate(summary: BulkSaveSummary): string {
+  const { saved, unchanged, failed } = summary;
+  if (failed.length > 0) return `${saved} updated · ${failed.length} failed`;
+  if (saved === 0) {
+    return unchanged > 0
+      ? `Nothing was updated — ${unchanged} transaction${unchanged === 1 ? " was" : "s were"} already up to date.`
+      : "Nothing was updated — there were no changes to save.";
+  }
+  return `${saved} allocation${saved === 1 ? "" : "s"} updated successfully.`;
+}
+
+/** The toolbar's tick/cross: only an actual write is a success. */
+export function allocationUpdateSucceeded(summary: BulkSaveSummary): boolean {
+  return summary.failed.length === 0 && summary.saved > 0;
+}
+
 export function TransactionExplorer({
   companyId,
   previewMode,
@@ -332,16 +372,31 @@ export function TransactionExplorer({
   // would silently scroll out of existence with no warning.
   const [pendingEditCount, setPendingEditCount] = useState(0);
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
-  // Phase 31 — "Save Selected." `dirtyIds` (the grid's own `pendingEdits`
-  // keys, reported up on every change) lets this component compute how
-  // many of the CURRENTLY SELECTED rows are dirty without lifting
-  // `pendingEdits` itself out of the grid — that state, and the write
-  // path that clears it, must stay exactly where individual Save/Accept
-  // already correctly maintain it. `gridRef` is how the bulk-action bar's
-  // click actually reaches the grid's own `saveSelected` (see
-  // `TransactionGridHandle`) — a normal `useImperativeHandle` bridge, not
-  // a second save mechanism.
-  const [dirtyIds, setDirtyIds] = useState<Set<number>>(new Set());
+  // Phase 31 — "Save Selected." The grid reports its own `pendingEdits`
+  // up on every change, split into the edits it will actually commit and
+  // the ones it refuses, so this component can size and enable its save
+  // actions without lifting `pendingEdits` out of the grid — that state,
+  // and the write path that clears it, must stay exactly where individual
+  // Save/Accept already correctly maintain it.
+  //
+  // The split is the fix for a reported production defect: "Update
+  // Allocated" counted every pending edit, including ones
+  // `computeCommitEligibility` refuses outright. Committing one of those
+  // is a guaranteed no-op that leaves the row in `pendingEdits`, so the
+  // count never moved and the button could be clicked over and over with
+  // nothing changing. A count of work that cannot be done is not a count
+  // of pending work — `blockedEdits` states it separately, with a reason
+  // and a way to clear it.
+  //
+  // `pendingEditCount` above stays the TOTAL (committable or not): the
+  // unsaved-changes navigation guard must still warn about an edit that
+  // would be discarded, whether or not it could have been saved.
+  //
+  // `gridRef` is how a toolbar click actually reaches the grid's own
+  // `saveSelected` (see `TransactionGridHandle`) — a normal
+  // `useImperativeHandle` bridge, not a second save mechanism.
+  const [committableIds, setCommittableIds] = useState<Set<number>>(new Set());
+  const [blockedEdits, setBlockedEdits] = useState<BlockedPendingEdit[]>([]);
   // Phase 46 — CONFIRMED root cause of the repeated production freeze: this
   // was previously an inline arrow function created fresh on every render
   // (`onPendingEditsChange={(count, ids) => {...}}`), passed straight into
@@ -370,10 +425,14 @@ export function TransactionExplorer({
   // the child's effect then only re-runs when `pendingEdits` itself
   // actually changes (a real edit), never merely because its parent
   // re-rendered.
-  const handlePendingEditsChange = useCallback((count: number, ids: Set<number>) => {
-    setPendingEditCount(count);
-    setDirtyIds(ids);
-  }, []);
+  const handlePendingEditsChange = useCallback(
+    (count: number, _ids: Set<number>, triage: { committableIds: Set<number>; blocked: BlockedPendingEdit[] }) => {
+      setPendingEditCount(count);
+      setCommittableIds(triage.committableIds);
+      setBlockedEdits(triage.blocked);
+    },
+    [],
+  );
   const [savingSelected, setSavingSelected] = useState(false);
   const [bulkSaveResult, setBulkSaveResult] = useState<BulkSaveSummary | null>(null);
   const gridRef = useRef<TransactionGridHandle>(null);
@@ -553,12 +612,17 @@ export function TransactionExplorer({
     // says a transaction has been told where it belongs, "Posted" says
     // it has actually entered the General Ledger, and an accountant
     // needs both numbers to know what is left to do.
+    //
+    // They do NOT overlap: a posted transaction leaves the Allocated
+    // count entirely (`countsAsAllocated`), so these numbers partition
+    // the page instead of double-counting the rows that are already in
+    // the ledger.
     const posting = { Unprocessed: 0, "Ready to Post": 0, Posted: 0, Reconciled: 0 };
     for (const t of transactions) {
       if (t.requiredAction === REQUIRED_ACTION_DUPLICATE_PAYMENT) duplicates++;
       else if (t.requiredAction) needsReview++;
       if (t.ruleId !== null || t.rulesTriggered.length > 0) rulesCreated++;
-      if (t.allocationStatus === "Allocated" || t.allocationStatus === "Matched") allocated++;
+      if (countsAsAllocated(t)) allocated++;
       posting[transactionPostingStatus(t)]++;
     }
     return { imported: transactions.length, allocated, needsReview, rulesCreated, duplicates, posting };
@@ -573,7 +637,10 @@ export function TransactionExplorer({
   // SELECTED row is dirty, not merely when something is selected (most
   // selections have zero unsaved edits) or when something anywhere on the
   // page is dirty (an edited row the user never selected must not count).
-  const dirtySelectedCount = useMemo(() => selectedIds.filter((id) => dirtyIds.has(id)).length, [selectedIds, dirtyIds]);
+  // Committable, not merely dirty — same reasoning as "Update Allocated":
+  // enabling a save button on edits the grid would refuse produces a click
+  // that reports failures and changes nothing.
+  const dirtySelectedCount = useMemo(() => selectedIds.filter((id) => committableIds.has(id)).length, [selectedIds, committableIds]);
 
   /** Phase 31 — "Save Selected." Delegates the actual per-row saving to
    * the grid's own `saveSelected` (via `gridRef`) — this function's only
@@ -591,6 +658,58 @@ export function TransactionExplorer({
     } finally {
       setSavingSelected(false);
     }
+  }
+
+  /**
+   * "Update Allocated" — commits EVERY pending allocation edit on the
+   * page, not only the rows that happen to be selected. Transaction
+   * Explorer is a bulk workspace: an accountant allocates many rows and
+   * then commits them together, so committing has to be reachable
+   * without first re-selecting what they just edited.
+   *
+   * It reuses the identical write path a single row already uses — the
+   * grid's `saveSelected` -> `commitRow` -> `allocate-row` endpoint ->
+   * `allocateRow` -> `bulkUpdateWithAllocationHistory`. No second
+   * allocation architecture, and therefore every existing guard still
+   * applies unchanged: posted transactions are refused by the
+   * repository's own `journal_id IS NULL` claim, review holds
+   * (migration 0094) stand, `ae_allocation_history` is still written,
+   * and nothing here creates a journal, GL entry or posting batch.
+   * Allocating is not posting.
+   *
+   * Rows that fail stay dirty (see `commitRow`), so a partial failure
+   * never silently drops the accountant's work.
+   */
+  async function commitPendingAllocations(): Promise<BulkSaveSummary | null> {
+    if (savingSelected || previewMode) return null;
+    // Only edits the grid will actually accept — submitting a refusable
+    // one is a guaranteed no-op that leaves the count exactly where it was.
+    const ids = pendingAllocationIds(committableIds);
+    if (ids.length === 0) return null;
+    setSavingSelected(true);
+    setBulkSaveResult(null);
+    try {
+      const summary = (await gridRef.current?.saveSelected(ids)) ?? null;
+      if (summary) setBulkSaveResult(summary);
+      // Refresh the affected rows so the committed allocation — and the
+      // Posting Status derived from it — is what the grid, and the posting
+      // preflight that runs next, actually see. Rows that failed remain in
+      // `pendingEdits` (they are still on this page, so `prunePendingEdits`
+      // keeps them) and stay editable.
+      await fetchPage(cursorStack[cursorIndex], filters, sorting);
+      return summary;
+    } finally {
+      setSavingSelected(false);
+    }
+  }
+
+  /** Clears the pending edits the grid refuses to commit. The accountant's
+   * only alternative was cancelling each row individually — and until they
+   * did, the "unsaved edits" navigation guard stayed armed over changes
+   * that could never be written. Discards local edits only: it touches no
+   * transaction, writes nothing, and posts nothing. */
+  function discardBlockedEdits() {
+    gridRef.current?.discardEdits(blockedEdits.map((b) => b.id));
   }
 
   /** Pilot Review Board follow-up — "Apply To Merchant / Description /
@@ -1176,6 +1295,9 @@ export function TransactionExplorer({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <TransactionBulkActionBar
+          pendingAllocationIds={committableIds}
+          onCommitPendingAllocations={commitPendingAllocations}
+          summarizeSave={summarizeAllocationUpdate}
           selected={selectedTransactions}
           suppliers={suppliers}
           customers={customers}
@@ -1292,12 +1414,46 @@ export function TransactionExplorer({
        * and why, so they can find and fix it without hunting through the
        * grid. Failed rows stay dirty (see `commitRow`), so nothing here
        * silently drops a change. */}
+      {blockedEdits.length > 0 && (
+        <div className="flex flex-col gap-1.5 rounded-vf-md border border-vf-warning/25 bg-vf-warning/8 px-3.5 py-2.5 text-sm text-[#93601f]">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-medium">
+              {blockedEdits.length} pending change{blockedEdits.length === 1 ? "" : "s"} cannot be saved yet
+              {committableIds.size > 0 ? ` — Update Allocated will commit the other ${committableIds.size}.` : "."}
+            </span>
+            <button
+              type="button"
+              onClick={discardBlockedEdits}
+              disabled={previewMode || savingSelected}
+              className="ml-auto text-xs font-medium underline underline-offset-2 hover:text-vf-ink disabled:opacity-50"
+            >
+              Discard {blockedEdits.length === 1 ? "it" : "them"}
+            </button>
+          </div>
+          <ul className="flex flex-col gap-0.5 pl-1 text-xs">
+            {blockedEdits.slice(0, 8).map((b) => {
+              const t = transactions.find((tx) => tx.id === b.id);
+              return (
+                <li key={b.id}>
+                  {t?.transactionDate ?? "—"} — {t?.description || t?.beneficiary || `Transaction #${b.id}`} — {blockedEditExplanation(b.reason)}
+                </li>
+              );
+            })}
+            {blockedEdits.length > 8 && <li>…and {blockedEdits.length - 8} more.</li>}
+          </ul>
+        </div>
+      )}
+
       {bulkSaveResult && (
         <div className="flex flex-col gap-1.5 rounded-vf-md border border-vf-paper-border bg-vf-paper-alt/60 px-3.5 py-2.5 text-sm">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="font-medium text-[#1f6e4b]">✓ {bulkSaveResult.saved} saved</span>
-            {bulkSaveResult.failed.length > 0 && <span className="font-medium text-vf-danger">! {bulkSaveResult.failed.length} failed</span>}
-            <span className="text-vf-ink-faint">— {bulkSaveResult.unchanged} unchanged</span>
+            <span className={`font-medium ${allocationUpdateSucceeded(bulkSaveResult) ? "text-[#1f6e4b]" : "text-vf-danger"}`}>
+              {allocationUpdateSucceeded(bulkSaveResult) ? "✓ " : "! "}
+              {summarizeAllocationUpdate(bulkSaveResult)}
+            </span>
+            {bulkSaveResult.saved > 0 && bulkSaveResult.unchanged > 0 && (
+              <span className="text-vf-ink-faint">— {bulkSaveResult.unchanged} unchanged</span>
+            )}
             <button type="button" onClick={() => setBulkSaveResult(null)} className="ml-auto text-xs font-medium text-vf-ink-faint hover:text-vf-ink">
               Dismiss
             </button>
@@ -1475,6 +1631,25 @@ export function TransactionExplorer({
           openDetail(detail.transaction);
         }}
         classifying={bulkLoading}
+        // The Update action reuses `allocateRowInline` — the same
+        // `allocate-row` endpoint, service and repository the inline grid
+        // commits through, with its posted-transaction and review-hold
+        // guards intact. On success the panel is reopened and the page
+        // refetched so the new allocation, and the Posting Status derived
+        // from it, are immediately visible in both the panel and the grid.
+        onUpdate={async (input) => {
+          if (!detail) return { ok: false as const, error: "No transaction open." };
+          const result = await allocateRowInline(detail.transaction, input, null);
+          if (result.ok) {
+            openDetail(detail.transaction);
+            await fetchPage(cursorStack[cursorIndex], filters, sorting);
+          }
+          return result;
+        }}
+        chartOfAccounts={chartOfAccounts}
+        vatTreatments={vatTreatments}
+        suppliers={suppliers}
+        customers={customers}
       />
 
       {merchantPanelTransaction && (

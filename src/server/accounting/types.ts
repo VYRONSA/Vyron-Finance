@@ -207,6 +207,15 @@ export type BankTransactionRecord = {
   reviewHoldBy: string | null;
   reviewHoldAt: string | null;
 
+  // Supplier Invoice Matching Override (migration 0095). The
+  // accountant's explicit confirmation that this supplier payment may
+  // post without a linked supplier invoice. It lifts exactly one
+  // requirement and nothing else — it is not a match, not an invoice,
+  // and not a classification.
+  overrideSupplierInvoiceMatching: boolean;
+  overrideSupplierInvoiceMatchingBy: string | null;
+  overrideSupplierInvoiceMatchingAt: string | null;
+
   // See `import-source-occurrence.ts` — this row's ordinal among
   // identical rows in the source it was imported from. Surfaced on the
   // record so the Explorer can show an accountant that two look-alike
@@ -241,13 +250,125 @@ export function isHeldForHumanReview(
   return t.reviewHold || t.reviewStatus !== null || t.requiredAction !== null;
 }
 
+/**
+ * Is this transaction subject to supplier invoice matching?
+ *
+ * Only a payment (money out) that VYRON has actually identified as
+ * belonging to a supplier — either the Matching Engine resolved one, or
+ * the accountant allocated it as type "S". A payment allocated straight
+ * to a GL account is not a supplier-ledger movement and has no invoice
+ * to match, so the requirement does not apply to it.
+ */
+export function isSubjectToSupplierInvoiceMatching(
+  t: Pick<BankTransactionRecord, "debit" | "matchedSupplierId" | "allocationType">,
+): boolean {
+  return t.debit > 0 && (t.matchedSupplierId !== null || t.allocationType === "S");
+}
+
+/**
+ * The three-way eligibility the posting preflight enforces:
+ *   invoice matched                 -> satisfied
+ *   no invoice, override enabled    -> satisfied (explicit accountant decision)
+ *   no invoice, no override         -> NOT satisfied
+ */
+export function satisfiesSupplierInvoiceMatching(
+  t: Pick<BankTransactionRecord, "debit" | "matchedSupplierId" | "allocationType" | "matchedBillId" | "overrideSupplierInvoiceMatching">,
+): boolean {
+  if (!isSubjectToSupplierInvoiceMatching(t)) return true;
+  return t.matchedBillId !== null || t.overrideSupplierInvoiceMatching;
+}
+
+export const SUPPLIER_INVOICE_MATCHING_REQUIRED_REASON =
+  'Supplier invoice matching required — either link a supplier invoice or enable "Override Supplier Invoice Matching".';
+
+/**
+ * "Does VYRON know where this transaction belongs?" — the single
+ * difference between Unprocessed and Ready to Post.
+ *
+ * Three ways a transaction can have a known destination:
+ *   1. a GL account was allocated to it directly;
+ *   2. it was split across several GL accounts;
+ *   3. it was allocated to a SUBSIDIARY LEDGER — a payment to a supplier
+ *      or a receipt from a customer. There is no expense/income account
+ *      to pick in that case: the entry hits the Creditors or Debtors
+ *      control account, which the company's own "Supplier Payment" /
+ *      "Customer Receipt" posting rules already name.
+ *
+ * (3) is the fix for a production defect: allocating a payment to a
+ * supplier left the transaction permanently Unprocessed, so "Post to
+ * Accounting" never enabled and 194 genuinely-allocated Northwood
+ * transactions could not be posted at all.
+ *
+ * An unconfirmed suggestion counts here exactly as it always has for the
+ * GL side (a `Suggested` row with a `suggested_gl_account` has always
+ * been Ready to Post) — being ready to post is not the same as being
+ * posted, and every posting guard downstream still applies, including
+ * supplier invoice matching.
+ *
+ * MUST STAY IN AGREEMENT WITH the `is_allocated` generated column
+ * (migration 0096, superseding 0092) — the filter behind the Posting
+ * Status dropdown is that column, and the badge in the grid is this
+ * function. They are derived from the same four columns for exactly that
+ * reason.
+ */
+export function isAllocatedForPosting(
+  t: Pick<BankTransactionRecord, "suggestedGlAccount" | "isSplit" | "allocationType" | "matchedSupplierId" | "matchedCustomerId">,
+): boolean {
+  if ((t.suggestedGlAccount?.trim() ?? "") !== "") return true;
+  if (t.isSplit) return true;
+  if (t.allocationType === "S" && t.matchedSupplierId !== null) return true;
+  if (t.allocationType === "C" && t.matchedCustomerId !== null) return true;
+  return false;
+}
+
+/**
+ * Does this transaction still count as ALLOCATED work?
+ *
+ * Allocation status ("Matched"/"Allocated"/"Suggested"/"Unallocated") and
+ * posting status are two different axes, and for most of the workflow
+ * they genuinely are independent. But POSTING IS TERMINAL: once a
+ * transaction has entered the General Ledger, "Allocated" is no longer
+ * where an accountant expects to find it — it is Posted. Counting it in
+ * both buckets makes the page totals overlap and overstates what is left
+ * to do, which is exactly what was reported: a page showing
+ * "Allocated 50 ... Ready to Post 48 | Posted 2", where the 2 posted rows
+ * were still sitting inside the 50.
+ *
+ * Reconciled implies posted, and is treated the same way.
+ */
+export function countsAsAllocated(
+  t: Pick<BankTransactionRecord, "allocationStatus" | "postedFlag" | "reconciliationId">,
+): boolean {
+  if (t.postedFlag || t.reconciliationId !== null) return false;
+  return t.allocationStatus === "Allocated" || t.allocationStatus === "Matched";
+}
+
+/**
+ * Should a filter on the ALLOCATION axis hide transactions that have
+ * already been posted?
+ *
+ * Yes by default — ticking "Allocated" and being handed rows that are
+ * already in the ledger is the same overlap as the counter above. But
+ * never when the accountant has explicitly asked for posted or reconciled
+ * transactions on the posting axis: that is a deliberate request to see
+ * them, and silently returning nothing would be worse than the overlap.
+ */
+export function allocationFilterExcludesPosted(
+  filters: Pick<TransactionExplorerFilters, "postingStatuses">,
+): boolean {
+  const requested = filters.postingStatuses ?? [];
+  return !requested.includes("Posted") && !requested.includes("Reconciled");
+}
+
 export function transactionPostingStatus(
-  t: Pick<BankTransactionRecord, "postedFlag" | "reconciliationId" | "suggestedGlAccount" | "isSplit">,
+  t: Pick<
+    BankTransactionRecord,
+    "postedFlag" | "reconciliationId" | "suggestedGlAccount" | "isSplit" | "allocationType" | "matchedSupplierId" | "matchedCustomerId"
+  >,
 ): TransactionPostingStatus {
   if (t.reconciliationId !== null) return "Reconciled";
   if (t.postedFlag) return "Posted";
-  if (t.isSplit || (t.suggestedGlAccount?.trim() ?? "") !== "") return "Ready to Post";
-  return "Unprocessed";
+  return isAllocatedForPosting(t) ? "Ready to Post" : "Unprocessed";
 }
 
 export function isPayment(t: Pick<BankTransactionRecord, "debit">) {

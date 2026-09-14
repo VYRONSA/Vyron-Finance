@@ -73,6 +73,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
             vatCode: body.vatCode ?? null,
             allocationNotes: body.allocationNotes ?? "",
             description: body.description ?? null,
+            // Migration 0095 — absent means "unchanged", so an ordinary
+            // allocation commit never clears an existing override.
+            overrideSupplierInvoiceMatching:
+              body.overrideSupplierInvoiceMatching === undefined ? null : body.overrideSupplierInvoiceMatching,
           },
           performedBy,
         );

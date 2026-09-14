@@ -89,6 +89,9 @@ function importedTransaction(overrides: Partial<BankTransactionRecord> = {}): Ba
     reviewHoldReason: "",
     reviewHoldBy: null,
     reviewHoldAt: null,
+    overrideSupplierInvoiceMatching: false,
+    overrideSupplierInvoiceMatchingBy: null,
+    overrideSupplierInvoiceMatchingAt: null,
     ...overrides,
   };
 }
@@ -105,6 +108,8 @@ const OPEN_YEAR: FinancialYear[] = [
 function context(overrides: Partial<PostingPlanContext> = {}): PostingPlanContext {
   return {
     bankAccountsById: new Map([[3, BANK_GL]]),
+    // The seeded "Supplier Payment" / "Customer Receipt" control accounts.
+    controlAccounts: { creditors: "2000", debtors: "1100" },
     splitsByTransactionId: new Map(),
     accountCodes: new Set(["1020", "3030", "2300", "3420", "800", "2100"]),
     financialYears: OPEN_YEAR,

@@ -61,6 +61,9 @@ function txn(overrides: Partial<BankTransactionRecord> & Pick<BankTransactionRec
     reviewHoldReason: "",
     reviewHoldBy: null,
     reviewHoldAt: null,
+    overrideSupplierInvoiceMatching: false,
+    overrideSupplierInvoiceMatchingBy: null,
+    overrideSupplierInvoiceMatchingAt: null,
     ...overrides,
   };
 }
@@ -127,6 +130,9 @@ function baseProps(overrides: Partial<Parameters<typeof TransactionBulkActionBar
     previewMode: false,
     companyId: "co_1",
     onPosted: noop,
+    pendingAllocationIds: new Set<number>(),
+    onCommitPendingAllocations: async () => null,
+    summarizeSave: () => "",
     ...overrides,
   };
 }

@@ -31,6 +31,7 @@ import type {
   TransactionExplorerSummary,
   TransactionPostingStatus,
 } from "@/server/accounting/types";
+import { allocationFilterExcludesPosted } from "@/server/accounting/types";
 
 export type TransactionQueryResult = {
   transactions: BankTransactionRecord[];
@@ -107,7 +108,16 @@ export async function queryTransactions(
   if (filters.dateTo) query = query.lte("transaction_date", filters.dateTo);
   if (filters.minAmount !== null) query = query.or(`debit.gte.${filters.minAmount},credit.gte.${filters.minAmount}`);
   if (filters.maxAmount !== null) query = query.or(`debit.lte.${filters.maxAmount},credit.lte.${filters.maxAmount}`);
-  if (filters.statuses && filters.statuses.length > 0) query = query.in("allocation_status", filters.statuses);
+  if (filters.statuses && filters.statuses.length > 0) {
+    query = query.in("allocation_status", filters.statuses);
+    // Posting is terminal: a transaction already in the General Ledger is
+    // not what "Allocated" means any more (see `countsAsAllocated`). The
+    // one exception is an explicit request for posted/reconciled rows on
+    // the posting axis, which must still be honoured.
+    if (allocationFilterExcludesPosted(filters)) {
+      query = query.eq("posted_flag", false).is("reconciliation_id", null);
+    }
+  }
   if (filters.bankAccountId !== null) query = query.eq("bank_account_id", filters.bankAccountId);
   if (filters.importBatch) query = query.eq("import_batch", filters.importBatch);
   if (filters.duplicateOnly) query = query.eq("required_action", REQUIRED_ACTION_DUPLICATE_PAYMENT);
@@ -993,6 +1003,13 @@ export type AllocateRowFields = {
   customerId: number | null;
   vatCode: string | null;
   allocationNotes: string;
+  /** Supplier Invoice Matching Override (migration 0095). `null` means
+   * "unchanged, omit from the UPDATE" — the same convention `description`
+   * uses — so an ordinary allocation commit never silently clears an
+   * override the accountant set earlier. `true`/`false` is a deliberate
+   * change. It lifts only the invoice-matching requirement; it never
+   * creates an invoice, a bill or a match, and never classifies. */
+  overrideSupplierInvoiceMatching?: boolean | null;
   /** Phase 31A — `null` means "unchanged, omit from the UPDATE entirely"
    * (never re-writes an identical description on a Type/Account/VAT/
    * Notes-only save). See `isDuplicateNaturalKey` below for the one real
@@ -1057,9 +1074,23 @@ export function computeBlockedIds(requestedIds: number[], updatedRows: { id: num
  * is: "an unchanged description is never unnecessarily written" (and, by
  * extension, never re-checked against the natural-key constraint for no
  * reason) is a real, testable decision, not just a Supabase call. */
-export function buildAllocateRowFinalUpdate(input: Pick<AllocateRowFields, "type" | "allocationNotes" | "description">): Record<string, unknown> {
+export function buildAllocateRowFinalUpdate(
+  input: Pick<AllocateRowFields, "type" | "allocationNotes" | "description" | "overrideSupplierInvoiceMatching">,
+  performedBy?: string,
+  now: () => string = () => new Date().toISOString(),
+): Record<string, unknown> {
   const update: Record<string, unknown> = { allocation_type: input.type, allocation_notes: input.allocationNotes };
   if (input.description !== null) update.description = input.description;
+  // Migration 0095 — `null` means "unchanged", so an ordinary allocation
+  // commit never clears an override the accountant set earlier. Setting
+  // one records who and when; clearing one removes that attribution
+  // rather than leaving a stale name against a decision that no longer
+  // stands.
+  if (input.overrideSupplierInvoiceMatching !== null && input.overrideSupplierInvoiceMatching !== undefined) {
+    update.override_supplier_invoice_matching = input.overrideSupplierInvoiceMatching;
+    update.override_supplier_invoice_matching_by = input.overrideSupplierInvoiceMatching ? (performedBy ?? null) : null;
+    update.override_supplier_invoice_matching_at = input.overrideSupplierInvoiceMatching ? now() : null;
+  }
   return update;
 }
 
@@ -1081,7 +1112,7 @@ export async function allocateRow(companyId: string, transactionIds: number[], i
   // description change on a posted transaction exactly like every other
   // field this update touches, no special-casing needed.
   const supabase = await createClient();
-  const finalUpdate = buildAllocateRowFinalUpdate(input);
+  const finalUpdate = buildAllocateRowFinalUpdate(input, performedBy);
   const { data, error } = await supabase
     .from("ae_bank_transactions")
     .update(finalUpdate)
