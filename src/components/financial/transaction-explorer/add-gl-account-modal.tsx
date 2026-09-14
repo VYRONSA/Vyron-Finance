@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import type { AccountType, ChartOfAccount, NormalBalance } from "@/server/general-ledger/types";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 const ACCOUNT_TYPES: AccountType[] = ["Asset", "Liability", "Equity", "Income", "Cost of Sales", "Expense", "Other Income", "Other Expense"];
 const NORMAL_BALANCES: NormalBalance[] = ["Debit", "Credit"];
@@ -74,7 +75,10 @@ export function AddGlAccountModal({
     }
   }
 
+  // Portaled to <body> so no hovered/transformed page ancestor can become
+  // this fixed overlay's containing block — see `ModalPortal`.
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button type="button" aria-label="Close" className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
@@ -145,5 +149,6 @@ export function AddGlAccountModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

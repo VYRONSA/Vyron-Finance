@@ -11,6 +11,7 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { ALL_CATEGORIES, FINDING_SOURCE_LABEL, categoryLabel, distinctCategories, filterFindings, metaGroup, splitDataQuality, type CategoryFilter } from "./intelligence-view";
 import type { BusinessSituation, Finding, FindingMetaGroup, FindingSeverity } from "@/server/financial-intelligence/types";
 import { BUSINESS_SITUATION_CATEGORY_LABEL } from "@/server/financial-intelligence/types";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 const SEVERITY_BADGE_TONE: Record<FindingSeverity, "danger" | "warn" | "info" | "muted"> = {
   Critical: "danger",
@@ -118,7 +119,11 @@ function FindingDetailPanel({ finding, onClose }: { finding: Finding | null; onC
 
   if (!finding) return null;
 
+  // Portaled to <body> so no hovered/transformed page ancestor (e.g. a
+  // paper Card's hover lift) can become this fixed overlay's containing
+  // block — see `ModalPortal`.
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-40 flex justify-end">
       <button type="button" aria-label="Close finding details" className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
@@ -176,6 +181,7 @@ function FindingDetailPanel({ finding, onClose }: { finding: Finding | null; onC
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import type { SupplierMergeCandidate, SupplierMergeResult } from "@/server/services/merge-service";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 /** Phase 33A — replaces the previous arbitrary "whichever finding row you
  * clicked" survivor pick (Phase 33's own flagged ambiguity — see migration
@@ -133,7 +134,11 @@ export function SupplierMergeDialog({
     );
   }
 
+  // Portaled to <body> so no hovered/transformed page ancestor (e.g. a
+  // paper Card's hover lift) can become this fixed overlay's containing
+  // block — see `ModalPortal`.
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button type="button" aria-label="Close" className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
@@ -226,5 +231,6 @@ export function SupplierMergeDialog({
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }

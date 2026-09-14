@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 /** Phase 20C — the ONE print-ready overlay shared by every customer-
@@ -55,13 +56,35 @@ export function DocumentPreviewOverlay({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // Portaled to <body> — see `ModalPortal` for the containing-block
+  // feedback loop this prevents. `overscroll-contain` stops wheel/touch
+  // scrolling that reaches the end of the document from chaining into the
+  // workspace's own <main> scroller behind the backdrop, and
+  // `scrollbar-gutter: stable` reserves the scrollbar's width up front so
+  // the dialog never shifts sideways when the overlay's own scrollbar
+  // appears or disappears (e.g. Send Email's confirm panel expanding).
   return (
-    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-black/50 p-4 sm:p-8 print:relative print:inset-auto print:z-auto print:overflow-visible print:bg-transparent print:p-0">
+    <ModalPortal>
+    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain bg-black/50 p-4 [scrollbar-gutter:stable] sm:p-8 print:static print:inset-auto print:z-auto print:overflow-visible print:bg-transparent print:p-0">
+      {/* The application's <body> is dark (`--color-vf-canvas`), and hiding
+          its descendants does not hide the body's own background — so with
+          `page.pdf({ printBackground: true })` (pdf-generation-service.ts)
+          and with "Background graphics" ticked in a browser print dialog,
+          every document printed as dark ink on a near-black page. Measured,
+          not assumed: a rasterised PDF of this overlay averaged brightness
+          10/255 before this reset. Printing a document is paper: force a
+          white page and ink-coloured text.
+          `top: 0` below must mean the top of the PAGE, so in print the
+          overlay and dialog are `position: static` (`print:static`) —
+          otherwise the printable root is placed relative to the dialog,
+          which (portaled after the full-height app shell) starts one
+          screen down, leaving page 1 of every PDF blank. */}
       <style>{`
         @media print {
+          html, body { background: #fff !important; color-scheme: light; }
           body * { visibility: hidden; }
           #document-preview-printable, #document-preview-printable * { visibility: visible; }
-          #document-preview-printable { position: absolute; left: 0; top: 0; width: 100%; }
+          #document-preview-printable { position: absolute; left: 0; top: 0; width: 100%; background: #fff; color: var(--color-vf-ink); }
         }
       `}</style>
 
@@ -78,7 +101,7 @@ export function DocumentPreviewOverlay({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className="relative z-10 flex h-fit w-full max-w-[860px] flex-col gap-0 self-start rounded-vf-md bg-vf-paper shadow-2xl print:max-w-none print:rounded-none print:shadow-none"
+        className="relative z-10 flex h-fit w-full max-w-[860px] flex-col gap-0 self-start rounded-vf-md bg-vf-paper shadow-2xl print:static print:max-w-none print:rounded-none print:shadow-none"
       >
         <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-vf-md border-b border-vf-paper-border bg-vf-paper px-5 py-3 print:hidden">
           <p className="text-sm font-medium text-vf-ink">{title}</p>
@@ -113,5 +136,6 @@ export function DocumentPreviewOverlay({
         <div id="document-preview-printable">{children}</div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

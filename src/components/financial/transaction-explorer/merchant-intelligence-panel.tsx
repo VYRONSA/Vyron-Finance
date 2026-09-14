@@ -7,6 +7,7 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
 import type { BankTransactionRecord } from "@/server/accounting/types";
 import type { BankingRule, Merchant } from "@/server/banking-rules/types";
 import type { MerchantStats } from "@/server/services/transaction-explorer-service";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 function money(t: BankTransactionRecord): string {
   const amount = t.debit > 0 ? t.debit : t.credit;
@@ -106,7 +107,11 @@ export function MerchantIntelligencePanel({
     return rules.filter((r) => r.conditions.some((c) => c.field === "beneficiary" && needle.includes(c.value.toLowerCase())));
   }, [rules, beneficiary]);
 
+  // Portaled to <body> so no hovered/transformed page ancestor (e.g. a
+  // paper Card's hover lift) can become this fixed overlay's containing
+  // block — see `ModalPortal`.
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-40 flex justify-end">
       <button type="button" aria-label="Close merchant intelligence" className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby="merchant-intel-heading" tabIndex={-1} className="relative flex h-full w-full max-w-xl flex-col overflow-y-auto bg-vf-paper p-6 shadow-2xl">
@@ -210,5 +215,6 @@ export function MerchantIntelligencePanel({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

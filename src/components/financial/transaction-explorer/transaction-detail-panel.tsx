@@ -17,6 +17,7 @@ import type { BankingException } from "@/server/banking-rules/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import type { AllocateRowPayload } from "./transaction-grid";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 function money(value: number): string {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -262,7 +263,11 @@ export function TransactionDetailPanel({
 
   if (!detail && !loading) return null;
 
+  // Portaled to <body> so no hovered/transformed page ancestor (e.g. a
+  // paper Card's hover lift) can become this fixed overlay's containing
+  // block — see `ModalPortal`.
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-40 flex justify-end">
       <button type="button" aria-label="Close transaction details" className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
@@ -488,5 +493,6 @@ export function TransactionDetailPanel({
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }

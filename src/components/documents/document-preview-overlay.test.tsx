@@ -35,15 +35,44 @@ describe("DocumentPreviewOverlay — print architecture (Phase 20C)", () => {
   });
 
   it("injects a @media print rule that hides everything except the printable root", () => {
-    const { container } = render(
+    render(
       <DocumentPreviewOverlay title="Test Document" onClose={vi.fn()}>
         <p>Document body</p>
       </DocumentPreviewOverlay>,
     );
-    const styleTag = container.querySelector("style");
+    const styleTag = document.body.querySelector("style");
     expect(styleTag?.textContent).toContain("@media print");
     expect(styleTag?.textContent).toContain("#document-preview-printable");
     expect(styleTag?.textContent).toContain("visibility: hidden");
+  });
+
+  it("prints on a white page: the dark application background is reset for print and PDF", () => {
+    // Regression: the body's own dark background survives `body * { visibility: hidden }`,
+    // so page.pdf({ printBackground: true }) produced near-black pages.
+    render(
+      <DocumentPreviewOverlay title="Test Document" onClose={vi.fn()}>
+        <p>Document body</p>
+      </DocumentPreviewOverlay>,
+    );
+    const css = document.body.querySelector("style")?.textContent ?? "";
+    expect(css).toMatch(/html,\s*body\s*\{\s*background:\s*#fff\s*!important/);
+    expect(css).toMatch(/#document-preview-printable\s*\{[^}]*background:\s*#fff/);
+  });
+
+  it("pins the printed document to the top of the page, not one screen down", () => {
+    // Regression: portaled after the full-height app shell, a relatively
+    // positioned overlay/dialog pushed the printable root onto page 2 and
+    // left page 1 of every PDF blank. In print both must be static so the
+    // root's `position: absolute; top: 0` resolves against the page.
+    render(
+      <DocumentPreviewOverlay title="Test Document" onClose={vi.fn()}>
+        <p>Document body</p>
+      </DocumentPreviewOverlay>,
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.className).toContain("print:static");
+    expect(dialog.parentElement?.className).toContain("print:static");
+    expect(dialog.parentElement?.className).not.toContain("print:relative");
   });
 
   it("calls window.print() when Print is clicked", () => {
@@ -85,12 +114,12 @@ describe("DocumentPreviewOverlay — print architecture (Phase 20C)", () => {
   });
 
   it("has no obvious accessibility violations", async () => {
-    const { container } = render(
+    render(
       <DocumentPreviewOverlay title="Test Document" onClose={vi.fn()}>
         <p>Document body</p>
       </DocumentPreviewOverlay>,
     );
-    expect(await axe(container)).toHaveNoViolations();
+    expect(await axe(document.body)).toHaveNoViolations();
   });
 });
 
@@ -162,5 +191,75 @@ describe("DocumentPreviewOverlay — headerExtra slot (Phase 24B)", () => {
     );
     const printRoot = document.getElementById("document-preview-printable");
     expect(printRoot).not.toHaveTextContent("Extra action");
+  });
+});
+
+describe("DocumentPreviewOverlay — layout stability (production defect: invoice modal jumping)", () => {
+  // Root cause: the overlay is `position: fixed`, and it used to render
+  // inside the Sales page's paper <Card>, whose hover style applies a CSS
+  // translate. A transformed ancestor becomes the containing block for
+  // fixed descendants, so hovering re-anchored the "full-screen" overlay
+  // to the Card's box and it oscillated as the pointer moved. The fix is
+  // structural: the overlay must never have a page element as a DOM
+  // ancestor. These tests pin that invariant.
+  function renderInsideTransformedCard() {
+    return render(
+      <div data-testid="hover-card" style={{ transform: "translateY(-2px)" }} className="hover:-translate-y-0.5">
+        <DocumentPreviewOverlay title="Tax Invoice INV-0001" onClose={vi.fn()} downloadHref="/api/companies/c/sales/invoices/1/pdf">
+          <p>Document body</p>
+        </DocumentPreviewOverlay>
+      </div>,
+    );
+  }
+
+  it("mounts the overlay as a direct child of <body>, outside any page ancestor", () => {
+    renderInsideTransformedCard();
+    const dialog = screen.getByRole("dialog", { name: "Tax Invoice INV-0001" });
+    const overlayRoot = dialog.parentElement;
+    expect(overlayRoot?.parentElement).toBe(document.body);
+    expect(dialog.closest('[data-testid="hover-card"]')).toBeNull();
+  });
+
+  it("no ancestor of the fixed overlay has a transform/filter that would capture it", () => {
+    renderInsideTransformedCard();
+    const overlayRoot = screen.getByRole("dialog").parentElement!;
+    expect(overlayRoot.className).toContain("fixed");
+    for (let el = overlayRoot.parentElement; el; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      expect(cs.transform === "" || cs.transform === "none").toBe(true);
+      expect(cs.filter === "" || cs.filter === "none").toBe(true);
+    }
+  });
+
+  it("contains scroll chaining and reserves the scrollbar gutter so the dialog never shifts sideways", () => {
+    renderInsideTransformedCard();
+    const overlayRoot = screen.getByRole("dialog").parentElement!;
+    expect(overlayRoot.className).toContain("overscroll-contain");
+    expect(overlayRoot.className).toContain("[scrollbar-gutter:stable]");
+  });
+
+  it("Print, Download PDF and Close keep working from the portaled overlay", () => {
+    const printSpy = vi.spyOn(window, "print").mockImplementation(() => {});
+    const onClose = vi.fn();
+    render(
+      <div style={{ transform: "translateY(-2px)" }}>
+        <DocumentPreviewOverlay title="Tax Invoice INV-0001" onClose={onClose} downloadHref="/api/companies/c/sales/invoices/1/pdf" headerExtra={<button type="button">Send Email</button>}>
+          <p>Document body</p>
+        </DocumentPreviewOverlay>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Print" }));
+    expect(printSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("link", { name: /download pdf/i })).toHaveAttribute("href", "/api/companies/c/sales/invoices/1/pdf");
+    expect(screen.getByRole("button", { name: "Send Email" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes the portaled overlay from <body> when it unmounts", () => {
+    const { unmount } = renderInsideTransformedCard();
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+    unmount();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 });

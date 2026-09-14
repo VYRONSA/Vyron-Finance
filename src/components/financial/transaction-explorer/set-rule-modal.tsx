@@ -6,6 +6,7 @@ import { Input, Select } from "@/components/ui/input";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { MATCH_TYPE_LABELS, type MatchType, type RuleCreationOptions, type RuleMatchField } from "./transaction-bulk-action-bar";
 import type { BankTransactionRecord } from "@/server/accounting/types";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 const MATCH_FIELD_LABELS: Record<RuleMatchField, string> = { description: "Description", beneficiary: "Beneficiary" };
 
@@ -89,7 +90,10 @@ export function SetRuleModal({
     return field === "description" ? currentDescription : transaction.beneficiary;
   }
 
+  // Portaled to <body> so no hovered/transformed page ancestor can become
+  // this fixed overlay's containing block — see `ModalPortal`.
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button type="button" aria-label="Close" className="absolute inset-0 bg-black/40" onClick={onCancel} />
       <div
@@ -202,5 +206,6 @@ export function SetRuleModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

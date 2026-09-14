@@ -21,6 +21,7 @@ import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import { REQUIRED_ACTION_DUPLICATE_PAYMENT } from "@/server/accounting/matching-engine";
 import { MOCK_TRANSACTIONS, MOCK_TRANSACTION_DETAILS } from "@/lib/mock/transaction-explorer-data";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 const PAGE_SIZE = 50;
 
@@ -1663,6 +1664,7 @@ export function TransactionExplorer({
       )}
 
       {splittingTransaction && (
+        <ModalPortal>
         <div className="fixed inset-0 z-40 flex justify-end">
           <button type="button" aria-label="Close split transaction" className="absolute inset-0 bg-black/40" onClick={() => setSplittingTransaction(null)} />
           <div ref={splitPanelRef} role="dialog" aria-modal="true" aria-labelledby="split-transaction-heading" tabIndex={-1} className="relative flex h-full w-full max-w-xl flex-col overflow-y-auto bg-vf-paper p-6 shadow-2xl">
@@ -1685,9 +1687,11 @@ export function TransactionExplorer({
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {addingTransaction && (
+        <ModalPortal>
         <div className="fixed inset-0 z-40 flex justify-end">
           <button type="button" aria-label="Close add transaction" className="absolute inset-0 bg-black/40" onClick={() => setAddingTransaction(false)} />
           <div ref={addTransactionPanelRef} role="dialog" aria-modal="true" aria-labelledby="add-transaction-heading" tabIndex={-1} className="relative flex h-full w-full max-w-xl flex-col overflow-y-auto bg-vf-paper p-6 shadow-2xl">
@@ -1719,6 +1723,7 @@ export function TransactionExplorer({
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
