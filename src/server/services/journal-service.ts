@@ -38,7 +38,7 @@ const BALANCE_TOLERANCE = 0.01;
 /** VAT Control — account 2300, seeded by `seed_company_defaults()` for
  * every company. Same fixed-code convention `vat-return-service.ts`
  * already relies on for VAT settlement journals. */
-const VAT_CONTROL_ACCOUNT_CODE = "2300";
+export const VAT_CONTROL_ACCOUNT_CODE = "2300";
 
 /**
  * The bank side of every bank journal comes from the BANK ACCOUNT's own

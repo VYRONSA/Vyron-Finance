@@ -106,3 +106,16 @@ export function generateInvoicePdf(request: Request, companyId: string, invoiceI
 export function generateStatementPdf(request: Request, companyId: string, customerId: number): Promise<Buffer> {
   return renderPagePdf(request, `/company/${companyId}/documents/statement/${customerId}/pdf-view`);
 }
+
+/** Reporting Centre — any report, rendered by its print view with the
+ * same filters, so the PDF is exactly the report the user is looking at.
+ * `query` is the report's filter query string (without a leading `?`). */
+export function generateReportPdf(request: Request, companyId: string, reportId: string, query: string): Promise<Buffer> {
+  return renderPagePdf(request, `/company/${companyId}/reporting/print/${encodeURIComponent(reportId)}${query ? `?${query}` : ""}`);
+}
+
+/** Reporting Centre Document Centre — reprint of any customer/supplier
+ * document by its document view. */
+export function generateBusinessDocumentPdf(request: Request, companyId: string, docType: string, docId: number): Promise<Buffer> {
+  return renderPagePdf(request, `/company/${companyId}/reporting/documents/${encodeURIComponent(docType)}/${docId}?print=1`);
+}

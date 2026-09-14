@@ -12,16 +12,21 @@ import { listCustomers } from "@/server/services/customer-service";
 import { listSuppliers } from "@/server/services/supplier-management-service";
 import { listVatTreatments } from "@/server/services/vat-treatment-service";
 import type { VatDocument } from "@/server/vat/vat-intelligence";
+import type { SalesInvoice } from "@/server/sales/types";
+import type { ImportedBill, Supplier } from "@/server/accounting/types";
+import type { Customer } from "@/server/customer-management/types";
+import type { VatTreatment } from "@/server/company-management/types";
 
-export async function listVatDocuments(companyId: string): Promise<VatDocument[]> {
-  const [invoices, bills, customers, suppliers, treatments] = await Promise.all([
-    listSalesInvoices(companyId),
-    listAllBills(companyId),
-    listCustomers(companyId),
-    listSuppliers(companyId),
-    listVatTreatments(companyId),
-  ]);
-
+/** Pure — the Sales/Purchasing → `VatDocument` reshaping, shared by
+ * `listVatDocuments` and the Reporting Centre's VAT reports so both read
+ * VAT the same way. */
+export function buildVatDocuments(
+  invoices: SalesInvoice[],
+  bills: ImportedBill[],
+  customers: Pick<Customer, "id" | "name">[],
+  suppliers: Pick<Supplier, "id" | "vatNumber">[],
+  treatments: Pick<VatTreatment, "code" | "vatType">[],
+): VatDocument[] {
   const customerNameById = new Map(customers.map((c) => [c.id, c.name]));
   const supplierVatNumberById = new Map(suppliers.map((s) => [s.id, s.vatNumber || null]));
   const vatTypeByCode = new Map(treatments.map((t) => [t.code, t.vatType]));
@@ -55,4 +60,15 @@ export async function listVatDocuments(companyId: string): Promise<VatDocument[]
     }));
 
   return [...invoiceDocuments, ...billDocuments];
+}
+
+export async function listVatDocuments(companyId: string): Promise<VatDocument[]> {
+  const [invoices, bills, customers, suppliers, treatments] = await Promise.all([
+    listSalesInvoices(companyId),
+    listAllBills(companyId),
+    listCustomers(companyId),
+    listSuppliers(companyId),
+    listVatTreatments(companyId),
+  ]);
+  return buildVatDocuments(invoices, bills, customers, suppliers, treatments);
 }

@@ -22,7 +22,9 @@ import { getCustomer } from "@/server/services/customer-service";
 import { getCustomerStatement } from "@/server/services/customer-matching-service";
 import { getCompany } from "@/server/services/company-service";
 import { getCompanyLogoDataUri } from "@/server/services/company-branding-service";
-import { generateInvoicePdf, generateStatementPdf } from "@/server/pdf/pdf-generation-service";
+import { generateInvoicePdf, generateReportPdf, generateStatementPdf } from "@/server/pdf/pdf-generation-service";
+import { runReport } from "@/server/report-centre/run";
+import { reportSourceForCompany } from "@/server/report-centre/source-for-company";
 import { invoicePdfFilename, statementPdfFilename } from "@/server/pdf/pdf-filename";
 import { uploadDocument } from "@/server/services/document-service";
 import { queueCommunication } from "@/server/services/communication-service";
@@ -144,6 +146,66 @@ export async function sendStatementEmail(request: Request, companyId: string, cu
   );
 
   const html = buildStatementEmailHtml({ company, branding: { logoDataUri }, customerName: customer.name, asOfDate, closingBalance });
+
+  return queueCommunication(companyId, {
+    module: "Sales",
+    businessObjectType: "Customer",
+    businessObjectId: customer.id,
+    channel: "Email",
+    recipients: [{ type: "Customer", id: customer.id, name: customer.name, address: recipientEmail }],
+    subject: `Statement of Account from ${company.tradingName || company.name}`,
+    body: html,
+    documentIds: [document.id],
+    createdBy: performedBy,
+  });
+}
+
+/** Reporting Centre — email the Customer Statement exactly as the user
+ * is viewing it (the Reporting Centre statement: opening balance, every
+ * posted document, receipt and bank-posted receipt in the period, and
+ * aging), as a PDF rendered from the same report. Same recipient rules,
+ * document archive and communication queue as `sendStatementEmail`. */
+export async function sendReportStatementEmail(
+  request: Request,
+  companyId: string,
+  customerId: number,
+  period: { dateFrom?: string; dateTo?: string },
+  performedBy: string,
+): Promise<CommunicationRecord> {
+  const customer = await getCustomer(companyId, customerId);
+  if (!customer) throw new NotFoundError("Customer not found.");
+
+  const recipientEmail = await resolveCustomerEmail(customer.id);
+  if (!recipientEmail) throw new ValidationError("This customer has no email address on file. Add one under Customer Contacts before sending.");
+
+  const company = await getCompany(companyId);
+  if (!company) throw new NotFoundError("Company not found.");
+
+  const filters = { customerId: String(customer.id), ...(period.dateFrom ? { dateFrom: period.dateFrom } : {}), ...(period.dateTo ? { dateTo: period.dateTo } : {}) };
+  const { result, filters: resolved } = await runReport(reportSourceForCompany(companyId), "customer-statement", filters);
+  const amountDue = result.summary.find((s) => s.label === "Amount Due")?.value;
+  const closingBalance = typeof amountDue === "number" ? amountDue : 0;
+
+  const query = new URLSearchParams({ customerId: String(customer.id), dateFrom: resolved.dateFrom, dateTo: resolved.dateTo }).toString();
+  const [pdfBuffer, logoDataUri] = await Promise.all([generateReportPdf(request, companyId, "customer-statement", query), getCompanyLogoDataUri(companyId)]);
+
+  const filename = statementPdfFilename(customer.name, resolved.dateTo);
+  const document = await uploadDocument(
+    {
+      companyId,
+      entityType: "Customer",
+      entityId: customer.id,
+      category: "Statement",
+      filename,
+      mimeType: "application/pdf",
+      file: new Blob([new Uint8Array(pdfBuffer)], { type: "application/pdf" }),
+      retentionUntil: null,
+      uploadedBy: performedBy,
+    },
+    null,
+  );
+
+  const html = buildStatementEmailHtml({ company, branding: { logoDataUri }, customerName: customer.name, asOfDate: resolved.dateTo, closingBalance });
 
   return queueCommunication(companyId, {
     module: "Sales",

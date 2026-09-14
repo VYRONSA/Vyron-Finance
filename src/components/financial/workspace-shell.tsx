@@ -33,10 +33,13 @@ import {
   IconShieldCheck,
   IconSliders,
   IconSparkles,
+  IconTarget,
   IconUsers,
 } from "@/components/ui/icons";
 
-type ModuleLink = { label: string; href?: string; icon: ComponentType<{ className?: string }> };
+// `exact` — highlight only on the page itself, not its sub-pages (the
+// Reporting Centre home would otherwise light up on every category).
+type ModuleLink = { label: string; href?: string; icon: ComponentType<{ className?: string }>; exact?: boolean };
 
 // Groups and items match the approved reference exactly. Items with no
 // `href` have no built page yet — per the "stop building placeholders"
@@ -61,7 +64,30 @@ const NAV_GROUPS: { label: string; items: ModuleLink[] }[] = [
       { label: "Sales", href: "sales", icon: IconBanknote },
       { label: "Purchasing", href: "purchasing", icon: IconArchive },
       { label: "Inventory", href: "inventory", icon: IconSliders },
-      { label: "Reports", href: "reports", icon: IconBarChart },
+    ],
+  },
+  {
+    // The Reporting Centre — a first-class area with one entry per
+    // reporting domain, all sharing one report shell, filters, exports
+    // and drill-down (see src/server/report-centre). The original
+    // Reports page (budgets, forecasting, executive alerts, report
+    // designer) lives on here, unchanged, as "Budgets & Forecasts".
+    label: "Reporting",
+    items: [
+      { label: "Reporting Centre", href: "reporting", icon: IconBarChart, exact: true },
+      { label: "Management", href: "reporting/management", icon: IconSparkles },
+      { label: "Financial", href: "reporting/financial", icon: IconFileText },
+      { label: "Customers", href: "reporting/customers", icon: IconBuilding },
+      { label: "Suppliers", href: "reporting/suppliers", icon: IconUsers },
+      { label: "Sales", href: "reporting/sales", icon: IconBanknote },
+      { label: "Purchasing", href: "reporting/purchasing", icon: IconArchive },
+      { label: "Banking", href: "reporting/banking", icon: IconBank },
+      { label: "VAT & Tax", href: "reporting/vat", icon: IconReceipt },
+      { label: "General Ledger", href: "reporting/general-ledger", icon: IconBookOpen },
+      { label: "Inventory", href: "reporting/inventory", icon: IconSliders },
+      { label: "Audit & Compliance", href: "reporting/audit", icon: IconShieldCheck },
+      { label: "Document Centre", href: "reporting/documents", icon: IconArchive },
+      { label: "Budgets & Forecasts", href: "reports", icon: IconTarget },
     ],
   },
   {
@@ -118,14 +144,14 @@ export function FinancialWorkspaceShell({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
-  const isActive = (href?: string) => {
+  const isActive = (href?: string, exact = false) => {
     if (!href) return false;
     // Strip any query string (e.g. "general-ledger?tab=journals") — a
     // nav item that deep-links into a tab on a page should still
     // highlight when that page is active, `usePathname()` never includes
     // the query string to compare against.
     const hrefPath = href.split("?")[0];
-    return pathname === `/company/${companyId}/${hrefPath}` || pathname.startsWith(`/company/${companyId}/${hrefPath}/`);
+    return pathname === `/company/${companyId}/${hrefPath}` || (!exact && pathname.startsWith(`/company/${companyId}/${hrefPath}/`));
   };
   const initials = getInitials(userEmail, companyName);
 
@@ -254,7 +280,7 @@ export function FinancialWorkspaceShell({
                 <div className="flex flex-col gap-1">
                   {group.items.map((item) => {
                     const Icon = item.icon;
-                    const active = isActive(item.href);
+                    const active = isActive(item.href, item.exact);
                     const content = (
                       <>
                         <Icon className="h-4 w-4 shrink-0" />

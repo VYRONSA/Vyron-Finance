@@ -24,8 +24,8 @@ import type { VatReturn } from "@/server/vat/types";
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
 
-const VAT_INPUT_CODE = "2100";
-const VAT_OUTPUT_CODE = "2200";
+export const VAT_INPUT_CODE = "2100";
+export const VAT_OUTPUT_CODE = "2200";
 
 export const listVatReturns = repo.listVatReturns;
 export const getVatReturn = repo.getVatReturn;
