@@ -16,6 +16,7 @@ vi.mock("ai", async (importOriginal) => {
 import { createGatewayTransactionClassificationProvider } from "./gateway-classification-provider";
 
 const ORIGINAL_VYRON_AI_MODEL = process.env.VYRON_AI_MODEL;
+const ORIGINAL_GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY;
 
 function evidence(overrides: Partial<TransactionClassificationEvidence> = {}): TransactionClassificationEvidence {
   return {
@@ -36,11 +37,15 @@ function evidence(overrides: Partial<TransactionClassificationEvidence> = {}): T
 }
 
 beforeEach(() => {
+  // A synthetic placeholder: the provider refuses to run without a configured key.
+  process.env.AI_GATEWAY_API_KEY = "synthetic-test-placeholder";
   generateObjectMock.mockReset();
   generateObjectMock.mockResolvedValue({ object: { accountCode: "6100", confidence: 96, explanation: "Matches a known grocery merchant." } });
 });
 
 afterEach(() => {
+  if (ORIGINAL_GATEWAY_KEY === undefined) delete process.env.AI_GATEWAY_API_KEY;
+  else process.env.AI_GATEWAY_API_KEY = ORIGINAL_GATEWAY_KEY;
   if (ORIGINAL_VYRON_AI_MODEL === undefined) delete process.env.VYRON_AI_MODEL;
   else process.env.VYRON_AI_MODEL = ORIGINAL_VYRON_AI_MODEL;
 });
@@ -75,9 +80,31 @@ describe("createGatewayTransactionClassificationProvider — evidence and errors
     expect(userMessage).toContain("Pick n Pay");
   });
 
-  it("returns the raw object on success", async () => {
+  it("returns the raw object on success (usage null when the SDK reported none)", async () => {
     const result = await createGatewayTransactionClassificationProvider().classify(evidence());
-    expect(result).toEqual({ accountCode: "6100", confidence: 96, explanation: "Matches a known grocery merchant." });
+    expect(result).toEqual({ accountCode: "6100", confidence: 96, explanation: "Matches a known grocery merchant.", usage: null });
+  });
+
+  // Migration 0099 — one attempt = exactly one provider request.
+  it("disables the SDK's own silent retries (maxRetries: 0) so every provider request is visible and counted", async () => {
+    await createGatewayTransactionClassificationProvider().classify(evidence());
+    expect(generateObjectMock).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 0 }));
+  });
+
+  it("returns only the token/cost figures the SDK and gateway actually reported", async () => {
+    generateObjectMock.mockResolvedValue({
+      object: { accountCode: "6100", confidence: 96, explanation: "ok" },
+      usage: { inputTokens: 812, outputTokens: 41, totalTokens: 853, reasoningTokens: undefined },
+      providerMetadata: { gateway: { cost: "0.000154" } },
+    });
+    const result = await createGatewayTransactionClassificationProvider().classify(evidence());
+    expect(result.usage).toEqual({ inputTokens: 812, outputTokens: 41, totalTokens: 853, gatewayCost: 0.000154 });
+  });
+
+  it("carries the provider's HTTP status on a classified error (e.g. 402 insufficient credit)", async () => {
+    const { APICallError } = await import("ai");
+    generateObjectMock.mockRejectedValue(new APICallError({ message: "Insufficient funds", url: "https://gateway.example", requestBodyValues: {}, statusCode: 402 }));
+    await expect(createGatewayTransactionClassificationProvider().classify(evidence())).rejects.toMatchObject({ code: "provider-error", httpStatus: 402 });
   });
 
   // Phase 28, Part 7 — "The model should receive this as evidence. It
@@ -118,5 +145,21 @@ describe("createGatewayTransactionClassificationProvider — evidence and errors
     generateObjectMock.mockRejectedValue(new Error("Provide an API key or Vercel access token via 'apiKey' option or 'AI_GATEWAY_API_KEY' environment variable."));
 
     await expect(createGatewayTransactionClassificationProvider().classify(evidence())).rejects.toMatchObject({ code: "missing-api-key" });
+  });
+});
+
+// Pre-deployment review — the Gateway SDK falls back to a Vercel OIDC token
+// when AI_GATEWAY_API_KEY is absent; the provider must refuse first.
+describe("createGatewayTransactionClassificationProvider — missing key", () => {
+  it("with no AI_GATEWAY_API_KEY it refuses before any network activity", async () => {
+    delete process.env.AI_GATEWAY_API_KEY;
+    await expect(createGatewayTransactionClassificationProvider().classify(evidence())).rejects.toMatchObject({ code: "missing-api-key", httpStatus: null });
+    expect(generateObjectMock).not.toHaveBeenCalled();
+  });
+
+  it("a blank key counts as missing", async () => {
+    process.env.AI_GATEWAY_API_KEY = "   ";
+    await expect(createGatewayTransactionClassificationProvider().classify(evidence())).rejects.toMatchObject({ code: "missing-api-key" });
+    expect(generateObjectMock).not.toHaveBeenCalled();
   });
 });

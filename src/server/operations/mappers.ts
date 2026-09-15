@@ -40,6 +40,9 @@ export type OperationsAlertRow = {
   acknowledged_at: string | null;
   resolved_by: string | null;
   resolved_at: string | null;
+  dedupe_key?: string | null;
+  occurrence_count?: number | null;
+  last_occurred_at?: string | null;
 };
 
 export function operationsAlertFromRow(row: OperationsAlertRow): OperationsAlert {
@@ -59,5 +62,8 @@ export function operationsAlertFromRow(row: OperationsAlertRow): OperationsAlert
     acknowledgedAt: row.acknowledged_at,
     resolvedBy: row.resolved_by,
     resolvedAt: row.resolved_at,
+    dedupeKey: row.dedupe_key ?? null,
+    occurrenceCount: row.occurrence_count ?? 1,
+    lastOccurredAt: row.last_occurred_at ?? null,
   };
 }

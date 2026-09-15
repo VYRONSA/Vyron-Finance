@@ -114,6 +114,8 @@ export type AutomationTaskRow = {
   max_retries: number;
   is_active: boolean;
   created_at: string;
+  suspended_reason?: string | null;
+  suspended_at?: string | null;
 };
 
 export function automationTaskFromRow(row: AutomationTaskRow): AutomationTask {
@@ -132,6 +134,8 @@ export function automationTaskFromRow(row: AutomationTaskRow): AutomationTask {
     maxRetries: row.max_retries,
     isActive: row.is_active,
     createdAt: row.created_at,
+    suspendedReason: row.suspended_reason ?? null,
+    suspendedAt: row.suspended_at ?? null,
   };
 }
 

@@ -60,6 +60,10 @@ export async function createAlert(input: opsRepo.NewOperationsAlert): Promise<Op
   return opsRepo.createAlert(input);
 }
 
+export const raiseDeduplicatedAlert = opsRepo.raiseDeduplicatedAlert;
+export const resolveDeduplicatedAlert = opsRepo.resolveDeduplicatedAlert;
+export const linkAlertNotification = opsRepo.linkAlertNotification;
+
 export async function acknowledgeAlert(companyId: string, alertId: number, performedBy: string): Promise<OperationsAlert> {
   return opsRepo.updateAlertStatus(companyId, alertId, { status: "Acknowledged", acknowledgedBy: performedBy, acknowledgedAt: new Date().toISOString() });
 }

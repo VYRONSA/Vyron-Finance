@@ -175,6 +175,17 @@ describe("categorizeAiSweepRun (Phase 29C)", () => {
   it("treats a missing/non-numeric field as 0, never throws", () => {
     expect(categorizeAiSweepRun({})).toBe("no-eligible");
   });
+  // Migration 0099 — a stopped run is not "nothing eligible", even with zero attempts.
+  it("provider-unavailable when the batch stopped on a provider failure or an open circuit", () => {
+    expect(categorizeAiSweepRun({ attempted: 1, classified: 0, failed: 1, stoppedReason: "provider_failure" })).toBe("provider-unavailable");
+    expect(categorizeAiSweepRun({ attempted: 0, stoppedReason: "circuit_open" })).toBe("provider-unavailable");
+  });
+  it("daily-cap when the internal safety cap stopped the run", () => {
+    expect(categorizeAiSweepRun({ attempted: 0, stoppedReason: "daily_cap", requestsToday: 100, dailyCap: 100 })).toBe("daily-cap");
+  });
+  it("progress still wins over a later stop in the same run", () => {
+    expect(categorizeAiSweepRun({ attempted: 3, classified: 2, stoppedReason: "daily_cap" })).toBe("progress");
+  });
 });
 
 describe("isGenuinelyProductiveRun (Phase 29C)", () => {

@@ -47,6 +47,10 @@ export type OperationsAlert = {
   acknowledgedAt: string | null;
   resolvedBy: string | null;
   resolvedAt: string | null;
+  /** Migration 0099 — alerts raised with a dedupe key are updated, not duplicated, while unresolved. */
+  dedupeKey?: string | null;
+  occurrenceCount?: number;
+  lastOccurredAt?: string | null;
 };
 
 export type EngineStatus = "Healthy" | "Degraded" | "Failing" | "NotInstrumented";

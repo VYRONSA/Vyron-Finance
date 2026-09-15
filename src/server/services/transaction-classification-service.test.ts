@@ -17,6 +17,11 @@ vi.mock("@/server/ai/transaction-classification/classification-engine", () => ({
   getDefaultTransactionClassificationProvider: vi.fn(),
 }));
 vi.mock("@/server/billing-platform/engine/usage-metering-engine", () => ({ recordUsageEvent: vi.fn() }));
+vi.mock("@/server/repositories/ai-classification-safety-repository", () => ({
+  gateAiProviderRequest: vi.fn(),
+  recordAiClassificationAttempt: vi.fn(),
+  listAiClassificationSweepCandidates: vi.fn(),
+}));
 
 import { classifyUnallocatedTransactionsWithAi, classifyTransactionsWithAiManual, runAutomaticAiClassificationSweep, MAX_AI_CLASSIFICATIONS_PER_RUN } from "./transaction-classification-service";
 import { getTransactionsByIds, applyAiClassification, listAiClassificationEligibleTransactions } from "@/server/repositories/transaction-explorer-repository";
@@ -24,6 +29,7 @@ import { buildTransactionClassificationEvidence } from "@/server/ai/transaction-
 import { classifyTransactionWithAi, getDefaultTransactionClassificationProvider } from "@/server/ai/transaction-classification/classification-engine";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
 import { AIProviderError } from "@/server/ai/types";
+import { gateAiProviderRequest, recordAiClassificationAttempt, listAiClassificationSweepCandidates } from "@/server/repositories/ai-classification-safety-repository";
 import type { BankTransactionRecord } from "@/server/accounting/types";
 
 const FAKE_PROVIDER = { classify: vi.fn() };
@@ -85,6 +91,10 @@ beforeEach(() => {
   vi.mocked(applyAiClassification).mockReset().mockResolvedValue(undefined);
   vi.mocked(recordUsageEvent).mockReset().mockResolvedValue(undefined);
   vi.mocked(listAiClassificationEligibleTransactions).mockReset().mockResolvedValue([transaction()]);
+  // Migration 0099 — the safety layer: gate open, attempts recorded, one candidate.
+  vi.mocked(gateAiProviderRequest).mockReset().mockResolvedValue({ decision: "allow", circuitState: "closed", openReason: null, nextProbeAt: null, requestsToday: 0, dailyCap: 100, queueState: null });
+  vi.mocked(recordAiClassificationAttempt).mockReset().mockResolvedValue({ queueState: "cooldown", nextEligibleAt: null, circuitState: "closed", openReason: null, nextProbeAt: null });
+  vi.mocked(listAiClassificationSweepCandidates).mockReset().mockResolvedValue({ transactionIds: [501], hasMore: false });
 });
 
 describe("classifyUnallocatedTransactionsWithAi — success", () => {
@@ -101,12 +111,12 @@ describe("classifyUnallocatedTransactionsWithAi — success", () => {
       "System",
     );
     expect(recordUsageEvent).toHaveBeenCalledWith("company-a", "ai_requests");
-    expect(outcome).toEqual({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
   });
 
   it("returns immediately with an empty outcome when given no transaction ids", async () => {
     const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [], "System");
-    expect(outcome).toEqual({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
     expect(getTransactionsByIds).not.toHaveBeenCalled();
   });
 });
@@ -195,7 +205,7 @@ describe("classifyUnallocatedTransactionsWithAi — never fabricates", () => {
 
     expect(applyAiClassification).not.toHaveBeenCalled();
     expect(recordUsageEvent).not.toHaveBeenCalled();
-    expect(outcome).toEqual({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 1, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 1, failed: 0, rateLimited: 0 });
   });
 });
 
@@ -209,7 +219,7 @@ describe("classifyUnallocatedTransactionsWithAi — failure isolation", () => {
 
     const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501, 502], "System");
 
-    expect(outcome).toEqual({ attempted: 2, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 1, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 2, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 1, rateLimited: 0 });
     expect(applyAiClassification).toHaveBeenCalledTimes(1);
     expect(applyAiClassification).toHaveBeenCalledWith("company-a", 502, expect.anything(), "System");
   });
@@ -224,7 +234,7 @@ describe("classifyUnallocatedTransactionsWithAi — failure isolation", () => {
 
     const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
 
-    expect(outcome).toEqual({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 1, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 1, rateLimited: 0 });
     expect(recordUsageEvent).not.toHaveBeenCalled();
   });
 
@@ -260,7 +270,7 @@ describe("classifyUnallocatedTransactionsWithAi — failure isolation", () => {
 
     const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
 
-    expect(outcome).toEqual({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
     expect(applyAiClassification).not.toHaveBeenCalled();
   });
 
@@ -269,7 +279,7 @@ describe("classifyUnallocatedTransactionsWithAi — failure isolation", () => {
 
     const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
 
-    expect(outcome).toEqual({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
   });
 });
 
@@ -454,7 +464,7 @@ describe("Phase 26A — automatic AI allocation confidence branching (Phase 28, 
       expect.objectContaining({ suggestedGlAccount: "6100", confidence: 92, targetStatus: "Suggested" }),
       "System",
     );
-    expect(outcome).toEqual({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
   });
 
   it("boundary: confidence exactly 85 (the deterministic High threshold) — Phase 28 safety pause: no longer auto-allocates", async () => {
@@ -474,7 +484,7 @@ describe("Phase 26A — automatic AI allocation confidence branching (Phase 28, 
       expect.objectContaining({ suggestedGlAccount: "6100", confidence: 72, targetStatus: "Suggested" }),
       "System",
     );
-    expect(outcome).toEqual({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
   });
 
   it("boundary: confidence exactly 84 (just below the High threshold) still only Suggests", async () => {
@@ -491,7 +501,7 @@ describe("Phase 26A — automatic AI allocation confidence branching (Phase 28, 
 
     expect(applyAiClassification).not.toHaveBeenCalled();
     expect(recordUsageEvent).not.toHaveBeenCalled();
-    expect(outcome).toEqual({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 1, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 1, failed: 0, rateLimited: 0 });
   });
 
   it("16/17. the manual 'Classify with AI' path — Phase 28 safety pause: High confidence still only Suggests, storing the real confidence value", async () => {
@@ -553,7 +563,7 @@ describe("Phase 26A — automatic AI allocation confidence branching (Phase 28, 
 
     const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
 
-    expect(outcome).toEqual({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 1, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 1, rateLimited: 0 });
     expect(recordUsageEvent).not.toHaveBeenCalled();
   });
 });
@@ -573,7 +583,7 @@ describe("classifyUnallocatedTransactionsWithAi — accounting confidence drives
 
     const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
 
-    expect(outcome).toEqual({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
     expect(applyAiClassification).toHaveBeenCalledWith("company-a", 501, expect.objectContaining({ targetStatus: "Suggested" }), "System");
   });
 
@@ -584,7 +594,7 @@ describe("classifyUnallocatedTransactionsWithAi — accounting confidence drives
 
     expect(applyAiClassification).not.toHaveBeenCalled();
     expect(recordUsageEvent).not.toHaveBeenCalled();
-    expect(outcome).toEqual({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 1, failed: 0, rateLimited: 0 });
+    expect(outcome).toMatchObject({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 1, failed: 0, rateLimited: 0 });
   });
 
   it("Case G — the model has only Medium confidence but accounting evidence is Strong+agrees (High accounting confidence): would be Allocated once auto-allocation is re-enabled — proves accounting evidence can also STRENGTHEN a weaker model answer, not just downgrade it", async () => {
@@ -629,7 +639,7 @@ describe("classifyUnallocatedTransactionsWithAi — rate-limit early stopping (P
 
     const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501, 502, 503], "System");
 
-    expect(outcome).toEqual({ attempted: 2, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1 });
+    expect(outcome).toMatchObject({ attempted: 2, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1 });
     expect(classifyTransactionWithAi).toHaveBeenCalledTimes(2);
   });
 
@@ -686,53 +696,518 @@ describe("classifyTransactionsWithAiManual — rate-limit early stopping (Phase 
 // already uses (no second engine, no second write path).
 // -----------------------------------------------------------------------
 
-describe("runAutomaticAiClassificationSweep (Phase 26E)", () => {
-  it("fetches its own candidates and classifies them through the shared pipeline", async () => {
-    vi.mocked(listAiClassificationEligibleTransactions).mockResolvedValue([transaction({ id: 501 })]);
+describe("runAutomaticAiClassificationSweep (Phase 26E, queue-driven since migration 0099)", () => {
+  it("takes its batch from the classification queue and classifies it through the shared pipeline", async () => {
+    vi.mocked(listAiClassificationSweepCandidates).mockResolvedValue({ transactionIds: [501], hasMore: false });
 
-    const outcome = await runAutomaticAiClassificationSweep("company-a", "Scheduler");
+    const outcome = await runAutomaticAiClassificationSweep("company-a", "Scheduler", { nowIso: "2026-09-15T10:00:00.000Z", taskRunId: 77 });
 
-    expect(listAiClassificationEligibleTransactions).toHaveBeenCalledWith("company-a", MAX_AI_CLASSIFICATIONS_PER_RUN);
+    expect(listAiClassificationSweepCandidates).toHaveBeenCalledWith("company-a", MAX_AI_CLASSIFICATIONS_PER_RUN, "2026-09-15T10:00:00.000Z");
     expect(getTransactionsByIds).toHaveBeenCalledWith("company-a", [501]);
-    expect(outcome.attempted).toBe(1);
-    expect(outcome.classified).toBe(1);
-    expect(outcome.hasMoreEligible).toBe(false);
+    expect(recordAiClassificationAttempt).toHaveBeenCalledWith(expect.objectContaining({ source: "sweep", taskRunId: 77, transactionId: 501 }));
+    expect(outcome).toMatchObject({ attempted: 1, classified: 1, hasMoreEligible: false, progress: true, candidates: 1 });
   });
 
   it("returns an empty, non-throwing outcome when nothing is currently eligible", async () => {
-    vi.mocked(listAiClassificationEligibleTransactions).mockResolvedValue([]);
+    vi.mocked(listAiClassificationSweepCandidates).mockResolvedValue({ transactionIds: [], hasMore: false });
 
     const outcome = await runAutomaticAiClassificationSweep("company-a", "Scheduler");
 
-    expect(outcome).toEqual({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: false });
+    expect(outcome).toMatchObject({ attempted: 0, classified: 0, providerRequests: 0, hasMoreEligible: false, progress: false, candidates: 0 });
     expect(getTransactionsByIds).not.toHaveBeenCalled();
+    expect(gateAiProviderRequest).not.toHaveBeenCalled();
   });
 
-  it("reports hasMoreEligible: true when the candidate fetch returns exactly a full batch — more historical backlog may remain", async () => {
-    const fullBatch = Array.from({ length: MAX_AI_CLASSIFICATIONS_PER_RUN }, (_, i) => transaction({ id: 501 + i }));
-    vi.mocked(listAiClassificationEligibleTransactions).mockResolvedValue(fullBatch);
-    vi.mocked(getTransactionsByIds).mockResolvedValue(fullBatch);
+  it("reports hasMoreEligible from the queue (it asks for one row more than the batch)", async () => {
+    vi.mocked(listAiClassificationSweepCandidates).mockResolvedValue({ transactionIds: [501], hasMore: true });
 
     const outcome = await runAutomaticAiClassificationSweep("company-a", "Scheduler");
 
     expect(outcome.hasMoreEligible).toBe(true);
   });
 
-  it("never throws when the candidate fetch itself fails — an empty outcome, matching every other automatic path's defensive discipline", async () => {
-    vi.mocked(listAiClassificationEligibleTransactions).mockRejectedValue(new Error("database unreachable"));
+  it("a failure to read the queue is an infrastructure failure — it THROWS so the scheduler's retry/suspension applies", async () => {
+    vi.mocked(listAiClassificationSweepCandidates).mockRejectedValue(new Error("database unreachable"));
+
+    await expect(runAutomaticAiClassificationSweep("company-a", "Scheduler")).rejects.toThrow("database unreachable");
+    expect(classifyTransactionWithAi).not.toHaveBeenCalled();
+  });
+
+  it("P. no progress: a batch of no-confidence answers reports progress: false (so no 2-minute reschedule)", async () => {
+    vi.mocked(listAiClassificationSweepCandidates).mockResolvedValue({ transactionIds: [501], hasMore: true });
+    vi.mocked(classifyTransactionWithAi).mockResolvedValue(classificationResult({ accountCode: null, confidence: 0, confidenceLevel: "Low" }));
 
     const outcome = await runAutomaticAiClassificationSweep("company-a", "Scheduler");
 
-    expect(outcome).toEqual({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: false });
+    expect(outcome).toMatchObject({ progress: false, hasMoreEligible: true, noConfidentSuggestion: 1, providerRequests: 1 });
   });
 
-  it("tenant isolation — only ever queries and classifies the exact company it was called for", async () => {
-    vi.mocked(listAiClassificationEligibleTransactions).mockResolvedValue([transaction({ id: 501, companyId: "company-b" })]);
+  it("Y. tenant isolation — only ever queries and classifies the exact company it was called for", async () => {
+    vi.mocked(listAiClassificationSweepCandidates).mockResolvedValue({ transactionIds: [501], hasMore: false });
 
     await runAutomaticAiClassificationSweep("company-b", "Scheduler");
 
-    expect(listAiClassificationEligibleTransactions).toHaveBeenCalledWith("company-b", expect.anything());
-    expect(listAiClassificationEligibleTransactions).not.toHaveBeenCalledWith("company-a", expect.anything());
+    expect(listAiClassificationSweepCandidates).toHaveBeenCalledWith("company-b", expect.anything(), expect.any(String));
+    expect(listAiClassificationSweepCandidates).not.toHaveBeenCalledWith("company-a", expect.anything(), expect.anything());
     expect(getTransactionsByIds).toHaveBeenCalledWith("company-b", [501]);
+    expect(gateAiProviderRequest).toHaveBeenCalledWith("company-b", 501, "sweep", expect.any(String));
+    expect(recordAiClassificationAttempt).toHaveBeenCalledWith(expect.objectContaining({ companyId: "company-b" }));
+  });
+});
+
+// -----------------------------------------------------------------------
+// Migration 0099 — AI safety: gate, attempt recording, stop rules, usage.
+// Letters refer to the approved test list (A–Y); the database halves
+// (cooldown dates, circuit thresholds, cap counting) are proven against
+// a real local database in supabase/tests/ai_classification_safety.sql.
+// -----------------------------------------------------------------------
+
+const recordedAttempts = () => vi.mocked(recordAiClassificationAttempt).mock.calls.map((c) => c[0]);
+
+function threeTransactions() {
+  const three = [transaction({ id: 501 }), transaction({ id: 502 }), transaction({ id: 503 })];
+  vi.mocked(getTransactionsByIds).mockResolvedValue(three);
+  return three.map((t) => t.id);
+}
+
+describe("AI safety — one attempt is one recorded provider request", () => {
+  it("A. a first attempt makes exactly one provider call and records it (request made, outcome, model, usage)", async () => {
+    vi.mocked(classifyTransactionWithAi).mockResolvedValue({ ...classificationResult({ confidence: 75, confidenceLevel: "Medium" }), usage: { inputTokens: 800, outputTokens: 40, totalTokens: 840 } });
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System", { nowIso: "2026-09-15T10:00:00.000Z" });
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(gateAiProviderRequest).toHaveBeenCalledTimes(1);
+    expect(recordedAttempts()).toEqual([
+      expect.objectContaining({
+        companyId: "company-a", transactionId: 501, source: "import", outcome: "suggested", providerRequestMade: true,
+        model: "openai/gpt-4o-mini", usage: { inputTokens: 800, outputTokens: 40, totalTokens: 840 }, circuitSignal: "success",
+        errorCategory: null, httpStatus: null, nowIso: "2026-09-15T10:00:00.000Z",
+      }),
+    ]);
+    expect(outcome.providerRequests).toBe(1);
+  });
+
+  it("usage is recorded as null when the provider supplied none — never estimated", async () => {
+    await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+    expect(recordedAttempts()[0]).toMatchObject({ usage: null });
+  });
+
+  it("B/U. a no-confidence answer is recorded as a real provider request with outcome no_confidence (the database then applies the cooldown)", async () => {
+    vi.mocked(classifyTransactionWithAi).mockResolvedValue(classificationResult({ accountCode: null, confidence: 0, confidenceLevel: "Low" }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    expect(recordedAttempts()[0]).toMatchObject({ outcome: "no_confidence", providerRequestMade: true, circuitSignal: "success" });
+    expect(outcome.providerRequests).toBe(1);
+    expect(applyAiClassification).not.toHaveBeenCalled();
+  });
+
+  it("T. every provider request in a batch is recorded — three answered requests, three recorded attempts", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi)
+      .mockResolvedValueOnce(classificationResult({ confidence: 75, confidenceLevel: "Medium" }))
+      .mockResolvedValueOnce(classificationResult({ accountCode: null, confidence: 0, confidenceLevel: "Low" }))
+      .mockRejectedValueOnce(new AIProviderError("malformed-response", "No object generated.", null, { providerMessage: "No object generated: could not parse the response." }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(recordedAttempts().map((a) => [a.transactionId, a.outcome, a.providerRequestMade])).toEqual([
+      [501, "suggested", true],
+      [502, "no_confidence", true],
+      [503, "invalid_response", true],
+    ]);
+    expect(outcome).toMatchObject({ providerRequests: 3, classified: 1, noConfidentSuggestion: 1, invalidResponses: 1, failed: 1, stoppedReason: null });
+  });
+
+  it("a validation failure (the model picked an account that was not offered) counts as a request and does NOT stop the batch", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi).mockRejectedValueOnce(new AIProviderError("malformed-response", "not a candidate", null, { validation: true, providerMessage: "not a candidate" }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(3);
+    expect(recordedAttempts()[0]).toMatchObject({ outcome: "invalid_response", errorCategory: "invalid-suggestion", providerRequestMade: true });
+    expect(outcome.providerRequests).toBe(3);
+  });
+
+  it("V. a provider failure AFTER the request (HTTP 503) is recorded as a provider request", async () => {
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("provider-error", "failed", null, { httpStatus: 503, providerMessage: "Service Unavailable" }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    expect(recordedAttempts()[0]).toMatchObject({ outcome: "provider_error", providerRequestMade: true, errorCategory: "server-error", httpStatus: 503, providerMessage: "Service Unavailable", circuitSignal: "provider_failure" });
+    expect(outcome).toMatchObject({ providerRequests: 1, providerFailures: 1, httpStatus: 503, errorCategory: "server-error" });
+  });
+
+  it("W. a database/evidence failure BEFORE the provider call is recorded but never counted as a provider request", async () => {
+    vi.mocked(buildTransactionClassificationEvidence).mockRejectedValue(new Error("relation chart_of_accounts timed out"));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    expect(classifyTransactionWithAi).not.toHaveBeenCalled();
+    expect(recordedAttempts()[0]).toMatchObject({ outcome: "evidence_error", providerRequestMade: false, circuitSignal: "none" });
+    expect(outcome).toMatchObject({ providerRequests: 0, databaseFailures: 1, infrastructureFailure: true });
+  });
+
+  it("a lost write race after a real answer is a request (write_error), not a provider failure", async () => {
+    vi.mocked(applyAiClassification).mockRejectedValue(new Error("Transaction 501 is no longer eligible for AI classification — it was allocated by another process first."));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    expect(recordedAttempts()[0]).toMatchObject({ outcome: "write_error", providerRequestMade: true, circuitSignal: "success" });
+    expect(outcome).toMatchObject({ providerRequests: 1, databaseFailures: 1, providerFailures: 0 });
+  });
+
+  it("customer-facing ai_requests metering is unchanged: only a saved suggestion records it", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi)
+      .mockResolvedValueOnce(classificationResult({ confidence: 75, confidenceLevel: "Medium" }))
+      .mockResolvedValueOnce(classificationResult({ accountCode: null, confidence: 0, confidenceLevel: "Low" }))
+      .mockResolvedValueOnce(classificationResult({ accountCode: null, confidence: 0, confidenceLevel: "Low" }));
+
+    await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(recordUsageEvent).toHaveBeenCalledTimes(1);
+    expect(recordUsageEvent).toHaveBeenCalledWith("company-a", "ai_requests");
+  });
+});
+
+describe("AI safety — the first provider-level failure stops the batch", () => {
+  it("G. 401 -> exactly one provider call, then the batch stops (the remaining transactions are never sent)", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("missing-api-key", "VYRON AI is not configured.", null, { httpStatus: 401, providerMessage: "Unauthorized" }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(recordedAttempts()).toHaveLength(1);
+    expect(recordedAttempts()[0]).toMatchObject({ errorCategory: "unauthorized", httpStatus: 401, circuitSignal: "auth", providerRequestMade: true });
+    expect(outcome).toMatchObject({ attempted: 1, failed: 1, providerFailures: 1, stoppedReason: "provider_failure", errorCategory: "unauthorized", httpStatus: 401 });
+  });
+
+  it("402 (insufficient credit) and 403 are auth/configuration failures that stop the batch", async () => {
+    for (const httpStatus of [402, 403]) {
+      vi.mocked(classifyTransactionWithAi).mockReset().mockRejectedValue(new AIProviderError("provider-error", "failed", null, { httpStatus, providerMessage: "denied" }));
+      vi.mocked(recordAiClassificationAttempt).mockClear();
+      const ids = threeTransactions();
+
+      const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+      expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+      expect(recordedAttempts()[0]).toMatchObject({ circuitSignal: "auth", httpStatus });
+      expect(outcome.stoppedReason).toBe("provider_failure");
+    }
+  });
+
+  it("H. 429 -> the batch stops and the provider's Retry-After is carried to the scheduler", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("rate-limit", "rate limited", 45_000, { httpStatus: 429, providerMessage: "Too Many Requests" }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(recordedAttempts()[0]).toMatchObject({ circuitSignal: "rate_limit", httpStatus: 429, providerRequestMade: true });
+    expect(outcome).toMatchObject({ rateLimited: 1, retryAfterMs: 45_000, stoppedReason: "rate_limited", providerRequests: 1 });
+  });
+
+  it("I (service half). a timeout stops the batch and signals the circuit breaker (the database opens it at 3 in a row)", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("timeout", "timed out", null, { providerMessage: "The operation was aborted due to timeout" }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(recordedAttempts()[0]).toMatchObject({ circuitSignal: "timeout", errorCategory: "timeout", providerRequestMade: true });
+    expect(outcome.stoppedReason).toBe("provider_failure");
+  });
+
+  it("a network failure with no response stops the batch but is not counted as a request", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("provider-error", "failed", null, { providerMessage: "fetch failed" }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(recordedAttempts()[0]).toMatchObject({ errorCategory: "network", providerRequestMade: false, circuitSignal: "provider_failure" });
+    expect(outcome).toMatchObject({ providerRequests: 0, stoppedReason: "provider_failure" });
+  });
+
+  it("the manual path stops the same way: the failing transaction reports a failure, the untried ones 'temporarily unavailable'", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("provider-error", "failed", null, { httpStatus: 500, providerMessage: "Internal Server Error" }));
+
+    const outcome = await classifyTransactionsWithAiManual("company-a", ids, "Jane Accountant");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(outcome.skipped).toEqual([
+      { transactionId: 501, reason: "AI classification failed for this transaction — please try again." },
+      { transactionId: 502, reason: "AI classification is temporarily unavailable." },
+      { transactionId: 503, reason: "AI classification is temporarily unavailable." },
+    ]);
+    expect(recordedAttempts()[0]).toMatchObject({ source: "manual", performedBy: "Jane Accountant" });
+  });
+});
+
+describe("AI safety — the gate is checked before every provider request", () => {
+  it("J. circuit open -> ZERO provider calls, nothing recorded, the reason reported", async () => {
+    const ids = threeTransactions();
+    vi.mocked(gateAiProviderRequest).mockResolvedValue({ decision: "circuit_open", circuitState: "open", openReason: "auth: HTTP 401", nextProbeAt: "2026-09-15T11:00:00.000Z", requestsToday: 1, dailyCap: 100, queueState: null });
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).not.toHaveBeenCalled();
+    expect(buildTransactionClassificationEvidence).not.toHaveBeenCalled();
+    expect(recordAiClassificationAttempt).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ attempted: 0, providerRequests: 0, stoppedReason: "circuit_open", circuitState: "open" });
+  });
+
+  it("K (service half). a due probe lets exactly ONE request through; while the probe is in flight the gate stays closed to the rest", async () => {
+    const ids = threeTransactions();
+    vi.mocked(gateAiProviderRequest)
+      .mockResolvedValueOnce({ decision: "probe", circuitState: "open", openReason: "timeout", nextProbeAt: null, requestsToday: 0, dailyCap: 100, queueState: null })
+      .mockResolvedValue({ decision: "circuit_open", circuitState: "open", openReason: "timeout", nextProbeAt: null, requestsToday: 1, dailyCap: 100, queueState: null });
+    vi.mocked(recordAiClassificationAttempt).mockResolvedValue({ queueState: "resolved", nextEligibleAt: null, circuitState: "closed", openReason: null, nextProbeAt: null });
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(recordedAttempts()[0]).toMatchObject({ circuitSignal: "success" });
+    expect(outcome.providerRequests).toBe(1);
+  });
+
+  it("L. daily cap reached -> the next request is prevented, with the reason and today's count", async () => {
+    const ids = threeTransactions();
+    vi.mocked(gateAiProviderRequest)
+      .mockResolvedValueOnce({ decision: "allow", circuitState: "closed", openReason: null, nextProbeAt: null, requestsToday: 99, dailyCap: 100, queueState: null })
+      .mockResolvedValue({ decision: "daily_cap", circuitState: "closed", openReason: null, nextProbeAt: null, requestsToday: 100, dailyCap: 100, queueState: null });
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({ attempted: 1, providerRequests: 1, stoppedReason: "daily_cap", requestsToday: 100, dailyCap: 100 });
+  });
+
+  it("fail closed: if the safety store can't be reached, nothing is sent and it is an infrastructure failure", async () => {
+    vi.mocked(gateAiProviderRequest).mockRejectedValue(new Error("AI classification safety store is not configured (SUPABASE_SERVICE_ROLE_KEY is missing)."));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    expect(classifyTransactionWithAi).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ attempted: 0, stoppedReason: "safety_unavailable", infrastructureFailure: true });
+  });
+
+  it("fail closed: if an attempt can't be recorded, the batch stops after that one request", async () => {
+    const ids = threeTransactions();
+    vi.mocked(recordAiClassificationAttempt).mockRejectedValue(new Error("insert failed"));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({ attempted: 1, stoppedReason: "recording_failed", infrastructureFailure: true });
+  });
+
+  it("the manual path honours an open circuit too: nothing is sent, every selected row is 'temporarily unavailable'", async () => {
+    const ids = threeTransactions();
+    vi.mocked(gateAiProviderRequest).mockResolvedValue({ decision: "circuit_open", circuitState: "open", openReason: "auth", nextProbeAt: null, requestsToday: 0, dailyCap: 100, queueState: null });
+
+    const outcome = await classifyTransactionsWithAiManual("company-a", ids, "Jane Accountant");
+
+    expect(classifyTransactionWithAi).not.toHaveBeenCalled();
+    expect(outcome.skipped.map((s) => s.reason)).toEqual(Array(3).fill("AI classification is temporarily unavailable."));
+  });
+
+  it("the queue's priority order is kept (the caller's order, not the database's)", async () => {
+    vi.mocked(getTransactionsByIds).mockResolvedValue([transaction({ id: 503 }), transaction({ id: 501 }), transaction({ id: 502 })]);
+
+    await classifyUnallocatedTransactionsWithAi("company-a", [502, 503, 501], "System");
+
+    expect(recordedAttempts().map((a) => a.transactionId)).toEqual([502, 503, 501]);
+  });
+});
+
+describe("AI safety — X. provider error details are kept, secrets are not", () => {
+  it("stores the category, HTTP status and a sanitized message (no bearer tokens, keys or auth headers)", async () => {
+    const original = process.env.AI_GATEWAY_API_KEY;
+    process.env.AI_GATEWAY_API_KEY = "vck_synthetic_test_key_1234567890abcdef";
+    try {
+      const raw = "Unauthorized: Authorization: Bearer vck_synthetic_test_key_1234567890abcdef rejected; api_key=sk-synthetic-000000000000 x";
+      vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("missing-api-key", "not configured", null, { httpStatus: 401, providerMessage: raw }));
+
+      const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+      const stored = recordedAttempts()[0]!.providerMessage ?? "";
+      expect(stored).toContain("Unauthorized");
+      expect(stored).not.toContain("vck_synthetic_test_key");
+      expect(stored).not.toContain("sk-synthetic");
+      expect(stored.length).toBeLessThanOrEqual(300);
+      expect(outcome.providerMessage).toBe(stored);
+      expect(JSON.stringify(outcome)).not.toContain("vck_synthetic_test_key");
+    } finally {
+      if (original === undefined) delete process.env.AI_GATEWAY_API_KEY;
+      else process.env.AI_GATEWAY_API_KEY = original;
+    }
+  });
+
+  it("caps a long provider message at 300 characters", async () => {
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("provider-error", "failed", null, { httpStatus: 500, providerMessage: "overloaded ".repeat(100) }));
+
+    await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    expect(recordedAttempts()[0]!.providerMessage!.length).toBeLessThanOrEqual(300);
+  });
+});
+
+describe("AI safety — accounting boundary", () => {
+  it("AI only ever suggests: the one write path is applyAiClassification with targetStatus 'Suggested', and no failure writes anything", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi)
+      .mockResolvedValueOnce(classificationResult({ confidence: 99, confidenceLevel: "High" }))
+      .mockResolvedValueOnce(classificationResult({ accountCode: null, confidence: 0, confidenceLevel: "Low" }))
+      .mockRejectedValueOnce(new AIProviderError("malformed-response", "bad", null, { providerMessage: "bad" }));
+
+    await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(applyAiClassification).toHaveBeenCalledTimes(1);
+    expect(applyAiClassification).toHaveBeenCalledWith("company-a", 501, expect.objectContaining({ targetStatus: "Suggested" }), "System");
+  });
+});
+
+// -----------------------------------------------------------------------
+// Pre-deployment review — fail-closed gate handling, queue holds, probe
+// marking, Retry-After bounds and hostile provider errors.
+// -----------------------------------------------------------------------
+
+const ALLOW = { decision: "allow" as const, circuitState: "closed" as const, openReason: null, nextProbeAt: null, requestsToday: 0, dailyCap: 100, queueState: null };
+
+describe("Review — only an explicit allow/probe ever reaches the provider", () => {
+  it("an unrecognised gate decision sends NOTHING and is an infrastructure failure", async () => {
+    const ids = threeTransactions();
+    vi.mocked(gateAiProviderRequest).mockResolvedValue({ ...ALLOW, decision: "maybe" as never });
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).not.toHaveBeenCalled();
+    expect(buildTransactionClassificationEvidence).not.toHaveBeenCalled();
+    expect(recordAiClassificationAttempt).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ attempted: 0, providerRequests: 0, stoppedReason: "safety_unavailable", infrastructureFailure: true });
+  });
+
+  it("a transaction the gate holds (cooldown / human review / resolved) is never sent or recorded; the others continue", async () => {
+    const ids = threeTransactions();
+    vi.mocked(gateAiProviderRequest).mockImplementation(async (_companyId, transactionId) =>
+      transactionId === 501 ? { ...ALLOW, decision: "held", circuitState: null, requestsToday: null, queueState: "cooldown" } : ALLOW,
+    );
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(2);
+    expect(recordedAttempts().map((a) => a.transactionId)).toEqual([502, 503]);
+    expect(outcome).toMatchObject({ attempted: 2, heldByQueue: 1, providerRequests: 2 });
+  });
+
+  it("every path tells the gate which it is: import (automatic, held by the queue), sweep (automatic), manual (explicit retry)", async () => {
+    await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+    expect(gateAiProviderRequest).toHaveBeenLastCalledWith("company-a", 501, "import", expect.any(String));
+
+    await classifyUnallocatedTransactionsWithAi("company-a", [501], "System", { source: "sweep" });
+    expect(gateAiProviderRequest).toHaveBeenLastCalledWith("company-a", 501, "sweep", expect.any(String));
+
+    await classifyTransactionsWithAiManual("company-a", [501], "Jane Accountant");
+    expect(gateAiProviderRequest).toHaveBeenLastCalledWith("company-a", 501, "manual", expect.any(String));
+  });
+
+  it("the gate and the recorded attempt use the same timestamp (so a reservation is settled on the same UTC day)", async () => {
+    await classifyUnallocatedTransactionsWithAi("company-a", [501], "System", { nowIso: "2030-04-01T23:59:59.000Z" });
+    expect(gateAiProviderRequest).toHaveBeenCalledWith("company-a", 501, "import", "2030-04-01T23:59:59.000Z");
+    expect(recordedAttempts()[0]).toMatchObject({ nowIso: "2030-04-01T23:59:59.000Z" });
+  });
+
+  it("the open circuit's probe is recorded as the probe; ordinary requests are not", async () => {
+    const ids = threeTransactions();
+    vi.mocked(gateAiProviderRequest).mockResolvedValueOnce({ ...ALLOW, decision: "probe", circuitState: "open" }).mockResolvedValue(ALLOW);
+
+    await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(recordedAttempts().map((a) => a.probe)).toEqual([true, false, false]);
+  });
+
+  it("a missing provider key is recorded as no request made, opens the circuit (auth) and stops the batch", async () => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(
+      new AIProviderError("missing-api-key", "not configured", null, { providerMessage: "AI_GATEWAY_API_KEY is not configured on this server; no request was sent." }),
+    );
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(recordedAttempts()[0]).toMatchObject({ providerRequestMade: false, circuitSignal: "auth", errorCategory: "missing-api-key", httpStatus: null });
+    expect(outcome).toMatchObject({ providerRequests: 0, stoppedReason: "provider_failure" });
+  });
+});
+
+describe("Review — Retry-After is bounded before it is stored or used", () => {
+  it.each([
+    [45_000, 45_000],
+    [1_000, 15_000],
+    [60 * 60_000, 5 * 60_000],
+    [Number.MAX_SAFE_INTEGER, 5 * 60_000],
+    [Number.NaN, undefined],
+    [-5, undefined],
+    [0, undefined],
+    [null, undefined],
+  ])("provider Retry-After %s ms -> stored/used %s", async (given, expected) => {
+    const ids = threeTransactions();
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("rate-limit", "rate limited", given, { httpStatus: 429, providerMessage: "Too Many Requests" }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", ids, "System");
+
+    expect(classifyTransactionWithAi).toHaveBeenCalledTimes(1);
+    expect(outcome.stoppedReason).toBe("rate_limited");
+    expect(outcome.retryAfterMs).toEqual(expected);
+    expect(recordedAttempts()[0]).toMatchObject({ circuitSignal: "rate_limit" });
+  });
+});
+
+describe("Review — X. hostile provider errors never reach storage", () => {
+  // The fixture transaction is "PICK N PAY" / "Pick n Pay".
+  it.each([
+    ["credentials in a URL", "request to https://svc-user:hunter2pass@gateway.example/v1 failed", ["hunter2pass", "svc-user"]],
+    ["a Basic authorization header", "Authorization: Basic c3ZjOmh1bnRlcjI= rejected", ["c3ZjOmh1bnRlcjI="]],
+    ["authorization / api-key headers in JSON", '{"headers":{"authorization":"Bearer abc.def.ghi","x-api-key":"k-123456789"}}', ["abc.def.ghi", "k-123456789"]],
+    ["a request body echoing the evidence", 'Invalid request: {"messages":[{"role":"user","content":"Transaction PICK N PAY SOMERSET 1245.60 Cheque Account"}]}', ["PICK N PAY SOMERSET", "Cheque Account", "1245.60"]],
+    ["the transaction's own details", "Content rejected for PICK N PAY paid to Pick n Pay", ["PICK N PAY", "Pick n Pay"]],
+    ["a raw provider response body (only its message survives)", 'upstream: {"error":{"message":"quota exceeded","type":"insufficient_quota","param":null,"request_id":"req-synthetic-0001"}}', ['"error":', "insufficient_quota", "req-synthetic-0001", "param"]],
+    ["an OIDC token", "x-vercel-oidc-token: eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c2ln", ["eyJhbGciOiJSUzI1NiJ9", "eyJzdWIiOiJzeW50aGV0aWMifQ"]],
+    ["a flood of short secrets", "key=ab ".repeat(200), ["key=ab"]],
+  ])("%s", async (_label, raw, forbidden) => {
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(new AIProviderError("provider-error", "failed", null, { httpStatus: 500, providerMessage: raw as string }));
+
+    const outcome = await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    const stored = recordedAttempts()[0]!.providerMessage ?? "";
+    for (const f of forbidden as string[]) {
+      expect(stored).not.toContain(f);
+      expect(JSON.stringify(outcome)).not.toContain(f);
+    }
+    expect(stored.length).toBeLessThanOrEqual(300);
+  });
+
+  it("a malformed answer stores a fixed description, never the model's raw text", async () => {
+    vi.mocked(classifyTransactionWithAi).mockRejectedValue(
+      new AIProviderError("malformed-response", "No object generated.", null, { providerMessage: 'Type validation failed: Value: {"accountCode":"6100","explanation":"director loan repayment for PICK N PAY"}' }),
+    );
+
+    await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    expect(recordedAttempts()[0]!.providerMessage).toBe("The provider's answer could not be parsed or did not match the expected format.");
+  });
+
+  it("a database error while building evidence never stores the transaction's details", async () => {
+    vi.mocked(buildTransactionClassificationEvidence).mockRejectedValue(new Error('invalid input syntax for type numeric: "PICK N PAY"'));
+
+    await classifyUnallocatedTransactionsWithAi("company-a", [501], "System");
+
+    expect(recordedAttempts()[0]!.providerMessage).not.toContain("PICK N PAY");
   });
 });

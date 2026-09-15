@@ -87,6 +87,28 @@ describe("classifyProviderError", () => {
     expect(classifyProviderError(new Error("No object generated: could not parse the response.")).code).toBe("malformed-response");
   });
 
+  // Migration 0099 — the real HTTP status decides, not message guessing,
+  // and it is kept on the error for the attempt log.
+  it("uses the real HTTP status of an API error and keeps it (401, 403 -> missing-api-key; 429 -> rate-limit; 5xx -> provider-error)", () => {
+    const apiError = (statusCode: number, message = "failed") => new APICallError({ message, url: "https://gateway.example", requestBodyValues: {}, statusCode });
+    expect(classifyProviderError(apiError(401))).toMatchObject({ code: "missing-api-key", httpStatus: 401 });
+    expect(classifyProviderError(apiError(403))).toMatchObject({ code: "missing-api-key", httpStatus: 403 });
+    expect(classifyProviderError(apiError(429))).toMatchObject({ code: "rate-limit", httpStatus: 429 });
+    expect(classifyProviderError(apiError(503))).toMatchObject({ code: "provider-error", httpStatus: 503 });
+    expect(classifyProviderError(apiError(402, "Insufficient funds"))).toMatchObject({ code: "provider-error", httpStatus: 402, providerMessage: "Insufficient funds" });
+  });
+
+  it("unwraps the SDK's RetryError and classifies its last real error", async () => {
+    const { RetryError } = await import("ai");
+    const last = new APICallError({ message: "Service Unavailable", url: "https://gateway.example", requestBodyValues: {}, statusCode: 503 });
+    const wrapped = new RetryError({ message: "Failed after 3 attempts", reason: "maxRetriesExceeded", errors: [last, last, last] });
+    expect(classifyProviderError(wrapped)).toMatchObject({ code: "provider-error", httpStatus: 503 });
+  });
+
+  it("a request that never got a response has no HTTP status", () => {
+    expect(classifyProviderError(new Error("fetch failed")).httpStatus).toBeNull();
+  });
+
   it("classifies an unrecognized error as a generic provider-error, without ever exposing the raw message as the code (provider failure)", () => {
     const classified = classifyProviderError(new Error("Something the provider's own internals raised."));
     expect(classified.code).toBe("provider-error");

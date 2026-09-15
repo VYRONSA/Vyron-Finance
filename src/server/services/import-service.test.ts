@@ -45,7 +45,7 @@ beforeEach(() => {
   vi.mocked(importRepo.ingestBankTransactionIdempotent).mockReset().mockResolvedValue({ transaction: { id: 501 } as never, created: true });
   vi.mocked(importRepo.insertImportBatch).mockReset().mockResolvedValue({ id: 1 } as never);
   vi.mocked(applyRulesToTransactions).mockReset().mockResolvedValue([{ autoPosted: false }] as never);
-  vi.mocked(classifyUnallocatedTransactionsWithAi).mockReset().mockResolvedValue({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 });
+  vi.mocked(classifyUnallocatedTransactionsWithAi).mockReset().mockResolvedValue({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 } as never);
   vi.mocked(recordUsageEvent).mockReset().mockResolvedValue(undefined as never);
 });
 

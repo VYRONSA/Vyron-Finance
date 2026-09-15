@@ -25,7 +25,7 @@ export type SchedulerHealth = "Healthy" | "Degraded" | "Down";
  * architecture change this phase's own instructions rule out) — this
  * only classifies the ALREADY-STORED summary object more honestly, for
  * both the per-task badge and the aggregate counters below to share. */
-export type AiSweepOutcomeCategory = "progress" | "no-eligible" | "rate-limited" | "no-confident-suggestion";
+export type AiSweepOutcomeCategory = "progress" | "no-eligible" | "rate-limited" | "no-confident-suggestion" | "provider-unavailable" | "daily-cap";
 
 function numberField(summary: Record<string, unknown>, key: string): number {
   const v = summary[key];
@@ -37,8 +37,13 @@ export function categorizeAiSweepRun(summary: Record<string, unknown>): AiSweepO
   const classified = numberField(summary, "classified");
   const autoAllocated = numberField(summary, "autoAllocated");
   const rateLimited = numberField(summary, "rateLimited");
-  if (attempted === 0) return "no-eligible";
+  const stoppedReason = summary.stoppedReason;
   if (classified > 0 || autoAllocated > 0) return "progress";
+  // Migration 0099 — a run the circuit breaker or the daily safety cap
+  // stopped is not "nothing eligible", even with zero attempts.
+  if (stoppedReason === "provider_failure" || stoppedReason === "circuit_open") return "provider-unavailable";
+  if (stoppedReason === "daily_cap") return "daily-cap";
+  if (attempted === 0) return "no-eligible";
   if (rateLimited > 0) return "rate-limited";
   return "no-confident-suggestion";
 }

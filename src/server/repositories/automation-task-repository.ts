@@ -98,6 +98,31 @@ export async function setTaskStatus(companyId: string, taskId: number, status: A
   if (error) throw error;
 }
 
+/** Migration 0099 — the scheduler has exhausted this task's retries:
+ * stop it (`listDueTasks` never selects `Suspended` or inactive tasks) and
+ * record why. Only an explicit Resume makes it runnable again. */
+export async function suspendTask(companyId: string, taskId: number, reason: string, suspendedAtIso: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("automation_tasks")
+    .update({ status: "Suspended", is_active: false, suspended_reason: reason.slice(0, 1000), suspended_at: suspendedAtIso })
+    .eq("company_id", companyId)
+    .eq("id", taskId);
+  if (error) throw error;
+}
+
+/** A person resumes a Paused/Suspended/Disabled task: runnable again, with
+ * a fresh retry budget and the suspension cleared. */
+export async function resumeAutomationTask(companyId: string, taskId: number): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("automation_tasks")
+    .update({ status: "Queued", is_active: true, retry_count: 0, suspended_reason: null, suspended_at: null })
+    .eq("company_id", companyId)
+    .eq("id", taskId);
+  if (error) throw error;
+}
+
 /** Atomic conditional claim, same pattern as
  * `transaction-explorer-repository.ts::applyAiClassification` and
  * `communication-repository.ts::claimCommunicationForSending` — the

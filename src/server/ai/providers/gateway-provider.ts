@@ -17,7 +17,7 @@
  * `ai` package's `generateObject` call happens entirely server-side.
  */
 
-import { APICallError, generateObject, jsonSchema, type JSONSchema7 } from "ai";
+import { APICallError, RetryError, generateObject, jsonSchema, type JSONSchema7 } from "ai";
 import { AIProviderError, type AIProvider, type ConversationTurn, type VyronAiStructuredResponse } from "../types";
 import { isValidVyronAiStructuredResponse } from "../response-validation";
 
@@ -111,22 +111,28 @@ function extractRetryAfterMs(error: unknown): number | null {
  * stack trace or vendor-specific error class. */
 export function classifyProviderError(error: unknown): AIProviderError {
   if (error instanceof AIProviderError) return error;
-  const message = error instanceof Error ? error.message : String(error);
-  const name = error instanceof Error ? error.name : "";
+  // The SDK wraps retried failures in a RetryError; the real failure is its lastError.
+  const cause = error instanceof RetryError ? error.lastError : error;
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const name = cause instanceof Error ? cause.name : "";
+  // Gateway and API-call errors carry the real HTTP status; prefer it to message matching.
+  const rawStatus = (cause as { statusCode?: unknown } | null)?.statusCode;
+  const httpStatus = typeof rawStatus === "number" && Number.isInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599 ? rawStatus : null;
+  const details = { httpStatus, providerMessage: message };
 
-  if (/AI_GATEWAY_API_KEY|api ?key|unauthorized|401/i.test(message)) {
-    return new AIProviderError("missing-api-key", "VYRON AI's provider is not configured (missing API key).");
+  if (httpStatus === 401 || httpStatus === 403 || (httpStatus === null && /AI_GATEWAY_API_KEY|api ?key|unauthorized|401/i.test(message))) {
+    return new AIProviderError("missing-api-key", "VYRON AI's provider is not configured (missing API key).", null, details);
   }
-  if (name === "AbortError" || name === "TimeoutError" || /aborted|timed? ?out/i.test(message)) {
-    return new AIProviderError("timeout", "VYRON AI's provider did not respond in time.");
+  if (httpStatus === 408 || name === "AbortError" || name === "TimeoutError" || /aborted|timed? ?out/i.test(message)) {
+    return new AIProviderError("timeout", "VYRON AI's provider did not respond in time.", null, details);
   }
-  if (/rate.?limit|429|too many requests/i.test(message)) {
-    return new AIProviderError("rate-limit", "VYRON AI's provider rate limit was reached.", extractRetryAfterMs(error));
+  if (httpStatus === 429 || /rate.?limit|429|too many requests/i.test(message)) {
+    return new AIProviderError("rate-limit", "VYRON AI's provider rate limit was reached.", extractRetryAfterMs(cause), details);
   }
-  if (/no object generated|schema|json|validation/i.test(message)) {
-    return new AIProviderError("malformed-response", "VYRON AI's provider returned a response that could not be understood.");
+  if (httpStatus === null && /no object generated|schema|json|validation/i.test(message)) {
+    return new AIProviderError("malformed-response", "VYRON AI's provider returned a response that could not be understood.", null, details);
   }
-  return new AIProviderError("provider-error", "VYRON AI's provider returned an error.");
+  return new AIProviderError("provider-error", "VYRON AI's provider returned an error.", null, details);
 }
 
 function toModelMessages(conversation: ConversationTurn[]) {

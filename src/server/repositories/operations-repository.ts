@@ -67,6 +67,54 @@ export async function createAlert(input: NewOperationsAlert): Promise<Operations
   return operationsAlertFromRow(data);
 }
 
+export type DeduplicatedAlert = { alertId: number; created: boolean; occurrenceCount: number };
+
+/** Migration 0099 — raises an alert, or, while an unresolved alert with
+ * the same `dedupeKey` exists for the company, bumps that alert's
+ * occurrence count instead of adding another row. */
+export async function raiseDeduplicatedAlert(input: {
+  companyId: string;
+  dedupeKey: string;
+  sourceEngine: string;
+  severity: EventSeverity;
+  title: string;
+  message?: string;
+  nowIso?: string;
+}): Promise<DeduplicatedAlert> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fn_raise_deduplicated_alert", {
+    p_company_id: input.companyId,
+    p_dedupe_key: input.dedupeKey,
+    p_source_engine: input.sourceEngine,
+    p_severity: input.severity,
+    p_title: input.title,
+    p_message: input.message ?? "",
+    p_now: input.nowIso ?? new Date().toISOString(),
+  });
+  if (error) throw error;
+  const r = data as { alert_id: number; created: boolean; occurrence_count: number };
+  return { alertId: Number(r.alert_id), created: r.created === true, occurrenceCount: Number(r.occurrence_count) };
+}
+
+/** Resolves the unresolved alert with this `dedupeKey`, if any; returns how many were resolved. */
+export async function resolveDeduplicatedAlert(companyId: string, dedupeKey: string, resolvedBy: string, nowIso?: string): Promise<number> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fn_resolve_deduplicated_alert", {
+    p_company_id: companyId,
+    p_dedupe_key: dedupeKey,
+    p_resolved_by: resolvedBy,
+    p_now: nowIso ?? new Date().toISOString(),
+  });
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+export async function linkAlertNotification(companyId: string, alertId: number, notificationId: number): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("operations_alerts").update({ related_notification_id: notificationId }).eq("company_id", companyId).eq("id", alertId);
+  if (error) throw error;
+}
+
 export async function updateAlertStatus(
   companyId: string,
   alertId: number,

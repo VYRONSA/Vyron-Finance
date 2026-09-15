@@ -101,10 +101,27 @@ export class AIProviderError extends Error {
    * default — never a guess dressed up as the provider's own
    * instruction. */
   readonly retryAfterMs: number | null;
-  constructor(code: AIProviderErrorCode, message: string, retryAfterMs: number | null = null) {
+  /** The provider's HTTP status when a response was received; `null` when
+   * the request failed before or without one (network, local config). */
+  readonly httpStatus: number | null;
+  /** The provider's own error text, UNSANITIZED — callers must pass it
+   * through `sanitizeProviderMessage` before storing, logging or returning it. */
+  readonly providerMessage: string | null;
+  /** True when the provider answered but VYRON's own validation rejected
+   * the answer (e.g. an account that was not one of the candidates). */
+  readonly validation: boolean;
+  constructor(
+    code: AIProviderErrorCode,
+    message: string,
+    retryAfterMs: number | null = null,
+    details: { httpStatus?: number | null; providerMessage?: string | null; validation?: boolean } = {},
+  ) {
     super(message);
     this.code = code;
     this.retryAfterMs = retryAfterMs;
+    this.httpStatus = details.httpStatus ?? null;
+    this.providerMessage = details.providerMessage ?? null;
+    this.validation = details.validation ?? false;
     this.name = "AIProviderError";
   }
 }

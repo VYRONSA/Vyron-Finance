@@ -11,6 +11,8 @@
 import { generateObject, jsonSchema, type JSONSchema7 } from "ai";
 import { DEFAULT_MODEL, REQUEST_TIMEOUT_MS, classifyProviderError } from "@/server/ai/providers/gateway-provider";
 import type { RawTransactionClassification, TransactionClassificationEvidence, TransactionClassificationProvider } from "../types";
+import { extractProviderUsage } from "../safety-policy";
+import { AIProviderError } from "@/server/ai/types";
 
 const CLASSIFICATION_JSON_SCHEMA: JSONSchema7 = {
   type: "object",
@@ -54,8 +56,16 @@ const SYSTEM_PROMPT = [
 export function createGatewayTransactionClassificationProvider(): TransactionClassificationProvider {
   return {
     async classify(evidence: TransactionClassificationEvidence) {
+      // Fail closed before any network activity: without the configured key
+      // the Gateway SDK would fall back to another credential (a Vercel OIDC
+      // token) and still send the request.
+      if (!process.env.AI_GATEWAY_API_KEY?.trim()) {
+        throw new AIProviderError("missing-api-key", "VYRON AI's provider is not configured (missing API key).", null, {
+          providerMessage: "AI_GATEWAY_API_KEY is not configured on this server; no request was sent.",
+        });
+      }
       try {
-        const { object } = await generateObject({
+        const { object, usage, providerMetadata } = await generateObject({
           model: process.env.VYRON_AI_MODEL || DEFAULT_MODEL,
           schema: classificationSchema(),
           schemaName: "TransactionClassification",
@@ -63,8 +73,12 @@ export function createGatewayTransactionClassificationProvider(): TransactionCla
           instructions: SYSTEM_PROMPT,
           messages: [{ role: "user" as const, content: `Transaction and candidate accounts (the ONLY accounts you may choose from), as JSON:\n${JSON.stringify(evidence)}` }],
           abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          // One attempt = exactly one provider request. The SDK's own default
+          // (2 silent retries) tripled requests on 429/5xx and made them
+          // invisible; retries are now the classification queue's decision.
+          maxRetries: 0,
         });
-        return object;
+        return { ...object, usage: extractProviderUsage(usage, providerMetadata) };
       } catch (error) {
         throw classifyProviderError(error);
       }

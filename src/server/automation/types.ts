@@ -71,7 +71,9 @@ export type GeneratedDocument = {
 };
 
 export type AutomationTaskType = "RecurringTemplate" | "RuleEngineRun" | "ReportRefresh" | "CommunicationQueue" | "Custom" | "SubscriptionLifecycleSweep" | "BankSync" | "AiClassificationSweep";
-export type AutomationTaskStatus = "Queued" | "Running" | "Success" | "Failed" | "Paused" | "Disabled";
+/** `Suspended` (migration 0099): the scheduler exhausted the task's
+ * retries; it does not run again until a person resumes it. */
+export type AutomationTaskStatus = "Queued" | "Running" | "Success" | "Failed" | "Paused" | "Disabled" | "Suspended";
 
 export type AutomationTask = {
   id: number;
@@ -88,6 +90,9 @@ export type AutomationTask = {
   maxRetries: number;
   isActive: boolean;
   createdAt: string;
+  /** Why the scheduler suspended the task (status `Suspended`). */
+  suspendedReason?: string | null;
+  suspendedAt?: string | null;
 };
 
 export type AutomationTaskRun = {

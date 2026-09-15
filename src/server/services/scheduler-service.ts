@@ -28,13 +28,14 @@ import { generateFromTemplate } from "@/server/services/recurring-template-servi
 import { runRuleEngine } from "@/server/services/rule-processing-service";
 import { processCommunicationQueue } from "@/server/services/communication-service";
 import { createNotification } from "@/server/services/notification-service";
-import { createAlert } from "@/server/services/operations-service";
+import { createAlert, linkAlertNotification, raiseDeduplicatedAlert, resolveDeduplicatedAlert } from "@/server/services/operations-service";
 import { runSubscriptionLifecycleSweep } from "@/server/billing-platform/engine/lifecycle-sweep-engine";
 import { syncAllConnectedAccounts } from "@/server/bank-connectivity/bank-sync-service";
-import { runAutomaticAiClassificationSweep } from "@/server/services/transaction-classification-service";
+import { runAutomaticAiClassificationSweep, type AutomaticClassificationSweepOutcome } from "@/server/services/transaction-classification-service";
 import { hasFeature } from "@/server/billing-platform/engine/feature-flag-engine";
 import { checkUsageLimit } from "@/server/billing-platform/engine/licensing-engine";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
+import { sanitizeProviderMessage } from "@/server/ai/transaction-classification/safety-policy";
 import type { AutomationTask, AutomationTaskStatus } from "@/server/automation/types";
 
 export class ValidationError extends Error {}
@@ -221,7 +222,7 @@ async function ensureAiClassificationSweepTaskSafely(companyId: string, nowIso: 
   }
 }
 
-async function runTask(companyId: string, task: AutomationTask, todayIso: string, performedBy: string, nowIso: string): Promise<{ status: AutomationTaskStatus; summary: Record<string, unknown> }> {
+async function runTask(companyId: string, task: AutomationTask, todayIso: string, performedBy: string, nowIso: string, taskRunId: number | null = null): Promise<{ status: AutomationTaskStatus; summary: Record<string, unknown> }> {
   if (task.taskType === "RecurringTemplate") {
     if (task.referenceId === null) throw new Error("RecurringTemplate task has no referenceId.");
     const template = await templateRepo.getRecurringTemplate(companyId, task.referenceId);
@@ -277,23 +278,154 @@ async function runTask(companyId: string, task: AutomationTask, todayIso: string
   }
 
   if (task.taskType === "AiClassificationSweep") {
-    // Phase 26E — same "throw only on a genuine total outage" precedent
-    // as BankSync immediately above: `runAutomaticAiClassificationSweep`
-    // never throws (a `noConfidentSuggestion`/`rateLimited`-only batch is
-    // a normal, healthy outcome, not a failure), so a whole-task failure
-    // is only ever raised here, from the aggregate outcome — every
-    // transaction attempted failing outright (e.g. a missing/invalid AI
-    // Gateway key) is the one case that should route through the real
-    // failed/retry/exhaustion-alert machinery, exactly like a total
-    // BankSync outage does.
-    const outcome = await runAutomaticAiClassificationSweep(companyId, performedBy);
-    if (outcome.attempted > 0 && outcome.failed === outcome.attempted) {
-      throw new Error(`AI Classification sweep failed for all ${outcome.attempted} attempted transaction(s).`);
+    // Migration 0099 — three kinds of problem, handled separately:
+    //  * AI/provider failures are the provider circuit breaker's job: the
+    //    batch stops, the circuit decides when to try again, and ONE
+    //    deduplicated alert reports it. The task itself did its job.
+    //  * Classification outcomes (no confidence, invalid answers) are the
+    //    queue's job: cooldown / human review per transaction.
+    //  * Only infrastructure failures (the safety store or every database
+    //    read/write failing) fail the task, so retries -> Suspended apply.
+    let outcome: AutomaticClassificationSweepOutcome;
+    try {
+      outcome = await runAutomaticAiClassificationSweep(companyId, performedBy, { taskRunId, nowIso });
+    } catch (err) {
+      // Stored in the run, the suspension reason and alerts: sanitized first.
+      throw new Error(`AI Classification sweep could not read its queue: ${sanitizeProviderMessage(err instanceof Error ? err.message : String(err)) ?? "unknown error"}`);
+    }
+    await reportAiSweepConditions(companyId, outcome, nowIso);
+    if (outcome.infrastructureFailure) {
+      throw new Error(
+        `AI Classification sweep could not run safely (${outcome.stoppedReason ?? "database failures"})${outcome.providerMessage ? `: ${outcome.providerMessage}` : ""}`,
+      );
     }
     return { status: "Success", summary: { ...outcome } };
   }
 
   return { status: "Success", summary: {} };
+}
+
+/** Alerts are raised once per condition and updated on repeats; a
+ * notification goes out when the alert is first raised, when it reaches
+ * this many occurrences (escalation) and on recovery — never every hour. */
+const ESCALATION_OCCURRENCES = 24;
+const AI_PROVIDER_ALERT_KEY = "ai-classification:provider-unavailable";
+const AI_DAILY_CAP_ALERT_KEY = "ai-classification:daily-cap";
+
+function taskFailureDedupeKey(taskId: number): string {
+  return `automation-task:${taskId}:failing`;
+}
+
+function describeAiSweepStop(outcome: AutomaticClassificationSweepOutcome): string {
+  const parts = [`Stopped: ${outcome.stoppedReason ?? "n/a"}.`];
+  if (outcome.errorCategory) parts.push(`Error category: ${outcome.errorCategory}${outcome.httpStatus ? ` (HTTP ${outcome.httpStatus})` : ""}.`);
+  if (outcome.providerMessage) parts.push(`Provider said: ${outcome.providerMessage}`);
+  if (outcome.circuitState) parts.push(`Circuit: ${outcome.circuitState}.`);
+  if (outcome.requestsToday !== null) parts.push(`Provider requests today: ${outcome.requestsToday}/${outcome.dailyCap}.`);
+  return parts.join(" ");
+}
+
+/** One deduplicated alert per condition for the AI sweep. Never throws. */
+async function reportAiSweepConditions(companyId: string, outcome: AutomaticClassificationSweepOutcome, nowIso: string): Promise<void> {
+  try {
+    if (outcome.stoppedReason === "provider_failure" || outcome.stoppedReason === "circuit_open") {
+      const title = "AI classification provider unavailable — classification requests are paused";
+      const message = describeAiSweepStop(outcome);
+      const alert = await raiseDeduplicatedAlert({ companyId, dedupeKey: AI_PROVIDER_ALERT_KEY, sourceEngine: "AI Classification", severity: "critical", title, message, nowIso });
+      if (alert.created || alert.occurrenceCount === ESCALATION_OCCURRENCES) {
+        const notification = await createNotification(companyId, {
+          notificationType: "AutomationFailure",
+          title: alert.created ? title : `AI classification provider still unavailable (${alert.occurrenceCount} checks)`,
+          message,
+          severity: "critical",
+          relatedType: "AiClassificationSweep",
+          relatedId: null,
+        });
+        if (alert.created) await linkAlertNotification(companyId, alert.alertId, notification.id);
+      }
+    } else if (outcome.providerRequests > 0) {
+      // The provider answered normally at least once: recovery.
+      const resolved = await resolveDeduplicatedAlert(companyId, AI_PROVIDER_ALERT_KEY, "AI Classification", nowIso);
+      if (resolved > 0) {
+        await createNotification(companyId, {
+          notificationType: "AutomationFailure",
+          title: "AI classification provider recovered",
+          message: "The AI provider is answering classification requests again.",
+          severity: "info",
+          relatedType: "AiClassificationSweep",
+          relatedId: null,
+        });
+      }
+    }
+
+    if (outcome.stoppedReason === "daily_cap") {
+      const title = `AI classification paused for today: internal safety cap of ${outcome.dailyCap} provider requests reached`;
+      const alert = await raiseDeduplicatedAlert({ companyId, dedupeKey: AI_DAILY_CAP_ALERT_KEY, sourceEngine: "AI Classification", severity: "warning", title, message: describeAiSweepStop(outcome), nowIso });
+      if (alert.created) {
+        const notification = await createNotification(companyId, { notificationType: "AutomationFailure", title, message: describeAiSweepStop(outcome), severity: "warning", relatedType: "AiClassificationSweep", relatedId: null });
+        await linkAlertNotification(companyId, alert.alertId, notification.id);
+      }
+    } else if (outcome.providerRequests > 0) {
+      await resolveDeduplicatedAlert(companyId, AI_DAILY_CAP_ALERT_KEY, "AI Classification", nowIso);
+    }
+  } catch {
+    // Never break the scheduler run over an alerting failure.
+  }
+}
+
+/** A task run failed. First failure of a streak: a warning notification.
+ * Retries exhausted: ONE deduplicated critical alert (a repeat after a
+ * manual resume updates it), with a notification when first raised and on
+ * escalation. Never throws. */
+async function reportTaskFailure(companyId: string, task: AutomationTask, retryCount: number, exhausted: boolean, errorMessage: string, nowIso: string): Promise<void> {
+  try {
+    if (exhausted) {
+      const title = `Automation task "${task.name}" suspended after ${retryCount} consecutive failure(s)`;
+      const alert = await raiseDeduplicatedAlert({ companyId, dedupeKey: taskFailureDedupeKey(task.id), sourceEngine: "Automation Scheduler", severity: "critical", title, message: errorMessage, nowIso });
+      if (alert.created || alert.occurrenceCount === ESCALATION_OCCURRENCES) {
+        const notification = await createNotification(companyId, {
+          notificationType: "AutomationFailure",
+          title: alert.created ? title : `Automation task "${task.name}" is still failing (${alert.occurrenceCount} occurrences)`,
+          message: errorMessage,
+          severity: "critical",
+          relatedType: task.taskType,
+          relatedId: task.referenceId,
+        });
+        if (alert.created) await linkAlertNotification(companyId, alert.alertId, notification.id);
+      }
+    } else if (retryCount === 1) {
+      await createNotification(companyId, {
+        notificationType: "AutomationFailure",
+        title: `Automation task "${task.name}" failed — retrying`,
+        message: errorMessage,
+        severity: "warning",
+        relatedType: task.taskType,
+        relatedId: task.referenceId,
+      });
+    }
+  } catch {
+    // Never break the scheduler run over a notification/alerting failure.
+  }
+}
+
+/** A task that had been failing (or was suspended) ran successfully again. Never throws. */
+async function reportTaskRecovery(companyId: string, task: AutomationTask, nowIso: string): Promise<void> {
+  if (task.retryCount === 0 && task.status !== "Suspended") return;
+  try {
+    const resolved = await resolveDeduplicatedAlert(companyId, taskFailureDedupeKey(task.id), "Automation Scheduler", nowIso);
+    if (resolved > 0 || task.retryCount > 0) {
+      await createNotification(companyId, {
+        notificationType: "AutomationFailure",
+        title: `Automation task "${task.name}" recovered`,
+        message: "The task ran successfully again.",
+        severity: "info",
+        relatedType: task.taskType,
+        relatedId: task.referenceId,
+      });
+    }
+  } catch {
+    // Never break the scheduler run over a notification/alerting failure.
+  }
 }
 
 export type SchedulerRunOutcome = { processed: number; succeeded: number; failed: number; deferred: number };
@@ -342,20 +474,10 @@ async function reclaimStaleRunningTasksSafely(companyId: string, nowIso: string)
       });
 
       if (reclaimed && exhausted) {
-        try {
-          const title = `Automation task "${task.name}" failed after ${retryCount} attempt(s)`;
-          const notification = await createNotification(companyId, {
-            notificationType: "AutomationFailure",
-            title,
-            message: stuckReason,
-            severity: "critical",
-            relatedType: task.taskType,
-            relatedId: task.referenceId,
-          });
-          await createAlert({ companyId, sourceEngine: "Automation Scheduler", severity: "critical", title, message: stuckReason, relatedNotificationId: notification.id });
-        } catch {
-          // Never break the scheduler run over a notification/alerting failure.
-        }
+        // Migration 0099 — exhausted retries suspend the task instead of
+        // letting it run forever at its normal cadence.
+        await taskRepo.suspendTask(companyId, task.id, stuckReason, nowIso);
+        await reportTaskFailure(companyId, task, retryCount, true, stuckReason, nowIso);
       }
     }
   } catch (err) {
@@ -425,7 +547,7 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
     const run = await taskRepo.startTaskRun(companyId, task.id);
     const start = performance.now();
     try {
-      const { status, summary } = await runTask(companyId, task, todayIso, performedBy, nowIso);
+      const { status, summary } = await runTask(companyId, task, todayIso, performedBy, nowIso, run.id);
       const durationMs = Math.round(performance.now() - start);
       await taskRepo.finishTaskRun(companyId, run.id, "Success", null, summary);
       await taskRepo.recordTaskOutcome(companyId, task.id, {
@@ -436,6 +558,7 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
         lastRunDurationMs: durationMs,
         retryCount: 0,
       });
+      await reportTaskRecovery(companyId, task, nowIso);
       // The Scheduler's own billing housekeeping (SubscriptionLifecycleSweep)
       // never counts against the company's own automation-runs usage —
       // metering it would be a self-referential trap (a company already
@@ -459,10 +582,10 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
       const retryCount = task.retryCount + 1;
       const exhausted = retryCount >= task.maxRetries;
       await taskRepo.recordTaskOutcome(companyId, task.id, {
-        status: "Failed",
-        // Retry sooner (5 minutes) until retries are exhausted, then fall
-        // back to the task's normal cadence so a permanently-broken
-        // template doesn't retry forever in a tight loop.
+        // Migration 0099 — exhausted retries SUSPEND the task (listDueTasks
+        // never selects Suspended); before, "exhausted" only switched to
+        // the normal cadence and the task kept failing forever.
+        status: exhausted ? "Suspended" : "Failed",
         nextRunAt: exhausted ? nextTaskRunAt(task, nowIso) : new Date(Date.parse(nowIso) + 5 * 60_000).toISOString(),
         lastRunAt: nowIso,
         lastRunStatus: "Failed",
@@ -470,32 +593,15 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
         retryCount,
       });
       if (exhausted) {
-        // Phase 25I — `createNotification` itself used to be unguarded
-        // here (only the subsequent `createAlert` was wrapped): a real,
-        // non-hypothetical failure (transient DB error, RLS
-        // misconfiguration) would throw straight out of this `catch`
-        // block, aborting `runDueTasks`'s `for` loop entirely — silently
-        // skipping every OTHER due task for this company that pass, for
-        // a reason having nothing to do with them. Same class of bug
-        // `ensureBankSyncTaskSafely`/`ensureRuleEngineTaskSafely` already
-        // guard against for the bootstrap calls above; extended here to
-        // this notification/alert pair too.
         try {
-          const notification = await createNotification(companyId, {
-            notificationType: "AutomationFailure",
-            title: `Automation task "${task.name}" failed after ${retryCount} attempt(s)`,
-            message: errorMessage,
-            severity: "critical",
-            relatedType: task.taskType,
-            relatedId: task.referenceId,
-          });
-          // RC1 Phase 6 — the same exhaustion moment that already creates
-          // a notification also raises a real Operations Centre alert.
-          await createAlert({ companyId, sourceEngine: "Automation Scheduler", severity: "critical", title: `Automation task "${task.name}" failed after ${retryCount} attempt(s)`, message: errorMessage, relatedNotificationId: notification.id });
+          await taskRepo.suspendTask(companyId, task.id, errorMessage, nowIso);
         } catch {
-          // Never break the scheduler run over a notification/alerting failure.
+          // The status is already Suspended; the reason is best-effort.
         }
       }
+      // Phase 25I — guarded: a notification/alert failure must never abort
+      // the rest of this company's due tasks.
+      await reportTaskFailure(companyId, task, retryCount, exhausted, errorMessage, nowIso);
       failed++;
     }
   }
@@ -525,7 +631,7 @@ function rateLimitedRescheduleDelayMs(summary?: Record<string, unknown>): number
   return Math.min(RATE_LIMIT_RESCHEDULE_CEILING_MS, Math.max(RATE_LIMIT_RESCHEDULE_FLOOR_MS, retryAfterMs));
 }
 
-function nextTaskRunAt(task: AutomationTask, nowIso: string, summary?: Record<string, unknown>): string {
+export function nextTaskRunAt(task: AutomationTask, nowIso: string, summary?: Record<string, unknown>): string {
   // RecurringTemplate tasks get their real next_run_at re-synced from the
   // template on the NEXT `syncRecurringTemplateTasks` pass (the template
   // itself already advanced past this run's date); the Communication
@@ -556,7 +662,11 @@ function nextTaskRunAt(task: AutomationTask, nowIso: string, summary?: Record<st
     const hasMoreEligible = summary?.hasMoreEligible === true;
     const rateLimited = typeof summary?.rateLimited === "number" && summary.rateLimited > 0;
     if (rateLimited) return new Date(Date.parse(nowIso) + rateLimitedRescheduleDelayMs(summary)).toISOString();
-    if (hasMoreEligible) return new Date(Date.parse(nowIso) + 2 * 60_000).toISOString();
+    // Migration 0099 — ONLY real progress (at least one suggestion saved)
+    // with more eligible work justifies coming back in 2 minutes. A batch
+    // of no-confidence answers or failures waits the normal hour; "still
+    // eligible" alone never re-asks the same transactions.
+    if (summary?.progress === true && hasMoreEligible) return new Date(Date.parse(nowIso) + 2 * 60_000).toISOString();
     return new Date(Date.parse(nowIso) + 60 * 60_000).toISOString();
   }
   return new Date(Date.parse(nowIso) + 60 * 60_000).toISOString();
@@ -569,7 +679,8 @@ export async function pauseTask(companyId: string, taskId: number): Promise<void
 export async function resumeTask(companyId: string, taskId: number): Promise<void> {
   const task = await taskRepo.getAutomationTask(companyId, taskId);
   if (!task) throw new NotFoundError(`No automation task with id ${taskId}.`);
-  await taskRepo.setTaskStatus(companyId, taskId, "Queued", true);
+  // A fresh retry budget and the suspension cleared — never automatic.
+  await taskRepo.resumeAutomationTask(companyId, taskId);
 }
 
 export async function disableTask(companyId: string, taskId: number): Promise<void> {
@@ -587,24 +698,28 @@ export async function runTaskNow(companyId: string, taskId: number, nowIso: stri
   // can't start this task running twice at once.
   const claimed = await taskRepo.claimTaskForRunning(companyId, task.id);
   if (!claimed) throw new ValidationError(`Task "${task.name}" is already running.`);
+  // A manual run of a task a person paused/disabled, or the scheduler
+  // suspended, never makes it scheduled again — that takes Resume.
+  const keepStoppedStatus = task.status === "Paused" || task.status === "Disabled" || task.status === "Suspended";
   const run = await taskRepo.startTaskRun(companyId, task.id);
   const start = performance.now();
   try {
-    const { status, summary } = await runTask(companyId, task, todayIso, performedBy, nowIso);
+    const { status, summary } = await runTask(companyId, task, todayIso, performedBy, nowIso, run.id);
     await taskRepo.finishTaskRun(companyId, run.id, "Success", null, summary);
     await taskRepo.recordTaskOutcome(companyId, task.id, {
-      status,
+      status: keepStoppedStatus ? task.status : status,
       nextRunAt: nextTaskRunAt(task, nowIso, summary),
       lastRunAt: nowIso,
       lastRunStatus: "Success",
       lastRunDurationMs: Math.round(performance.now() - start),
-      retryCount: 0,
+      retryCount: keepStoppedStatus ? task.retryCount : 0,
     });
+    if (!keepStoppedStatus) await reportTaskRecovery(companyId, task, nowIso);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error.";
     await taskRepo.finishTaskRun(companyId, run.id, "Failed", errorMessage, {});
     await taskRepo.recordTaskOutcome(companyId, task.id, {
-      status: "Failed",
+      status: keepStoppedStatus ? task.status : "Failed",
       nextRunAt: nextTaskRunAt(task, nowIso),
       lastRunAt: nowIso,
       lastRunStatus: "Failed",

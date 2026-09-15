@@ -14,7 +14,7 @@ import { categorizeAiSweepRun } from "@/server/services/automation-dashboard-sum
 import { formatDateTime } from "@/lib/format";
 
 const STATUS_TONE: Record<string, "good" | "warn" | "danger" | "muted" | "info"> = {
-  Queued: "info", Running: "info", Success: "good", Failed: "danger", Paused: "muted", Disabled: "muted",
+  Queued: "info", Running: "info", Success: "good", Failed: "danger", Paused: "muted", Disabled: "muted", Suspended: "danger",
 };
 
 /** Phase 29C — "Success" alone previously meant three different things
@@ -31,6 +31,8 @@ function taskBadge(task: AutomationTask, lastRun: AutomationTaskRun | undefined)
     if (category === "no-eligible") return { label: "No eligible transactions", tone: "muted" };
     if (category === "rate-limited") return { label: "Rate limited", tone: "warn" };
     if (category === "no-confident-suggestion") return { label: "No confident suggestions", tone: "info" };
+    if (category === "provider-unavailable") return { label: "AI provider unavailable", tone: "danger" };
+    if (category === "daily-cap") return { label: "Daily AI safety cap reached", tone: "warn" };
   }
   return { label: task.status, tone: STATUS_TONE[task.status] ?? "muted" };
 }
@@ -93,7 +95,7 @@ function TaskRow({ task, companyId, previewMode, lastRun }: { task: AutomationTa
       <TableCell>
         <div className="flex flex-wrap justify-end gap-1.5">
           <Button variant="subtle" size="sm" disabled={previewMode || loading} title={disabledTitle} onClick={() => act("run-now")}>Run Now</Button>
-          {task.status === "Paused" ? (
+          {task.status === "Paused" || task.status === "Suspended" ? (
             <Button variant="subtle" size="sm" disabled={previewMode || loading} title={disabledTitle} onClick={() => act("resume")}>Resume</Button>
           ) : (
             <Button variant="subtle" size="sm" disabled={previewMode || loading} title={disabledTitle} onClick={() => act("pause")}>Pause</Button>

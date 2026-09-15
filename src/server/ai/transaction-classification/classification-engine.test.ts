@@ -61,6 +61,8 @@ describe("classifyTransactionWithAi — success", () => {
       confidenceLevel: "High",
       explanation: "Matches a known grocery merchant.",
       modelUsed: "openai/gpt-4o-mini",
+      // Migration 0099 — usage is only what the provider reported (none here).
+      usage: null,
       // Phase 28 — `evidence()`'s default fixture has no
       // `companyHistoricalPatterns`, so accounting confidence correctly
       // falls back to the "no historical evidence" branch — capped at

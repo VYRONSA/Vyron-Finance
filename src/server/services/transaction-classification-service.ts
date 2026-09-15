@@ -6,161 +6,100 @@
  * (`applyAiClassification`). Never creates a journal, never touches
  * Banking Rules, Banking Exceptions, or the Posting Engine — every
  * suggestion/allocation this writes is read by all of those exactly the
- * way a Banking Rule's own GL-only match already is.
+ * way a Banking Rule's own GL-only match already is. AI classification
+ * only ever SUGGESTS an account: it never posts, reconciles, changes
+ * amounts/VAT/source data, deletes transactions or alters an existing
+ * allocation.
  *
- * PRECEDENCE MODEL (Phase 22A's own resolution of this ticket's section
- * 11): AI classification runs ONLY on a transaction the Rule Engine and
- * Matching Engine left completely untouched — see
- * `isEligibleForAiClassification` in `@/server/ai/transaction-classification/types`,
- * now the ONE shared eligibility check every caller uses (Phase 22B
- * extracted it there specifically so the client-side Transaction
- * Explorer UI and this server-side service never risk drifting apart).
+ * PRECEDENCE MODEL (Phase 22A): AI classification runs ONLY on a
+ * transaction the Rule Engine and Matching Engine left completely
+ * untouched — see `isEligibleForAiClassification` in
+ * `@/server/ai/transaction-classification/types`, the ONE shared
+ * eligibility check every caller uses.
  *
- * Phase 22B adds a second, explicitly user-triggered entry point —
- * `classifyTransactionsWithAiManual` — alongside the original automatic
- * one (`classifyUnallocatedTransactionsWithAi`, UNCHANGED behavior/
- * signature). Both share the same one-transaction-at-a-time core
- * (`classifyOne` below) rather than duplicating the classify/validate/
- * persist sequence twice. Billing feature/usage gating (hasFeature/
- * checkUsageLimit) is deliberately NOT done in this file — exactly like
- * `askCopilot` doesn't gate itself either — it happens at the route layer
- * (`transactions/bulk/route.ts`), keeping this service usable from any
- * caller without assuming a particular billing-gating point.
+ * Entry points: `classifyUnallocatedTransactionsWithAi` (automatic, after
+ * an import/bank sync, and the core of the sweep),
+ * `classifyTransactionsWithAiManual` (the user's explicit "Classify with
+ * AI", which is also the explicit "Retry AI" for a transaction the sweep
+ * has stopped selecting) and `runAutomaticAiClassificationSweep` (the
+ * scheduler's `AiClassificationSweep` task). All three reach the provider
+ * only through `runClassificationBatch`, and only after the gate.
  *
- * Phase 26A — AUTOMATIC ALLOCATION (Option 3, investigated and
- * implemented per that ticket's own Parts D/E). Before this phase, EVERY
- * successful classification — regardless of confidence — wrote
- * `allocation_status: 'Suggested'`; confidence was stored but never
- * acted on. Now `targetStatusFor()` below decides `'Allocated'` for a
- * genuinely High-confidence result (>=85, VYRON's own deterministic
- * threshold from `confidenceLevelFor()`, never the model's own opinion)
- * and `'Suggested'` for everything else (Medium confidence, or a defensive
- * fallback) — Low confidence (`accountCode === null`) still writes
- * nothing, exactly as before. This is purely a WRITE-TARGET decision on
- * top of the existing, unchanged classify/validate pipeline — the
- * hallucination defense (`classification-engine.ts`), the company-scoped
- * candidate-account allow-list (`evidence-builder.ts`), and the atomic,
- * narrow-eligibility RPC write (`fn_apply_ai_classification`, migration
- * 0083) are ALL unchanged from Phase 22A/25K; only which literal status
- * that RPC is told to write is new. AI still never creates or posts a
- * journal, still never runs on a transaction Rules/Matching already
- * touched, and still never overrides a manual action — automatic
- * allocation is not automatic posting.
+ * Phase 28 — High-confidence automatic allocation stays PAUSED
+ * (`AUTO_ALLOCATE_HIGH_CONFIDENCE`); accounting confidence, not the
+ * model's own confidence, decides whether a suggestion is written.
  *
- * Phase 26E — AUTOMATIC, UNATTENDED CLASSIFICATION. Before this phase,
- * every entry point here needed a caller-supplied `transactionIds` list —
- * fine for `import-service.ts`/`bank-sync-service.ts` (which always
- * already know exactly which rows they just created) and for the manual
- * "Classify with AI" UI action, but there was no path that could sweep
- * EXISTING/historical eligible transactions without a human selecting
- * them first. `runAutomaticAiClassificationSweep` below closes that gap —
- * it finds its own candidates (`listAiClassificationEligibleTransactions`,
- * a query-level restatement of the exact same `isEligibleForAiClassification`
- * check, never a second eligibility definition) and hands them to the
- * SAME `classifyUnallocatedTransactionsWithAi` every other automatic path
- * already uses. It is wired into the existing Automation Scheduler
- * (`scheduler-service.ts`, task type `AiClassificationSweep`) as a
- * standing, self-healing, bounded-batch task — the same architecture
- * `RuleEngineRun`'s recovery sweep already established, not a new
- * execution mechanism. This phase also added rate-limit-aware early
- * stopping to both existing loops below (`classifyUnallocatedTransactionsWithAi`/
- * `classifyTransactionsWithAiManual`): a provider rate-limit no longer
- * gets treated as an ordinary per-transaction failure that the loop
- * simply continues past (which would hammer an already-rate-limited
- * provider on every remaining transaction) — it now stops the current
- * batch immediately, leaving every untried transaction exactly as
- * eligible as before, for the next run to pick up.
+ * AI SAFETY (migration 0099, after the 2026-09-15 production
+ * investigation — the sweep had re-asked the AI about the same 20
+ * transactions every ~2 minutes, ~11,000 requests/day):
+ *  - Before EVERY provider request the gate is checked for that
+ *    transaction: automatic paths skip a transaction in cooldown, awaiting
+ *    human review or already resolved; while the provider circuit is open
+ *    nothing is sent (except one probe when due); and one of the company's
+ *    `AI_PROVIDER_DAILY_REQUEST_CAP` daily requests is reserved atomically.
+ *    Only an explicit allow/probe decision lets a request through.
+ *  - Every attempt is recorded (`ai_classification_attempts`) with its
+ *    outcome, error category, HTTP status, sanitized provider message and
+ *    any usage the provider reported; each actual provider request also
+ *    counts in the internal `ai_provider_requests` metric.
+ *  - Each transaction's queue state is updated with the attempt: a first
+ *    no-confidence/invalid answer puts it into a 7-day cooldown, a second
+ *    one into "needs human review" (never selected automatically again).
+ *  - The first provider-level failure (auth/config, timeout, 5xx/network,
+ *    429) stops the batch — the remaining transactions are not sent.
+ *  - If the safety store can't be reached or an attempt can't be
+ *    recorded, nothing more is sent (fail closed).
  */
 
-import { getTransactionsByIds, applyAiClassification, listAiClassificationEligibleTransactions } from "@/server/repositories/transaction-explorer-repository";
+import { getTransactionsByIds, applyAiClassification } from "@/server/repositories/transaction-explorer-repository";
 import { buildTransactionClassificationEvidence } from "@/server/ai/transaction-classification/evidence-builder";
 import { classifyTransactionWithAi, getDefaultTransactionClassificationProvider } from "@/server/ai/transaction-classification/classification-engine";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
 import { isEligibleForAiClassification } from "@/server/ai/transaction-classification/types";
-import { AIProviderError } from "@/server/ai/types";
 import { isHeldForHumanReview, type BankTransactionRecord } from "@/server/accounting/types";
 import type { TransactionClassificationProvider, TransactionClassificationResult } from "@/server/ai/transaction-classification/types";
+import {
+  gateAiProviderRequest,
+  listAiClassificationSweepCandidates,
+  recordAiClassificationAttempt,
+} from "@/server/repositories/ai-classification-safety-repository";
+import {
+  AI_PROVIDER_DAILY_REQUEST_CAP,
+  classifyClassificationFailure,
+  sanitizeProviderMessage,
+  type AttemptOutcome,
+  type AttemptSource,
+  type CircuitSignal,
+  type ProviderErrorCategory,
+  type ProviderUsage,
+} from "@/server/ai/transaction-classification/safety-policy";
 
-/** Bounds cost/latency per run (this ticket's own section 13/16: "Do not
- * call the AI model unnecessarily" / "Do not permit uncontrolled AI
- * spending"). Phase 22B reuses this SAME cap for the manual action
- * rather than inventing a second number — there is no reason a
- * user-triggered batch should be allowed to be larger than the
- * already-established safe size, and one shared constant is one fewer
- * thing to keep in sync. Exported so the API route can compute the
- * combined batch/usage-limit cap without guessing this value. */
+/** Bounds cost/latency per run. Shared by the automatic paths and the
+ * manual action. Exported so the API route can compute the combined
+ * batch/usage-limit cap without guessing this value. */
 export const MAX_AI_CLASSIFICATIONS_PER_RUN = 20;
 
 type ClassifyOneStatus = "classified" | "allocated" | "no-confident-suggestion" | "failed" | "rate-limited";
 
-/** Phase 28, Part 1 — PRODUCTION SAFETY PAUSE, temporary and reversible.
- * The Phase 28 forensic investigation found the model's self-reported
- * `confidence` (what `targetStatusFor` below has always gated automatic
- * allocation on) measures the model's own certainty in its answer, NOT
- * VYRON's accounting confidence that the answer is correct — see the
- * full report for evidence (repeated over-selection of 6100 Bank
- * Charges at self-reported confidences of 85-95%). Automatically
- * writing `allocation_status: 'Allocated'` on that signal alone is, as
- * of this investigation, not yet trustworthy.
- *
- * Set this to `false` to restore the pre-Phase-28 behavior (High
- * confidence -> immediate `'Allocated'`) once a real accounting-evidence-
- * based decision framework (the Phase 28 report's Part 7/8 proposal)
- * replaces raw model confidence as the automation gate. This is the
- * ONLY change Part 1 makes: no existing data touched, no journal
- * created, Banking Rules and Matching completely untouched, and every
- * transaction the AI would have Allocated is instead written exactly as
- * `'Suggested'` already is today for Medium confidence — same write
- * path, same audit trail, just requiring the human Accept step this
- * investigation found necessary. */
+/** Phase 28, Part 1 — PRODUCTION SAFETY PAUSE, temporary and reversible:
+ * the model's self-reported confidence is not VYRON's accounting
+ * confidence, so a High result is written as 'Suggested', never an
+ * unattended 'Allocated'. */
 const AUTO_ALLOCATE_HIGH_CONFIDENCE = false;
 
-/** Phase 26A — Option 3 (investigated per this ticket's own Part D):
- * automatic allocation is permitted ONLY for a genuinely High-confidence
- * classification (VYRON's own deterministic `confidenceLevelFor()`
- * threshold, >=85 — never the model's own stated opinion of "high").
- * Medium and Low confidence are UNCHANGED from the original Phase 22A
- * behavior — Medium still writes `'Suggested'` for human review, Low
- * (`accountCode === null`) still writes nothing at all. This is the
- * ONLY place that decision is made; `applyAiClassification`'s repository
- * layer stays a pure write path with no confidence policy of its own
- * (mirrors this codebase's own "TypeScript decides business logic, the
- * RPC only performs the atomic write" separation, e.g. `runTask`'s task-
- * type dispatch deciding retry policy, never the DB layer). */
-/** Phase 28 — now driven by `accountingConfidence.accountingConfidenceLevel`
- * (`accounting-confidence.ts`), NOT the model's own raw `confidenceLevel`.
- * The forensic report's central finding was exactly that these two are
- * not the same claim — see that module's own docstring. Signature
- * otherwise unchanged: still the ONE place this decision is made,
- * `applyAiClassification` remains a pure write path with no confidence
- * policy of its own. */
 function targetStatusFor(accountingConfidenceLevel: TransactionClassificationResult["accountingConfidence"]["accountingConfidenceLevel"]): "Suggested" | "Allocated" {
   return accountingConfidenceLevel === "High" && AUTO_ALLOCATE_HIGH_CONFIDENCE ? "Allocated" : "Suggested";
 }
 
-/** Phase 28, Part 8 — "A correct Unallocated/Suggested transaction is
- * acceptable. A confidently wrong automatic allocation is not... If the
- * evidence is insufficient, [the system] must decline to allocate it."
- * Low accounting confidence — genuinely weak/no historical evidence, an
- * ambiguous candidate set, or (worse) a model answer that actively
- * CONTRADICTS this company's own strong confirmed history — is now
- * treated the same as "no confident suggestion": nothing is written,
- * the transaction is left genuinely Unallocated for a human to decide,
- * rather than cluttering the review queue with a low-quality guess. */
+/** Phase 28, Part 8 — Low accounting confidence is treated exactly like
+ * "no confident suggestion": nothing is written. */
 function isAccountingConfidenceSufficientToSuggest(accountingConfidenceLevel: TransactionClassificationResult["accountingConfidence"]["accountingConfidenceLevel"]): boolean {
   return accountingConfidenceLevel !== "Low";
 }
 
-/** Phase 28, Part 11 — "The AI explanation should eventually be able to
- * say things like: 'Similar FNB online-banking payments to named
- * individuals have historically been allocated to Salaries & Wages by
- * this company.' ... Add tests preventing the bad interpretation." The
- * PRIMARY stored explanation is always the accounting-evidence-based
- * one (`accountingConfidence.explanation`) — the model's own raw
- * narration-based reasoning (the exact class of text that caused the
- * Phase 28 production defect) is NEVER the primary explanation, and is
- * only ever appended, clearly labelled as unverified, when there's
- * genuinely no strong company evidence to lean on instead. */
+/** Phase 28, Part 11 — the stored explanation leads with the
+ * accounting-evidence reasoning; the model's own reasoning is only
+ * appended, labelled as unverified, when there is no strong evidence. */
 function explanationFor(result: TransactionClassificationResult): string {
   const { accountingConfidence } = result;
   if (accountingConfidence.evidenceStrength === "None" || accountingConfidence.evidenceStrength === "Weak") {
@@ -169,159 +108,338 @@ function explanationFor(result: TransactionClassificationResult): string {
   return accountingConfidence.explanation;
 }
 
-/** Phase 26I — `classifyOne`'s result plus, on a rate-limit, whatever
- * real cooldown the provider itself stated (see `extractRetryAfterMs` in
- * `gateway-provider.ts`). Carried up to `ClassifyTransactionsOutcome` so
- * the Scheduler can reschedule the NEXT sweep precisely instead of
- * guessing — see `scheduler-service.ts::nextTaskRunAt`. `null` (not the
- * absence of the field) when rate-limited but no header was present, so
- * callers can distinguish "provider gave no guidance, use our own
- * conservative default" from "not rate-limited at all." */
-type ClassifyOneOutcome = { status: ClassifyOneStatus; retryAfterMs: number | null };
+function errorMessageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-/** The single-transaction core both entry points below share — classify,
- * validate (via `classifyTransactionWithAi`'s own hallucination defense),
- * persist on a real suggestion or automatic allocation, record usage
- * ONLY on that same success path (this ticket's section 7 decision — see
- * the completion report), and never throw: every failure mode collapses
- * to `"failed"`, leaving the transaction exactly as it was. */
-async function classifyOne(companyId: string, transaction: BankTransactionRecord, provider: TransactionClassificationProvider, performedBy: string): Promise<ClassifyOneOutcome> {
+/** The transaction's own details, removed from any error text we keep. */
+function sensitiveValuesOf(transaction: BankTransactionRecord): string[] {
+  return [transaction.description, transaction.beneficiary, transaction.reference].filter((v): v is string => typeof v === "string" && v.trim().length >= 4);
+}
+
+/** Everything one attempt produced — what gets recorded and tallied. */
+type AttemptResult = {
+  status: ClassifyOneStatus;
+  outcome: AttemptOutcome;
+  providerRequestMade: boolean;
+  /** Stop the batch: the next request would very likely fail the same way. */
+  providerLevelFailure: boolean;
+  circuitSignal: CircuitSignal;
+  errorCategory: ProviderErrorCategory | null;
+  httpStatus: number | null;
+  /** Sanitized. */
+  providerMessage: string | null;
+  /** Bounded. */
+  retryAfterMs: number | null;
+  usage: ProviderUsage | null;
+  model: string | null;
+};
+
+/** One transaction: build evidence, ask the provider once, validate, and
+ * write a suggestion when accounting confidence allows. Never throws —
+ * every failure becomes a categorized result. */
+async function classifyOne(companyId: string, transaction: BankTransactionRecord, provider: TransactionClassificationProvider, performedBy: string): Promise<AttemptResult> {
+  const sensitive = sensitiveValuesOf(transaction);
+  const base: AttemptResult = {
+    status: "failed",
+    outcome: "provider_error",
+    providerRequestMade: false,
+    providerLevelFailure: false,
+    circuitSignal: "none",
+    errorCategory: null,
+    httpStatus: null,
+    providerMessage: null,
+    retryAfterMs: null,
+    usage: null,
+    model: process.env.VYRON_AI_MODEL || "openai/gpt-4o-mini",
+  };
+
+  let evidence;
   try {
-    const evidence = await buildTransactionClassificationEvidence(companyId, transaction);
-    const result = await classifyTransactionWithAi(provider, evidence);
+    evidence = await buildTransactionClassificationEvidence(companyId, transaction);
+  } catch (error) {
+    // No provider request was made: a database/evidence failure is never
+    // counted as one.
+    return { ...base, outcome: "evidence_error", providerMessage: sanitizeProviderMessage(errorMessageOf(error), sensitive) };
+  }
 
-    if (result.accountCode === null) return { status: "no-confident-suggestion", retryAfterMs: null };
+  let result: TransactionClassificationResult;
+  try {
+    result = await classifyTransactionWithAi(provider, evidence);
+  } catch (error) {
+    const failure = classifyClassificationFailure(error, sensitive);
+    const invalid = failure.category === "malformed-response" || failure.category === "invalid-suggestion";
+    return {
+      ...base,
+      status: failure.category === "rate-limit" ? "rate-limited" : "failed",
+      outcome: invalid ? "invalid_response" : "provider_error",
+      providerRequestMade: failure.providerRequestMade,
+      providerLevelFailure: failure.providerLevel,
+      circuitSignal: failure.circuitSignal,
+      errorCategory: failure.category,
+      httpStatus: failure.httpStatus,
+      providerMessage: failure.providerMessage,
+      retryAfterMs: failure.retryAfterMs,
+    };
+  }
 
-    // Phase 28, Part 8 — accounting confidence, not the model's own raw
-    // confidence, decides whether this is even worth surfacing at all.
-    if (!isAccountingConfidenceSufficientToSuggest(result.accountingConfidence.accountingConfidenceLevel)) {
-      return { status: "no-confident-suggestion", retryAfterMs: null };
-    }
+  const answered: AttemptResult = { ...base, providerRequestMade: true, circuitSignal: "success", usage: result.usage ?? null, model: result.modelUsed };
 
-    const targetStatus = targetStatusFor(result.accountingConfidence.accountingConfidenceLevel);
+  if (result.accountCode === null || !isAccountingConfidenceSufficientToSuggest(result.accountingConfidence.accountingConfidenceLevel)) {
+    return { ...answered, status: "no-confident-suggestion", outcome: "no_confidence" };
+  }
+
+  const targetStatus = targetStatusFor(result.accountingConfidence.accountingConfidenceLevel);
+  try {
     await applyAiClassification(
       companyId,
       transaction.id,
       { suggestedGlAccount: result.accountCode, confidence: result.confidence, explanation: explanationFor(result), modelUsed: result.modelUsed, targetStatus },
       performedBy,
     );
-    // Recorded ONLY on a real, persisted suggestion/allocation — matching
-    // the exact convention `copilot/ask/route.ts` already established
-    // (usage is recorded after `askCopilot` succeeds, never before,
-    // never on failure). A "no confident suggestion" or a failed
-    // provider call never consumed anything real, so it never consumes
-    // usage either.
-    await recordUsageEvent(companyId, "ai_requests").catch(() => {});
-    return { status: targetStatus === "Allocated" ? "allocated" : "classified", retryAfterMs: null };
   } catch (error) {
-    // Phase 26E — a provider rate-limit is not an ordinary per-transaction
-    // failure: it means every SUBSEQUENT call in this same batch is
-    // likely to fail the exact same way, so the caller needs to know to
-    // stop attempting more rather than treat this like any other single
-    // bad transaction and continue hammering the provider.
-    if (error instanceof AIProviderError && error.code === "rate-limit") return { status: "rate-limited", retryAfterMs: error.retryAfterMs };
-    return { status: "failed", retryAfterMs: null };
+    // The provider answered (a real request); the write lost a race or failed.
+    return { ...answered, status: "failed", outcome: "write_error", providerMessage: sanitizeProviderMessage(errorMessageOf(error), sensitive) };
   }
+  // Customer-facing `ai_requests` metering is unchanged by the safety work
+  // (a separate policy decision); the internal provider-request count is
+  // recorded with the attempt instead.
+  await recordUsageEvent(companyId, "ai_requests").catch(() => {});
+  return { ...answered, status: targetStatus === "Allocated" ? "allocated" : "classified", outcome: targetStatus === "Allocated" ? "allocated" : "suggested" };
+}
+
+export type ClassificationRunOptions = {
+  /** Which path is asking — recorded with every attempt. Default "import". */
+  source?: AttemptSource;
+  /** The scheduler run this attempt belongs to, when there is one. */
+  taskRunId?: number | null;
+  /** Injectable clock (tests, and one timestamp per scheduler pass). */
+  nowIso?: string;
+};
+
+/** Why a batch stopped before trying every candidate, if it did. */
+export type ClassificationStopReason = "circuit_open" | "daily_cap" | "provider_failure" | "rate_limited" | "safety_unavailable" | "recording_failed";
+
+type BatchRun = {
+  attempts: { transaction: BankTransactionRecord; result: AttemptResult }[];
+  /** Transactions the gate held back (cooldown, human review, resolved) — never sent. */
+  heldIds: number[];
+  stoppedReason: ClassificationStopReason | null;
+  initialRequestsToday: number | null;
+  dailyCap: number;
+  circuitState: "open" | "closed" | null;
+  infrastructureMessage: string | null;
+};
+
+/** The shared loop: gate → one request → record, stopping at the first
+ * provider-level failure, rate limit, open circuit, daily cap, or any
+ * failure of the safety store itself. The ONLY place a classification
+ * provider is called. */
+async function runClassificationBatch(
+  companyId: string,
+  transactions: BankTransactionRecord[],
+  provider: TransactionClassificationProvider,
+  performedBy: string,
+  options: ClassificationRunOptions,
+): Promise<BatchRun> {
+  const nowIso = options.nowIso ?? new Date().toISOString();
+  const source = options.source ?? "import";
+  const batch: BatchRun = { attempts: [], heldIds: [], stoppedReason: null, initialRequestsToday: null, dailyCap: AI_PROVIDER_DAILY_REQUEST_CAP, circuitState: null, infrastructureMessage: null };
+
+  for (const transaction of transactions) {
+    let gate;
+    try {
+      gate = await gateAiProviderRequest(companyId, transaction.id, source, nowIso);
+    } catch (error) {
+      batch.stoppedReason = "safety_unavailable";
+      batch.infrastructureMessage = sanitizeProviderMessage(errorMessageOf(error));
+      break;
+    }
+    batch.dailyCap = gate.dailyCap;
+    if (gate.decision === "held") {
+      batch.heldIds.push(transaction.id);
+      continue;
+    }
+    if (gate.circuitState) batch.circuitState = gate.circuitState;
+    if (batch.initialRequestsToday === null && gate.requestsToday !== null) batch.initialRequestsToday = gate.requestsToday;
+    if (gate.decision === "circuit_open") {
+      batch.stoppedReason = "circuit_open";
+      break;
+    }
+    if (gate.decision === "daily_cap") {
+      batch.stoppedReason = "daily_cap";
+      break;
+    }
+    // Fail closed: only an explicit allow or probe ever reaches the provider.
+    if (gate.decision !== "allow" && gate.decision !== "probe") {
+      batch.stoppedReason = "safety_unavailable";
+      batch.infrastructureMessage = "The AI classification gate returned an unexpected decision.";
+      break;
+    }
+
+    const started = performance.now();
+    const result = await classifyOne(companyId, transaction, provider, performedBy);
+    const durationMs = performance.now() - started;
+    batch.attempts.push({ transaction, result });
+
+    try {
+      const recorded = await recordAiClassificationAttempt({
+        companyId,
+        transactionId: transaction.id,
+        taskRunId: options.taskRunId ?? null,
+        source,
+        outcome: result.outcome,
+        providerRequestMade: result.providerRequestMade,
+        model: result.model,
+        errorCategory: result.errorCategory,
+        httpStatus: result.httpStatus,
+        providerMessage: result.providerMessage,
+        usage: result.usage,
+        durationMs,
+        performedBy,
+        circuitSignal: result.circuitSignal,
+        nowIso,
+        probe: gate.decision === "probe",
+      });
+      batch.circuitState = recorded.circuitState;
+    } catch (error) {
+      // Without a recorded attempt the queue can't move on — never keep sending.
+      batch.stoppedReason = "recording_failed";
+      batch.infrastructureMessage = sanitizeProviderMessage(errorMessageOf(error));
+      break;
+    }
+
+    if (result.status === "rate-limited") {
+      batch.stoppedReason = "rate_limited";
+      break;
+    }
+    if (result.providerLevelFailure) {
+      batch.stoppedReason = "provider_failure";
+      break;
+    }
+  }
+
+  return batch;
 }
 
 export type ClassifyTransactionsOutcome = {
   attempted: number;
-  /** Written `allocation_status: 'Suggested'` — Medium confidence, or
-   * `confidenceLevel` unavailable (defensive). Unchanged meaning from
-   * before Phase 26A — a High-confidence result is counted in
-   * `autoAllocated` below instead, never double-counted here. */
+  /** Written `allocation_status: 'Suggested'`. */
   classified: number;
-  /** Phase 26A — written `allocation_status: 'Allocated'` directly (High
-   * confidence, >=85, VYRON's own deterministic threshold). A real
-   * automatic allocation, not a suggestion — see `targetStatusFor`. */
+  /** Written `allocation_status: 'Allocated'` (currently paused, Phase 28). */
   autoAllocated: number;
-  /** A transaction the model honestly couldn't confidently classify
-   * (`accountCode: null`) — left `Unallocated`, not an error. */
+  /** The model answered but nothing confident enough to write. */
   noConfidentSuggestion: number;
-  /** A transaction skipped because a provider/network call failed —
-   * left `Unallocated`. */
+  /** Every other non-success: invalid answers, provider failures, database failures. */
   failed: number;
-  /** Phase 26E — the provider returned a rate-limit error. Counted
-   * separately from `failed` so a caller can tell "the AI is broken" (many
-   * `failed`) apart from "we're going too fast" (any `rateLimited` at
-   * all) — the latter is an expected, transient condition the next
-   * scheduled run resolves on its own, never grounds for an alert. Once
-   * this hits >0 in a given call, the loop below stops attempting further
-   * transactions in THIS batch — every transaction after the rate-limited
-   * one was never attempted at all, and remains exactly as eligible as
-   * before. */
+  /** The provider rate-limited us; the batch stopped. */
   rateLimited: number;
-  /** Phase 26I — the real, provider-stated cooldown (from a `Retry-After`
-   * response header), in milliseconds, when `rateLimited > 0` AND the
-   * provider actually supplied one. Absent (not merely `null`) whenever
-   * there's no real number to report — a batch that never rate-limited,
-   * or one that did but got no such header from the provider —
-   * specifically so this never breaks a pre-existing exact
-   * `toEqual({...})` assertion elsewhere in this codebase. Never present
-   * at all on `classifyTransactionsWithAiManual`'s `ManualClassifyOutcome`,
-   * which doesn't reschedule anything and has no use for it. */
+  /** The provider's own Retry-After, when it gave one — bounded to 15 s–5 min. */
   retryAfterMs?: number;
+  /** Requests that actually reached the provider (the internal metric). */
+  providerRequests: number;
+  invalidResponses: number;
+  providerFailures: number;
+  /** Evidence reads or suggestion writes that failed. */
+  databaseFailures: number;
+  /** Transactions the gate held back (cooldown, human review, resolved); never sent. */
+  heldByQueue: number;
+  stoppedReason: ClassificationStopReason | null;
+  /** The most recent failure's details, sanitized. */
+  errorCategory: ProviderErrorCategory | null;
+  httpStatus: number | null;
+  providerMessage: string | null;
+  circuitState: "open" | "closed" | null;
+  /** This company's provider requests so far today (UTC), including this batch. */
+  requestsToday: number | null;
+  dailyCap: number;
+  /** The safety store could not be used, or every attempt failed on the database. */
+  infrastructureFailure: boolean;
 };
 
-/** Phase 22A's original entry point — called once, synchronously,
- * immediately after Banking Rules finish running on a freshly imported
- * batch (`import-service.ts`). UNCHANGED behavior and signature (this
- * ticket's section 15: "Do not remove or change Phase 22A's automatic
- * classification"). Never throws. Deliberately NOT gated by
- * hasFeature/checkUsageLimit — it already existed, ungated, before this
- * phase, and gating a background step of an already-successful import
- * would itself be the kind of change section 15 forbids. It still
- * contributes to the same `ai_requests` usage metric the new manual
- * path's usage check reads, so a company that exhausts its allowance via
- * automatic imports alone is correctly reflected there. */
-export async function classifyUnallocatedTransactionsWithAi(companyId: string, transactionIds: number[], performedBy = "VYRON AI"): Promise<ClassifyTransactionsOutcome> {
-  const outcome: ClassifyTransactionsOutcome = { attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 };
-  if (transactionIds.length === 0) return outcome;
+function emptyOutcome(): ClassifyTransactionsOutcome {
+  return {
+    attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0,
+    providerRequests: 0, invalidResponses: 0, providerFailures: 0, databaseFailures: 0, heldByQueue: 0,
+    stoppedReason: null, errorCategory: null, httpStatus: null, providerMessage: null,
+    circuitState: null, requestsToday: null, dailyCap: AI_PROVIDER_DAILY_REQUEST_CAP, infrastructureFailure: false,
+  };
+}
+
+function summarize(batch: BatchRun): ClassifyTransactionsOutcome {
+  const outcome = emptyOutcome();
+  outcome.stoppedReason = batch.stoppedReason;
+  outcome.circuitState = batch.circuitState;
+  outcome.dailyCap = batch.dailyCap;
+  outcome.heldByQueue = batch.heldIds.length;
+  let lastFailure: AttemptResult | null = null;
+
+  for (const { result } of batch.attempts) {
+    outcome.attempted += 1;
+    if (result.providerRequestMade) outcome.providerRequests += 1;
+    if (result.status === "classified") outcome.classified += 1;
+    else if (result.status === "allocated") outcome.autoAllocated += 1;
+    else if (result.status === "no-confident-suggestion") outcome.noConfidentSuggestion += 1;
+    else if (result.status === "rate-limited") {
+      outcome.rateLimited += 1;
+      if (result.retryAfterMs !== null) outcome.retryAfterMs = result.retryAfterMs;
+      lastFailure = result;
+    } else {
+      outcome.failed += 1;
+      if (result.outcome === "invalid_response") outcome.invalidResponses += 1;
+      else if (result.outcome === "evidence_error" || result.outcome === "write_error") outcome.databaseFailures += 1;
+      else outcome.providerFailures += 1;
+      lastFailure = result;
+    }
+  }
+
+  if (lastFailure) {
+    outcome.errorCategory = lastFailure.errorCategory;
+    outcome.httpStatus = lastFailure.httpStatus;
+    outcome.providerMessage = lastFailure.providerMessage;
+  }
+  if (batch.infrastructureMessage) outcome.providerMessage = batch.infrastructureMessage;
+  outcome.requestsToday = batch.initialRequestsToday === null ? null : batch.initialRequestsToday + outcome.providerRequests;
+  outcome.infrastructureFailure =
+    batch.stoppedReason === "safety_unavailable" ||
+    batch.stoppedReason === "recording_failed" ||
+    (outcome.attempted > 0 && outcome.databaseFailures === outcome.attempted);
+  return outcome;
+}
+
+/** Automatic classification of a given set of transactions — after an
+ * import/bank sync (source "import") and the core of the sweep. Never
+ * throws; the outcome says what happened and why it stopped. */
+export async function classifyUnallocatedTransactionsWithAi(
+  companyId: string,
+  transactionIds: number[],
+  performedBy = "VYRON AI",
+  options: ClassificationRunOptions = {},
+): Promise<ClassifyTransactionsOutcome> {
+  if (transactionIds.length === 0) return emptyOutcome();
 
   let transactions: BankTransactionRecord[];
   try {
     transactions = await getTransactionsByIds(companyId, transactionIds);
   } catch {
-    return outcome;
+    return emptyOutcome();
   }
 
-  const eligible = transactions.filter(isEligibleForAiClassification).slice(0, MAX_AI_CLASSIFICATIONS_PER_RUN);
-  if (eligible.length === 0) return outcome;
+  // Keep the caller's order — for the sweep that is the queue's priority order.
+  const byId = new Map(transactions.map((t) => [t.id, t]));
+  const ordered = transactionIds.map((id) => byId.get(id)).filter((t): t is BankTransactionRecord => t !== undefined);
+  const eligible = ordered.filter(isEligibleForAiClassification).slice(0, MAX_AI_CLASSIFICATIONS_PER_RUN);
+  if (eligible.length === 0) return emptyOutcome();
 
   const provider = await getDefaultTransactionClassificationProvider().catch(() => null);
-  if (!provider) return outcome;
+  if (!provider) return emptyOutcome();
 
-  for (const transaction of eligible) {
-    outcome.attempted += 1;
-    const { status, retryAfterMs } = await classifyOne(companyId, transaction, provider, performedBy);
-    if (status === "classified") outcome.classified += 1;
-    else if (status === "allocated") outcome.autoAllocated += 1;
-    else if (status === "no-confident-suggestion") outcome.noConfidentSuggestion += 1;
-    else if (status === "rate-limited") {
-      outcome.rateLimited += 1;
-      // Only set when the provider actually gave a real number — an
-      // absent key (rather than an explicit `null`) keeps every
-      // pre-Phase-26I `toEqual({...})` assertion elsewhere in this
-      // codebase compiling and passing unchanged; `nextTaskRunAt`'s own
-      // `typeof summary?.retryAfterMs === "number"` check already
-      // treats "absent" and "explicitly null" identically anyway.
-      if (retryAfterMs !== null) outcome.retryAfterMs = retryAfterMs;
-      // Phase 26E — stop this batch immediately; every remaining
-      // transaction in `eligible` is left exactly as untouched/eligible
-      // as it was before this call, for the next run to pick up.
-      break;
-    } else outcome.failed += 1;
-  }
-
-  return outcome;
+  const batch = await runClassificationBatch(companyId, eligible, provider, performedBy, options);
+  return summarize(batch);
 }
 
 /** Migration 0094 — a held transaction gets its OWN reason rather than
- * the generic ineligibility one. "Already classified, allocated, or
- * matched" would be a false explanation for a row that is none of those
- * things and is simply being reviewed by a person, and the accountant
- * reading it needs to know the difference: one means the work is done,
- * the other means someone is doing it. */
+ * the generic ineligibility one. */
 export const HELD_FOR_REVIEW_SKIP_REASON =
   "Held for human review — automatic classification is not allowed while a person is reviewing this transaction." as const;
 
@@ -336,38 +454,25 @@ export type ManualClassifySkipReason =
 
 export type ManualClassifyOutcome = {
   requested: number;
-  /** Written `allocation_status: 'Suggested'` — unchanged meaning from
-   * before Phase 26A. See `ClassifyTransactionsOutcome.classified`. */
   classified: number;
-  /** Phase 26A — written `allocation_status: 'Allocated'` directly
-   * (High confidence). See `ClassifyTransactionsOutcome.autoAllocated`. */
   autoAllocated: number;
-  /** Phase 26E — see `ClassifyTransactionsOutcome.rateLimited`. Also
-   * reflected as one `skipped` entry per affected transaction, for the
-   * existing UI rendering path — this count is purely a convenience for
-   * callers that want the number without counting `skipped` reasons. */
   rateLimited: number;
-  /** Mirrors the SAME `{ transactionId, reason }` shape
-   * `transaction-explorer.tsx::runBulkAction` already knows how to
-   * render as a notice for other bulk actions (e.g. `generate-journal`'s
-   * skip reasons) — reused as-is, no new client-side rendering needed. */
+  /** `{ transactionId, reason }` — the shape the Explorer's bulk-action notice already renders. */
   skipped: { transactionId: number; reason: ManualClassifySkipReason }[];
 };
 
-/** Phase 22B — the user-triggered "Classify with AI" entry point, for
- * both the single-transaction (detail panel) and bulk (selection +
- * bulk-action-bar) UI paths — both call this exact same function via the
- * SAME `POST /transactions/bulk` `"classify-with-ai"` case, exactly
- * mirroring how `allocate-row` already unifies single/bulk with one code
- * path. `maxCount` lets the route pass a SMALLER effective cap than
- * `MAX_AI_CLASSIFICATIONS_PER_RUN` when the company's remaining AI usage
- * allowance is the tighter constraint (this ticket's section 6D) — the
- * route, not this function, owns that billing arithmetic. */
+/** Phase 22B — the user-triggered "Classify with AI" (single or bulk).
+ * Explicit, so it ignores the sweep's cooldown/human-review selection —
+ * this is also the "Retry AI" path — but it goes through the same gate
+ * (circuit breaker and daily fuse), recording and stop rules as every
+ * automatic path. `maxCount` lets the route apply a smaller cap when the
+ * plan's remaining AI allowance is the tighter constraint. */
 export async function classifyTransactionsWithAiManual(
   companyId: string,
   transactionIds: number[],
   performedBy: string,
   maxCount: number = MAX_AI_CLASSIFICATIONS_PER_RUN,
+  options: { nowIso?: string } = {},
 ): Promise<ManualClassifyOutcome> {
   const skipped: ManualClassifyOutcome["skipped"] = [];
   if (transactionIds.length === 0) return { requested: 0, classified: 0, autoAllocated: 0, rateLimited: 0, skipped };
@@ -399,60 +504,63 @@ export async function classifyTransactionsWithAiManual(
     return { requested: transactionIds.length, classified: 0, autoAllocated: 0, rateLimited: 0, skipped };
   }
 
+  const batch = await runClassificationBatch(companyId, toProcess, provider, performedBy, { source: "manual", nowIso: options.nowIso });
+
   let classified = 0;
   let autoAllocated = 0;
   let rateLimited = 0;
-  for (let i = 0; i < toProcess.length; i++) {
-    const t = toProcess[i]!;
-    const { status } = await classifyOne(companyId, t, provider, performedBy);
-    if (status === "classified") classified += 1;
-    else if (status === "allocated") autoAllocated += 1;
-    else if (status === "no-confident-suggestion") skipped.push({ transactionId: t.id, reason: "AI could not confidently classify this transaction." });
-    else if (status === "rate-limited") {
-      // Phase 26E — this transaction, and everything still unprocessed in
-      // this same request, are left exactly as eligible as before; none
-      // of them were actually attempted after the rate limit hit.
-      for (const remaining of toProcess.slice(i)) {
-        skipped.push({ transactionId: remaining.id, reason: "Skipped — the AI provider's rate limit was reached for this request. Please try again shortly." });
-        rateLimited += 1;
-      }
-      break;
-    } else skipped.push({ transactionId: t.id, reason: "AI classification failed for this transaction — please try again." });
+  const handled = new Set<number>();
+  for (const { transaction, result } of batch.attempts) {
+    handled.add(transaction.id);
+    if (result.status === "classified") classified += 1;
+    else if (result.status === "allocated") autoAllocated += 1;
+    else if (result.status === "no-confident-suggestion") skipped.push({ transactionId: transaction.id, reason: "AI could not confidently classify this transaction." });
+    else if (result.status === "rate-limited") {
+      skipped.push({ transactionId: transaction.id, reason: "Skipped — the AI provider's rate limit was reached for this request. Please try again shortly." });
+      rateLimited += 1;
+    } else skipped.push({ transactionId: transaction.id, reason: "AI classification failed for this transaction — please try again." });
+  }
+
+  // Everything the batch never sent: held by the gate, or not reached because it stopped.
+  for (const t of toProcess) {
+    if (handled.has(t.id)) continue;
+    if (batch.stoppedReason === "rate_limited" && !batch.heldIds.includes(t.id)) {
+      skipped.push({ transactionId: t.id, reason: "Skipped — the AI provider's rate limit was reached for this request. Please try again shortly." });
+      rateLimited += 1;
+    } else {
+      skipped.push({ transactionId: t.id, reason: "AI classification is temporarily unavailable." });
+    }
   }
 
   return { requested: transactionIds.length, classified, autoAllocated, rateLimited, skipped };
 }
 
 export type AutomaticClassificationSweepOutcome = ClassifyTransactionsOutcome & {
-  /** Phase 26E — true when `listAiClassificationEligibleTransactions`
-   * returned exactly `MAX_AI_CLASSIFICATIONS_PER_RUN` rows, meaning more
-   * eligible transactions may still exist beyond this one batch. A
-   * conservative heuristic the scheduler uses only to decide whether to
-   * reschedule itself soon (more likely work waiting) or fall back to its
-   * normal cadence (caught up) — never to skip or defer real work; the
-   * batch itself already ran regardless of this flag. */
+  /** More transactions are currently eligible beyond this batch. */
   hasMoreEligible: boolean;
+  /** At least one suggestion/allocation was saved — the only thing that
+   * justifies the scheduler coming back in 2 minutes. */
+  progress: boolean;
+  /** How many candidates the queue offered this pass. */
+  candidates: number;
 };
 
-/** Phase 26E — the automatic, unattended entry point: finds its own
- * candidates company-wide (unlike the two entry points above, which both
- * require a caller-supplied id list) and classifies up to one bounded
- * batch of them through the exact same `classifyUnallocatedTransactionsWithAi`
- * every other automatic path already uses — no second classification
- * engine, no second write path, no second eligibility definition. Called
- * by the Automation Scheduler's `AiClassificationSweep` task
- * (`scheduler-service.ts`), never directly by a route — a scheduled task
- * is the one thing in this codebase that legitimately has no caller-
- * supplied transaction list to work from. Never throws — a candidate
- * fetch failure is treated exactly like `classifyUnallocatedTransactionsWithAi`
- * already treats a `getTransactionsByIds` failure elsewhere in this file:
- * an empty, harmless outcome, not a hard error. */
-export async function runAutomaticAiClassificationSweep(companyId: string, performedBy = "VYRON AI"): Promise<AutomaticClassificationSweepOutcome> {
-  const candidates = await listAiClassificationEligibleTransactions(companyId, MAX_AI_CLASSIFICATIONS_PER_RUN).catch(() => []);
-  if (candidates.length === 0) {
-    return { attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: false };
+/** The scheduler's `AiClassificationSweep`: takes the next batch from the
+ * queue (never-attempted first, then least recently attempted, then
+ * oldest; cooldown, needs-human-review and resolved excluded) and
+ * classifies it. A failure to read the queue is an infrastructure failure
+ * and THROWS, so the scheduler's retry/suspension handling applies. */
+export async function runAutomaticAiClassificationSweep(
+  companyId: string,
+  performedBy = "VYRON AI",
+  options: { taskRunId?: number | null; nowIso?: string } = {},
+): Promise<AutomaticClassificationSweepOutcome> {
+  const nowIso = options.nowIso ?? new Date().toISOString();
+  const { transactionIds, hasMore } = await listAiClassificationSweepCandidates(companyId, MAX_AI_CLASSIFICATIONS_PER_RUN, nowIso);
+  if (transactionIds.length === 0) {
+    return { ...emptyOutcome(), hasMoreEligible: false, progress: false, candidates: 0 };
   }
 
-  const outcome = await classifyUnallocatedTransactionsWithAi(companyId, candidates.map((t) => t.id), performedBy);
-  return { ...outcome, hasMoreEligible: candidates.length === MAX_AI_CLASSIFICATIONS_PER_RUN };
+  const outcome = await classifyUnallocatedTransactionsWithAi(companyId, transactionIds, performedBy, { source: "sweep", taskRunId: options.taskRunId ?? null, nowIso });
+  return { ...outcome, hasMoreEligible: hasMore, progress: outcome.classified + outcome.autoAllocated > 0, candidates: transactionIds.length };
 }

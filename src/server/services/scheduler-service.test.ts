@@ -26,13 +26,15 @@ vi.mock("@/server/repositories/automation-task-repository", () => ({
   listStaleRunningTasks: vi.fn(),
   findOpenTaskRun: vi.fn(),
   reclaimStaleRunningTask: vi.fn(),
+  suspendTask: vi.fn(),
+  resumeAutomationTask: vi.fn(),
 }));
 vi.mock("@/server/repositories/recurring-template-repository", () => ({ listRecurringTemplates: vi.fn(), getRecurringTemplate: vi.fn() }));
 vi.mock("@/server/services/recurring-template-service", () => ({ generateFromTemplate: vi.fn() }));
 vi.mock("@/server/services/rule-processing-service", () => ({ runRuleEngine: vi.fn() }));
 vi.mock("@/server/services/communication-service", () => ({ processCommunicationQueue: vi.fn() }));
 vi.mock("@/server/services/notification-service", () => ({ createNotification: vi.fn() }));
-vi.mock("@/server/services/operations-service", () => ({ createAlert: vi.fn() }));
+vi.mock("@/server/services/operations-service", () => ({ createAlert: vi.fn(), raiseDeduplicatedAlert: vi.fn(), resolveDeduplicatedAlert: vi.fn(), linkAlertNotification: vi.fn() }));
 vi.mock("@/server/billing-platform/engine/lifecycle-sweep-engine", () => ({ runSubscriptionLifecycleSweep: vi.fn() }));
 vi.mock("@/server/bank-connectivity/bank-sync-service", () => ({ syncAllConnectedAccounts: vi.fn() }));
 vi.mock("@/server/services/transaction-classification-service", () => ({ runAutomaticAiClassificationSweep: vi.fn() }));
@@ -40,12 +42,13 @@ vi.mock("@/server/billing-platform/engine/feature-flag-engine", () => ({ hasFeat
 vi.mock("@/server/billing-platform/engine/licensing-engine", () => ({ checkUsageLimit: vi.fn() }));
 vi.mock("@/server/billing-platform/engine/usage-metering-engine", () => ({ recordUsageEvent: vi.fn() }));
 
-import { runDueTasks, runTaskNow, ValidationError } from "./scheduler-service";
+import { nextTaskRunAt, resumeTask, runDueTasks, runTaskNow, ValidationError } from "./scheduler-service";
 import * as taskRepo from "@/server/repositories/automation-task-repository";
 import * as templateRepo from "@/server/repositories/recurring-template-repository";
 import { runRuleEngine } from "@/server/services/rule-processing-service";
 import { createNotification } from "@/server/services/notification-service";
-import { createAlert } from "@/server/services/operations-service";
+import { createAlert, raiseDeduplicatedAlert, resolveDeduplicatedAlert } from "@/server/services/operations-service";
+import type { AutomaticClassificationSweepOutcome } from "@/server/services/transaction-classification-service";
 import { hasFeature } from "@/server/billing-platform/engine/feature-flag-engine";
 import { checkUsageLimit } from "@/server/billing-platform/engine/licensing-engine";
 import { syncAllConnectedAccounts } from "@/server/bank-connectivity/bank-sync-service";
@@ -73,6 +76,23 @@ function task(overrides: Partial<AutomationTask> & Pick<AutomationTask, "id" | "
   };
 }
 
+/** A complete sweep outcome; `progress` follows classified/autoAllocated unless given. */
+function sweepOutcome(overrides: Partial<AutomaticClassificationSweepOutcome> = {}): AutomaticClassificationSweepOutcome {
+  const base: AutomaticClassificationSweepOutcome = {
+    attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0,
+    providerRequests: 0, invalidResponses: 0, providerFailures: 0, databaseFailures: 0, heldByQueue: 0, stoppedReason: null,
+    errorCategory: null, httpStatus: null, providerMessage: null, circuitState: "closed", requestsToday: 0, dailyCap: 100,
+    infrastructureFailure: false, hasMoreEligible: false, progress: false, candidates: 0,
+  };
+  const merged = { ...base, ...overrides };
+  if (overrides.progress === undefined) merged.progress = merged.classified + merged.autoAllocated > 0;
+  return merged;
+}
+
+function mockSweep(overrides: Partial<AutomaticClassificationSweepOutcome>): void {
+  vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue(sweepOutcome(overrides));
+}
+
 function run(overrides: Partial<AutomationTaskRun> = {}): AutomationTaskRun {
   return { id: 1, taskId: 1, companyId: "co_1", startedAt: NOW, finishedAt: null, status: "Running", errorMessage: null, summary: {}, ...overrides };
 }
@@ -96,7 +116,11 @@ beforeEach(() => {
   vi.mocked(createNotification).mockResolvedValue({ id: 500 } as never);
   vi.mocked(createAlert).mockResolvedValue({ id: 700 } as never);
   vi.mocked(recordUsageEvent).mockResolvedValue(undefined);
-  vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: false });
+  mockSweep({ attempted: 0, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: false });
+  vi.mocked(taskRepo.suspendTask).mockResolvedValue(undefined);
+  vi.mocked(taskRepo.resumeAutomationTask).mockResolvedValue(undefined);
+  vi.mocked(raiseDeduplicatedAlert).mockResolvedValue({ alertId: 900, created: true, occurrenceCount: 1 });
+  vi.mocked(resolveDeduplicatedAlert).mockResolvedValue(0);
 });
 
 describe("runDueTasks — BankSync bootstrap succeeds (existing behavior unchanged)", () => {
@@ -236,14 +260,18 @@ describe("runDueTasks — existing per-task failure handling remains unchanged",
     expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 1, expect.objectContaining({ status: "Failed", lastRunStatus: "Failed", retryCount: 1 }));
   });
 
-  it("a total BankSync failure fires the exhausted-retry notification/alert once retries run out (Phase 25K)", async () => {
+  it("a total BankSync failure that exhausts its retries SUSPENDS the task and raises ONE deduplicated critical alert (migration 0099)", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "BankSync", retryCount: 2, maxRetries: 3, name: "Direct bank feed sync" })]);
     vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 1, succeeded: 0, failed: 1 });
 
     await runDueTasks("co_1", NOW);
 
-    expect(createNotification).toHaveBeenCalledWith("co_1", expect.objectContaining({ notificationType: "AutomationFailure", relatedType: "BankSync" }));
-    expect(createAlert).toHaveBeenCalledTimes(1);
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 1, expect.objectContaining({ status: "Suspended", retryCount: 3 }));
+    expect(taskRepo.suspendTask).toHaveBeenCalledWith("co_1", 1, expect.stringContaining("BankSync failed"), NOW);
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledTimes(1);
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledWith(expect.objectContaining({ dedupeKey: "automation-task:1:failing", severity: "critical" }));
+    expect(createNotification).toHaveBeenCalledWith("co_1", expect.objectContaining({ notificationType: "AutomationFailure", relatedType: "BankSync", severity: "critical" }));
+    expect(createAlert).not.toHaveBeenCalled();
   });
 
   it("a PARTIAL BankSync failure (at least one account succeeded) still reports overall Success (regression — unchanged behavior)", async () => {
@@ -308,13 +336,15 @@ describe("runDueTasks — stale-Running crash recovery (Phase 25I)", () => {
     expect(taskRepo.reclaimStaleRunningTask).toHaveBeenCalledWith("co_1", 10, expect.anything());
   });
 
-  it("fires the exhausted-retry notification/alert once a reclaimed task's retries are exhausted", async () => {
+  it("a reclaimed task whose retries are exhausted is SUSPENDED with one deduplicated alert", async () => {
     vi.mocked(taskRepo.listStaleRunningTasks).mockResolvedValue([task({ id: 11, taskType: "BankSync", status: "Running", retryCount: 2, maxRetries: 3, name: "Direct bank feed sync" })]);
 
     await runDueTasks("co_1", NOW);
 
+    expect(taskRepo.suspendTask).toHaveBeenCalledWith("co_1", 11, expect.stringContaining("crashed"), NOW);
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledWith(expect.objectContaining({ dedupeKey: "automation-task:11:failing" }));
     expect(createNotification).toHaveBeenCalledWith("co_1", expect.objectContaining({ notificationType: "AutomationFailure", relatedType: "BankSync" }));
-    expect(createAlert).toHaveBeenCalledTimes(1);
+    expect(createAlert).not.toHaveBeenCalled();
   });
 
   it("does NOT overwrite a task that finished normally a split second before the reclaim ran (atomic guard holds)", async () => {
@@ -454,18 +484,18 @@ describe("runDueTasks — AiClassificationSweep bootstrap (Phase 26E)", () => {
 describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
   it("calls the shared classification sweep and reports Success with its outcome as the run summary", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 20, classified: 12, autoAllocated: 5, noConfidentSuggestion: 3, failed: 0, rateLimited: 0, hasMoreEligible: true });
+    mockSweep({ attempted: 20, classified: 12, autoAllocated: 5, noConfidentSuggestion: 3, failed: 0, rateLimited: 0, hasMoreEligible: true });
 
     const outcome = await runDueTasks("co_1", NOW);
 
-    expect(runAutomaticAiClassificationSweep).toHaveBeenCalledWith("co_1", "System");
+    expect(runAutomaticAiClassificationSweep).toHaveBeenCalledWith("co_1", "System", { taskRunId: 1, nowIso: NOW });
     expect(outcome).toEqual({ processed: 1, succeeded: 1, failed: 0, deferred: 0 });
     expect(taskRepo.finishTaskRun).toHaveBeenCalledWith("co_1", expect.anything(), "Success", null, expect.objectContaining({ attempted: 20, autoAllocated: 5 }));
   });
 
   it("reschedules SOON (not the normal hourly cadence) when hasMoreEligible is true — draining a historical backlog across a few passes, not one pass per hour", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 20, classified: 20, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: true });
+    mockSweep({ attempted: 20, classified: 20, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: true });
 
     await runDueTasks("co_1", NOW);
 
@@ -477,7 +507,7 @@ describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
 
   it("falls back to the normal hourly cadence once caught up (hasMoreEligible: false, no rate limit)", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 3, classified: 3, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: false });
+    mockSweep({ attempted: 3, classified: 3, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0, hasMoreEligible: false });
 
     await runDueTasks("co_1", NOW);
 
@@ -488,7 +518,7 @@ describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
 
   it("reschedules soon when the sweep hit a rate limit, so the next pass backs off instead of hammering the provider immediately", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 5, classified: 5, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: false });
+    mockSweep({ attempted: 5, classified: 5, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: false });
 
     await runDueTasks("co_1", NOW);
 
@@ -504,7 +534,7 @@ describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
   // 5-minute wait regardless of what the provider actually asked for.
   it("reschedules using the provider's own stated retryAfterMs when it is shorter than the flat 5-minute default", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 6, classified: 0, autoAllocated: 5, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: true, retryAfterMs: 20_000 });
+    mockSweep({ attempted: 6, classified: 0, autoAllocated: 5, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: true, retryAfterMs: 20_000 });
 
     await runDueTasks("co_1", NOW);
 
@@ -515,7 +545,7 @@ describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
 
   it("never reschedules faster than the 15-second safety floor even if retryAfterMs is implausibly small", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: false, retryAfterMs: 1_000 });
+    mockSweep({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: false, retryAfterMs: 1_000 });
 
     await runDueTasks("co_1", NOW);
 
@@ -526,7 +556,7 @@ describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
 
   it("never reschedules slower than the existing flat 5-minute ceiling even if retryAfterMs is implausibly large", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: false, retryAfterMs: 60 * 60_000 });
+    mockSweep({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: false, retryAfterMs: 60 * 60_000 });
 
     await runDueTasks("co_1", NOW);
 
@@ -537,7 +567,7 @@ describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
 
   it("falls back to the flat 5-minute default when rate-limited but retryAfterMs is absent (provider gave no header)", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: false });
+    mockSweep({ attempted: 1, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 1, hasMoreEligible: false });
 
     await runDueTasks("co_1", NOW);
 
@@ -546,19 +576,33 @@ describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
     expect(Date.parse(nextRunAt) - Date.parse(NOW)).toBe(5 * 60_000);
   });
 
-  it("a total sweep failure (every attempted transaction failed) is recorded as a real Failed run, not a silent Success — same precedent as a total BankSync outage", async () => {
+  it("an INFRASTRUCTURE failure (safety store unavailable / every database read failed) fails the run, so scheduler retries -> Suspended apply", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep", retryCount: 0, maxRetries: 3 })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 3, classified: 0, autoAllocated: 0, noConfidentSuggestion: 0, failed: 3, rateLimited: 0, hasMoreEligible: false });
+    mockSweep({ attempted: 0, stoppedReason: "safety_unavailable", infrastructureFailure: true, providerMessage: "AI classification safety store is not configured" });
 
     const outcome = await runDueTasks("co_1", NOW);
 
     expect(outcome).toEqual({ processed: 1, succeeded: 0, failed: 1, deferred: 0 });
-    expect(taskRepo.finishTaskRun).toHaveBeenCalledWith("co_1", expect.anything(), "Failed", expect.stringContaining("AI Classification sweep failed"), {});
+    expect(taskRepo.finishTaskRun).toHaveBeenCalledWith("co_1", expect.anything(), "Failed", expect.stringContaining("could not run safely (safety_unavailable)"), {});
+  });
+
+  it("a PROVIDER failure is not a task failure: the run succeeds, the batch stopped, and ONE deduplicated provider alert is raised", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
+    mockSweep({ attempted: 1, failed: 1, providerFailures: 1, providerRequests: 1, stoppedReason: "provider_failure", errorCategory: "unauthorized", httpStatus: 401, providerMessage: "Unauthorized", circuitState: "open", hasMoreEligible: true });
+
+    const outcome = await runDueTasks("co_1", NOW);
+
+    expect(outcome).toEqual({ processed: 1, succeeded: 1, failed: 0, deferred: 0 });
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledWith(expect.objectContaining({ dedupeKey: "ai-classification:provider-unavailable", severity: "critical", message: expect.stringContaining("HTTP 401") }));
+    expect(createNotification).toHaveBeenCalledTimes(1);
+    // No progress -> the normal hour, never 2 minutes.
+    const call = vi.mocked(taskRepo.recordTaskOutcome).mock.calls.find((c) => c[1] === 1);
+    expect(Date.parse((call?.[2] as { nextRunAt: string }).nextRunAt) - Date.parse(NOW)).toBe(60 * 60_000);
   });
 
   it("a batch with only noConfidentSuggestion/rateLimited outcomes (no `failed`) is still a healthy Success, never treated as an outage", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "AiClassificationSweep" })]);
-    vi.mocked(runAutomaticAiClassificationSweep).mockResolvedValue({ attempted: 2, classified: 0, autoAllocated: 0, noConfidentSuggestion: 1, failed: 0, rateLimited: 1, hasMoreEligible: false });
+    mockSweep({ attempted: 2, classified: 0, autoAllocated: 0, noConfidentSuggestion: 1, failed: 0, rateLimited: 1, hasMoreEligible: false });
 
     const outcome = await runDueTasks("co_1", NOW);
 
@@ -590,6 +634,232 @@ describe("runDueTasks — AiClassificationSweep dispatch (Phase 26E)", () => {
     await runDueTasks("company-b", NOW);
 
     expect(runAutomaticAiClassificationSweep).toHaveBeenCalledTimes(1);
-    expect(runAutomaticAiClassificationSweep).toHaveBeenCalledWith("company-a", "System");
+    expect(runAutomaticAiClassificationSweep).toHaveBeenCalledWith("company-a", "System", expect.objectContaining({ nowIso: NOW }));
+  });
+});
+
+// -----------------------------------------------------------------------
+// Migration 0099 — AI safety: cadence, suspension, alert deduplication.
+// -----------------------------------------------------------------------
+
+describe("AI sweep cadence (migration 0099)", () => {
+  const sweepTask = task({ id: 6, taskType: "AiClassificationSweep" });
+
+  it("P. no progress (no-confidence answers only) + more eligible -> the normal hour, NOT 2 minutes", () => {
+    const next = nextTaskRunAt(sweepTask, NOW, sweepOutcome({ attempted: 20, noConfidentSuggestion: 20, providerRequests: 20, hasMoreEligible: true }));
+    expect(Date.parse(next) - Date.parse(NOW)).toBe(60 * 60_000);
+  });
+
+  it("Q. real progress (a suggestion saved) + more eligible -> the controlled 2-minute reschedule", () => {
+    const next = nextTaskRunAt(sweepTask, NOW, sweepOutcome({ attempted: 20, classified: 1, noConfidentSuggestion: 19, hasMoreEligible: true }));
+    expect(Date.parse(next) - Date.parse(NOW)).toBe(2 * 60_000);
+  });
+
+  it("progress but nothing more eligible -> the normal hour", () => {
+    const next = nextTaskRunAt(sweepTask, NOW, sweepOutcome({ attempted: 3, classified: 3, hasMoreEligible: false }));
+    expect(Date.parse(next) - Date.parse(NOW)).toBe(60 * 60_000);
+  });
+
+  it("an open circuit or the daily cap never shortens the cadence", () => {
+    for (const stoppedReason of ["circuit_open", "daily_cap"] as const) {
+      const next = nextTaskRunAt(sweepTask, NOW, sweepOutcome({ stoppedReason, hasMoreEligible: true }));
+      expect(Date.parse(next) - Date.parse(NOW)).toBe(60 * 60_000);
+    }
+  });
+});
+
+describe("task failure handling — Suspended + deduplicated alerts (migration 0099)", () => {
+  it("R. a first failure retries in 5 minutes with a warning notification and NO alert", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 0, maxRetries: 3 })]);
+    vi.mocked(runRuleEngine).mockRejectedValue(new Error("db timeout"));
+
+    await runDueTasks("co_1", NOW);
+
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 1, expect.objectContaining({ status: "Failed", retryCount: 1 }));
+    expect(taskRepo.suspendTask).not.toHaveBeenCalled();
+    expect(createNotification).toHaveBeenCalledWith("co_1", expect.objectContaining({ severity: "warning", title: expect.stringContaining("retrying") }));
+    expect(raiseDeduplicatedAlert).not.toHaveBeenCalled();
+  });
+
+  it("a second (non-exhausting) failure sends nothing new — no hourly notification spam", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 1, maxRetries: 3 })]);
+    vi.mocked(runRuleEngine).mockRejectedValue(new Error("db timeout"));
+
+    await runDueTasks("co_1", NOW);
+
+    expect(createNotification).not.toHaveBeenCalled();
+    expect(raiseDeduplicatedAlert).not.toHaveBeenCalled();
+  });
+
+  it("R. retries exhausted -> Suspended (listDueTasks never selects it) with a critical alert", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 2, maxRetries: 3, name: "Banking Rules recovery sweep" })]);
+    vi.mocked(runRuleEngine).mockRejectedValue(new Error("db timeout"));
+
+    await runDueTasks("co_1", NOW);
+
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 1, expect.objectContaining({ status: "Suspended" }));
+    expect(taskRepo.suspendTask).toHaveBeenCalledWith("co_1", 1, "db timeout", NOW);
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledWith(expect.objectContaining({ dedupeKey: "automation-task:1:failing", title: expect.stringContaining("suspended") }));
+  });
+
+  it("S. a repeat of the same failure updates the existing alert (not created) and sends NO new notification", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 2, maxRetries: 3 })]);
+    vi.mocked(runRuleEngine).mockRejectedValue(new Error("db timeout"));
+    vi.mocked(raiseDeduplicatedAlert).mockResolvedValue({ alertId: 900, created: false, occurrenceCount: 2 });
+
+    await runDueTasks("co_1", NOW);
+
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledTimes(1);
+    expect(createNotification).not.toHaveBeenCalled();
+    expect(createAlert).not.toHaveBeenCalled();
+  });
+
+  it("S. escalation: the 24th occurrence of the same alert sends one escalation notification", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 2, maxRetries: 3 })]);
+    vi.mocked(runRuleEngine).mockRejectedValue(new Error("db timeout"));
+    vi.mocked(raiseDeduplicatedAlert).mockResolvedValue({ alertId: 900, created: false, occurrenceCount: 24 });
+
+    await runDueTasks("co_1", NOW);
+
+    expect(createNotification).toHaveBeenCalledWith("co_1", expect.objectContaining({ title: expect.stringContaining("still failing") }));
+  });
+
+  it("recovery: a success after failures resolves the task's alert and sends one recovery notification", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 2, maxRetries: 3 })]);
+    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 1, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(resolveDeduplicatedAlert).mockResolvedValue(1);
+
+    await runDueTasks("co_1", NOW);
+
+    expect(resolveDeduplicatedAlert).toHaveBeenCalledWith("co_1", "automation-task:1:failing", "Automation Scheduler", NOW);
+    expect(createNotification).toHaveBeenCalledWith("co_1", expect.objectContaining({ severity: "info", title: expect.stringContaining("recovered") }));
+  });
+
+  it("an ordinary success (never failing) does not touch alerts at all", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 0 })]);
+    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 1, autoPosted: 0, exceptionsRaised: 0, results: [] });
+
+    await runDueTasks("co_1", NOW);
+
+    expect(resolveDeduplicatedAlert).not.toHaveBeenCalled();
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it("resuming a task gives it a fresh retry budget and clears the suspension — never automatic", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType: "AiClassificationSweep", status: "Suspended", retryCount: 3 }));
+    await resumeTask("co_1", 6);
+    expect(taskRepo.resumeAutomationTask).toHaveBeenCalledWith("co_1", 6);
+    expect(taskRepo.setTaskStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("AI sweep alerts (migration 0099)", () => {
+  beforeEach(() => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 6, taskType: "AiClassificationSweep" })]);
+  });
+
+  it("an open circuit raises the provider alert once; a repeat updates it without a new notification", async () => {
+    mockSweep({ stoppedReason: "circuit_open", circuitState: "open" });
+    await runDueTasks("co_1", NOW);
+    vi.mocked(raiseDeduplicatedAlert).mockResolvedValue({ alertId: 900, created: false, occurrenceCount: 2 });
+    await runDueTasks("co_1", NOW);
+
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(createNotification).mock.calls.filter((c) => (c[1] as { relatedType: string }).relatedType === "AiClassificationSweep")).toHaveLength(1);
+  });
+
+  it("the daily safety cap raises ONE warning alert, not one per blocked transaction", async () => {
+    mockSweep({ stoppedReason: "daily_cap", requestsToday: 100, dailyCap: 100, hasMoreEligible: true });
+    await runDueTasks("co_1", NOW);
+
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledTimes(1);
+    expect(raiseDeduplicatedAlert).toHaveBeenCalledWith(expect.objectContaining({ dedupeKey: "ai-classification:daily-cap", severity: "warning" }));
+  });
+
+  it("a normal answer from the provider resolves the provider alert (recovery)", async () => {
+    mockSweep({ attempted: 2, providerRequests: 2, noConfidentSuggestion: 2 });
+    vi.mocked(resolveDeduplicatedAlert).mockResolvedValue(1);
+    await runDueTasks("co_1", NOW);
+
+    expect(resolveDeduplicatedAlert).toHaveBeenCalledWith("co_1", "ai-classification:provider-unavailable", "AI Classification", NOW);
+    expect(createNotification).toHaveBeenCalledWith("co_1", expect.objectContaining({ title: "AI classification provider recovered" }));
+  });
+});
+
+// -----------------------------------------------------------------------
+// Pre-deployment review — Run Now and stopped tasks; sanitized sweep errors.
+// -----------------------------------------------------------------------
+
+describe("Review — Run Now never re-activates a paused, disabled or suspended task", () => {
+  it.each(["Paused", "Disabled", "Suspended"] as const)("a successful manual run of a %s task keeps its status and retry count, and sends no 'recovered' notice", async (status) => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType: "AiClassificationSweep", status, retryCount: 3, isActive: false }));
+
+    await runTaskNow("co_1", 6, NOW, "user@vyron");
+
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 6, expect.objectContaining({ status, retryCount: 3 }));
+    expect(resolveDeduplicatedAlert).not.toHaveBeenCalled();
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it.each(["Paused", "Disabled", "Suspended"] as const)("a failed manual run of a %s task keeps its status", async (status) => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType: "AiClassificationSweep", status, retryCount: 3, isActive: false }));
+    vi.mocked(runAutomaticAiClassificationSweep).mockRejectedValue(new Error("database unreachable"));
+
+    await expect(runTaskNow("co_1", 6, NOW, "user@vyron")).rejects.toThrow(ValidationError);
+
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 6, expect.objectContaining({ status }));
+  });
+
+  it("a manual run of the AI sweep goes through the same sweep (and therefore the same gate, circuit and fuse)", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType: "AiClassificationSweep", status: "Paused", isActive: false }));
+
+    await runTaskNow("co_1", 6, NOW, "user@vyron");
+
+    expect(runAutomaticAiClassificationSweep).toHaveBeenCalledWith("co_1", "user@vyron", expect.objectContaining({ nowIso: NOW }));
+  });
+
+  it("an ordinary (Queued) task still records Success after a manual run", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 5, taskType: "RuleEngineRun" }));
+    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 0, autoPosted: 0, exceptionsRaised: 0, results: [] });
+
+    await runTaskNow("co_1", 5, NOW, "user@vyron");
+
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 5, expect.objectContaining({ status: "Success", retryCount: 0 }));
+  });
+});
+
+describe("Review — task retries are consumed only by infrastructure failures", () => {
+  it.each([
+    ["provider failure", { attempted: 1, failed: 1, providerFailures: 1, providerRequests: 1, stoppedReason: "provider_failure" as const, circuitState: "open" as const }],
+    ["open circuit", { stoppedReason: "circuit_open" as const, circuitState: "open" as const }],
+    ["daily fuse", { stoppedReason: "daily_cap" as const, requestsToday: 100 }],
+    ["rate limit", { attempted: 1, rateLimited: 1, providerRequests: 1, stoppedReason: "rate_limited" as const, retryAfterMs: 20_000 }],
+    ["no-confidence answers", { attempted: 20, noConfidentSuggestion: 20, providerRequests: 20 }],
+  ])("a %s is a successful run: retry count reset, never Suspended", async (_label, overrides) => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 6, taskType: "AiClassificationSweep", retryCount: 2, maxRetries: 3 })]);
+    mockSweep(overrides);
+
+    await runDueTasks("co_1", NOW);
+
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 6, expect.objectContaining({ status: "Success", retryCount: 0 }));
+    expect(taskRepo.suspendTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("Review — sweep infrastructure errors are sanitized before they are stored", () => {
+  it("a queue-read failure is stored in the run (and any suspension/alert) without credentials", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 6, taskType: "AiClassificationSweep", retryCount: 2, maxRetries: 3 })]);
+    vi.mocked(runAutomaticAiClassificationSweep).mockRejectedValue(new Error("connect failed postgres://svc:hunter2pass@db.example:5432/postgres token=abc123def456"));
+
+    await runDueTasks("co_1", NOW);
+
+    const failedRun = vi.mocked(taskRepo.finishTaskRun).mock.calls.find((c) => c[2] === "Failed");
+    const message = String(failedRun?.[3]);
+    expect(message).toContain("could not read its queue");
+    expect(message).not.toContain("hunter2pass");
+    expect(message).not.toContain("abc123def456");
+    const reason = String(vi.mocked(taskRepo.suspendTask).mock.calls[0]?.[2]);
+    expect(reason).not.toContain("hunter2pass");
+    expect(JSON.stringify(vi.mocked(raiseDeduplicatedAlert).mock.calls)).not.toContain("hunter2pass");
   });
 });

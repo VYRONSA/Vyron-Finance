@@ -27,6 +27,7 @@
 import type { AccountType } from "@/server/general-ledger/types";
 import { isHeldForHumanReview, type BankTransactionRecord } from "@/server/accounting/types";
 import type { AccountingConfidenceAssessment } from "./accounting-confidence";
+import type { ProviderUsage } from "./safety-policy";
 
 /** Phase 22B — the ONE eligibility check, shared by every caller:
  * `transaction-classification-service.ts` (both the automatic post-import
@@ -163,6 +164,9 @@ export type RawTransactionClassification = {
   confidence: number;
   /** One or two sentences, user-safe — never raw chain-of-thought. */
   explanation: string;
+  /** Not part of the model's answer: token/cost figures the SDK or
+   * gateway actually reported for this request, added by the provider. */
+  usage?: ProviderUsage | null;
 };
 
 /** The deterministic bucketing this ticket requires ("must be
@@ -197,6 +201,8 @@ export type TransactionClassificationResult = {
    * decides Suggested/Allocated/no-confident-suggestion from THIS, not
    * from `confidenceLevel` — see that file's own `targetStatusFor`. */
   accountingConfidence: AccountingConfidenceAssessment;
+  /** Token/cost figures reported for this request, when supplied. */
+  usage?: ProviderUsage | null;
 };
 
 /** Failures use the EXISTING `AIProviderError`/`classifyProviderError`

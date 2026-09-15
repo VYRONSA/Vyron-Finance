@@ -51,7 +51,10 @@ export async function classifyTransactionWithAi(provider: TransactionClassificat
   const isValidCandidate = raw.accountCode !== null && evidence.candidateAccounts.some((a) => a.accountCode === raw.accountCode);
 
   if (raw.accountCode !== null && !isValidCandidate) {
-    throw new AIProviderError("malformed-response", "The classification model suggested an account that was not one of the candidates offered.");
+    throw new AIProviderError("malformed-response", "The classification model suggested an account that was not one of the candidates offered.", null, {
+      validation: true,
+      providerMessage: "The classification model suggested an account that was not one of the candidates offered.",
+    });
   }
 
   const confidence = raw.accountCode === null ? 0 : Math.max(0, Math.min(100, raw.confidence));
@@ -77,5 +80,6 @@ export async function classifyTransactionWithAi(provider: TransactionClassificat
     explanation: raw.explanation.trim(),
     modelUsed,
     accountingConfidence,
+    usage: raw.usage ?? null,
   };
 }
