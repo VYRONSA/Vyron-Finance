@@ -88,16 +88,19 @@ function oldVulnerableRoleChainRootIds(assignments: Assignment[], userId: string
   return assignments.filter((a) => a.userId === userId && (a.companyId === targetCompanyId || a.companyId === null)).map((a) => a.roleId);
 }
 
-function fixedRoleChainRootIds(assignments: Assignment[], userId: string, targetCompanyId: string): number[] {
-  // Mirrors 0031's fix: two explicit branches, company-scoped OR
-  // platform-scoped, no `or` that could conflate an unrelated company.
-  const companyScoped = assignments.filter((a) => a.userId === userId && a.companyId === targetCompanyId).map((a) => a.roleId);
-  const platformScoped = assignments.filter((a) => a.userId === userId && a.companyId === null).map((a) => a.roleId);
-  return [...companyScoped, ...platformScoped];
+function fixedRoleChainRootIds(assignments: Assignment[], userId: string, targetCompanyId: string | null): number[] {
+  // Mirrors 0098 (P0 remediation): a real company is resolved from
+  // company-scoped assignments ONLY; platform-scope assignments answer
+  // platform-level checks (target NULL) and nothing else. 0031's version
+  // also added the platform-scope roles for EVERY company, which made a
+  // platform role an implicit grant of tenant access (see
+  // src/server/security/platform-security.db.test.ts for the real SQL).
+  if (targetCompanyId === null) return assignments.filter((a) => a.userId === userId && a.companyId === null).map((a) => a.roleId);
+  return assignments.filter((a) => a.userId === userId && a.companyId === targetCompanyId).map((a) => a.roleId);
 }
 
-describe("Security regression — the fixed cross-tenant platform-role defect (0031)", () => {
-  it("PROOF OF VULNERABILITY: the old logic granted a platform-scope role's permissions for ANY target company, not just ones the user belongs to", () => {
+describe("Security regression — platform roles and tenant access (0031, then 0098)", () => {
+  it("PROOF OF VULNERABILITY: the original logic granted a platform-scope role's permissions for ANY target company", () => {
     const assignments: Assignment[] = [{ userId: "user_1", companyId: null, roleId: 42 }]; // a platform-scope assignment
     // The user never joined "co_other" — yet the OLD logic resolves the
     // platform role for it anyway.
@@ -105,10 +108,11 @@ describe("Security regression — the fixed cross-tenant platform-role defect (0
     expect(oldResult).toContain(42);
   });
 
-  it("the fixed logic still correctly resolves a platform-scope role everywhere (by design — that is what a platform role IS)", () => {
+  it("0098: a platform-scope role never resolves for a company — only for platform-level checks", () => {
     const assignments: Assignment[] = [{ userId: "user_1", companyId: null, roleId: 42 }];
-    expect(fixedRoleChainRootIds(assignments, "user_1", "co_a")).toContain(42);
-    expect(fixedRoleChainRootIds(assignments, "user_1", "co_b")).toContain(42);
+    expect(fixedRoleChainRootIds(assignments, "user_1", "co_a")).toEqual([]);
+    expect(fixedRoleChainRootIds(assignments, "user_1", "co_b")).toEqual([]);
+    expect(fixedRoleChainRootIds(assignments, "user_1", null)).toEqual([42]);
   });
 
   it("the fixed logic never mixes one company's assignment into another company's resolution", () => {

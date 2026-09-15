@@ -13,7 +13,7 @@ A bug in one layer alone has never been sufficient to cause a real breach in thi
 
 ## Authentication
 
-Supabase Auth (GoTrue), asymmetric JWT signing. Full workflow: login, logout, Remember Me (session-vs-persistent cookie via `@supabase/ssr` cookie options), forgot/reset password, change password (re-verifies current password before allowing a change), invite user (Admin API), first-run Platform Super Administrator bootstrap (`/setup`, self-locking), email/token-hash exchange via one shared `/auth/confirm` route. All live-verified end-to-end during RC1 Phase 7.6, including invalid/expired/already-consumed-token rejection.
+Supabase Auth (GoTrue), asymmetric JWT signing. Full workflow: login, logout, Remember Me (session-vs-persistent cookie via `@supabase/ssr` cookie options), forgot/reset password, change password (re-verifies current password before allowing a change), invite user (Admin API), first-run Platform Super Administrator bootstrap (`/setup` — off by default, secret-gated and one-shot since the P0 remediation; see below), email/token-hash exchange via one shared `/auth/confirm` route. All live-verified end-to-end during RC1 Phase 7.6, including invalid/expired/already-consumed-token rejection.
 
 **Known, disclosed characteristic, not a defect**: `requireSession()` uses `getClaims()`, which verifies JWTs by local signature check (fast, no network round-trip) rather than `getUser()` (network-verified, catches server-side revocation immediately). This means a signed-out session's access token remains cryptographically valid — and therefore still accepted by every API route — until its natural ~1 hour expiry, even though the refresh token is immediately revoked and the browser's own cookie is cleared. This is standard, documented Supabase SDK behavior, not an application bug; switching every route to `getUser()` would add a network round-trip to every request and was judged out of scope for a security *fix* (it's an intentional tradeoff, not a defect) — flagged here as a deliberate architectural decision the Product Review Board should be aware of.
 
@@ -26,6 +26,21 @@ Supabase Auth (GoTrue), asymmetric JWT signing. Full workflow: login, logout, Re
 The single most significant security finding across this platform's entire certification history: `user_can_access_company()` originally checked organisation-wide membership (`organisation_members`), by original design (`0001_platform_foundation.sql`'s own stated intent — one organisation, many client companies, staff move between them). During RC1 Phase 7.6 live certification, fixing an unrelated bug (invited users being blocked from their own company — `0034`/`0035`) legitimately added a test user to an organisation, which then revealed that organisation membership alone let them read a *sibling* company's real business data via a plain `GET` request — proven with a record deliberately named "CONFIDENTIAL Company A Client," successfully read by a user with zero role in that company.
 
 Fixed in `0036_tenant_isolation_fix.sql`: the function now checks `user_role_assignments` (real, per-company or explicit platform-scope grants) instead of organisation membership. Re-verified: the identical attack now returns an empty result; every legitimate access path (company creation, existing role assignments, platform-role cross-company access) was re-tested and confirmed unaffected.
+
+**P0 remediation (2026-09-15), `0097`/`0098`.**
+
+The problem had two parts:
+
+- `POST /api/setup/bootstrap` was unauthenticated. On an installation with no platform administrator, which production was, anyone could create a confirmed `platform_super_administrator`.
+- Under `0036`'s platform branch, that one platform-scope assignment granted read and write access to every tenant's data.
+
+Now:
+
+- **Bootstrap is off by default and gated.** It is secret-gated, limited to a configured owner address, rate-limited, audited and atomic.
+  - It invites the owner, who sets their own password; no caller ever chooses it.
+  - Only a fresh invitation can become the administrator, never a pre-registered account.
+  - It completes only once the invitation is accepted, and is then final (`DEPLOYMENT_GUIDE.md` §2).
+- **Platform roles are platform administration only** (`PERMISSION_MODEL.md`). Cross-tenant reading needs the explicit, read-only `CrossTenantRead` permission. No path to cross-tenant writes exists.
 
 **One related item deliberately left open, disclosed not hidden**: `companies`' own SELECT policy (a separate, independent policy, not routed through `user_can_access_company()`) still uses organisation-wide membership — meaning an organisation member can see a *sibling* company's name/industry/status (not its business data — every actual data table is protected by the fixed function). Fixing this specific policy was evaluated and deliberately not attempted in the same pass: it hits the exact same `INSERT ... RETURNING`-requires-SELECT-policy trap that caused the original organisation-bootstrap bug (`0033`) — company creation's own `.insert({...}).select("*")` would fail the moment the creator's per-company role doesn't exist yet, which is always true at the instant of creation. Lower severity (metadata, not data) and higher risk to fix hastily.
 

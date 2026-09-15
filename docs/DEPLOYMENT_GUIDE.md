@@ -22,6 +22,31 @@ From **Project Settings → API**, copy three values:
 
 Copy `.env.local.example` to `.env.local` in the project root and fill in all three. `.env.local` is gitignored — never commit it.
 
+### Platform bootstrap (first Platform Super Administrator) — OFF by default
+
+`/setup` and `/api/setup/bootstrap` answer **404** unless bootstrap is explicitly enabled. **Production must leave these unset.** Use them only on a fresh installation, for the one-time creation of the first Platform Super Administrator, then remove them.
+
+| Variable | Used for |
+|---|---|
+| `PLATFORM_BOOTSTRAP_ENABLED` | Must be exactly `true` to enable bootstrap. Any other value (or unset) = disabled. |
+| `PLATFORM_BOOTSTRAP_SECRET` | **Server-only**, at least 32 characters (shorter = treated as not configured). Entered on `/setup` and sent in the `x-vyron-bootstrap-secret` header — never in a URL. Compared in constant time, never logged or returned. |
+| `BOOTSTRAP_OWNER_EMAIL` | **Required** when bootstrap is enabled (without it bootstrap answers 503). The only address that can be invited (case-insensitive). |
+
+Procedure (fresh installations only):
+
+1. Set all three variables and deploy.
+2. Open `/setup` and enter the secret and the owner address. The page never asks for a password.
+3. Supabase emails an invitation to that address. The administrator opens the link and sets their own password, through the same flow as every other invitation (`/auth/confirm`, then `/reset-password`).
+4. Bootstrap is **complete only once the invitation has been accepted**, meaning a verified `platform_super_administrator` exists. Until then it is pending:
+   - Submitting again re-sends the invitation.
+   - Changing `BOOTSTRAP_OWNER_EMAIL` and submitting moves the pending invitation to the corrected address, and the old, never-verified account is removed.
+5. Once complete, bootstrap is final (`platform_bootstrap_state`, migration `0097`). Every further attempt is refused, even if the variables are left behind.
+6. **Remove all three variables and redeploy.**
+
+Only a fresh invitation can become the administrator. If the owner address already has an account created some other way, such as an unverified self-registration, setup refuses it. Delete that account in Supabase Dashboard → Authentication → Users, then run setup again.
+
+Limits: 5 failed attempts per client and 20 overall per 15 minutes, and at most 5 invitations per hour. Every attempt is recorded as a `PlatformBootstrapAttempt` security event.
+
 **No placeholders, no missing values** — verified live: `.env.local` populated with real values, then confirmed reachable via `curl` against the Auth health endpoint (`GET /auth/v1/health`) and the Storage bucket-list endpoint before proceeding to migrations.
 
 ## 3. Migration deployment
@@ -83,7 +108,9 @@ Two tiers, both automatic:
 
 ## 6. Bootstrap administrator creation
 
-Deploy the app (§8) pointed at the migrated project, then visit **`/setup`**. It self-detects an empty installation (zero `platform_super_administrator` assignments) and shows a real signup form; submitting creates both the Supabase Auth user (`email_confirm: true`, so no email round-trip is needed to log in immediately) and the platform-scope role assignment in one step, using `SUPABASE_SERVICE_ROLE_KEY` under the hood. The page and its API route (`/api/setup/bootstrap`) both re-check independently on every request — once an administrator exists, `/setup` shows "Already set up" and the API returns `409` for any further attempt, regardless of who calls it. Verified live end-to-end, including the self-lock.
+Only on a fresh installation, and only with the bootstrap variables from §2 set: deploy the app (§8) pointed at the migrated project, visit **`/setup`**, and follow the procedure in §2.
+
+Before the P0 remediation (migrations `0097`/`0098`), this page was public and prerendered. It created an already-confirmed administrator (`email_confirm: true`). It is now off by default, secret-gated and limited to the owner address. It invites the owner and completes only once the invitation is accepted.
 
 ## 7. First company setup
 
@@ -147,7 +174,7 @@ See `DISASTER_RECOVERY.md` for the full procedure set.
 - [ ] Custom SMTP configured, Email Templates updated to point at `/auth/confirm` (§8)
 - [ ] Supabase Auth URL Configuration's Site URL + Redirect URLs match the real production domain (§10)
 - [ ] Max Rows raised from the 1,000-row default for production data volume (§11)
-- [ ] `/setup` visited once, first Platform Super Administrator created, page now shows "Already set up" on reload
+- [ ] Fresh installations only: `/setup` used once with the bootstrap variables set (§2), and the invitation accepted. `GET /api/setup/bootstrap` (with the secret header) then reports `completed`. After that, all three bootstrap variables are removed and the app redeployed, so `/setup` answers 404.
 - [ ] First company created, Company Owner assignment confirmed
 - [ ] A real login, logout, forgot-password, and reset-password cycle completed manually against the production URL (not just Preview Mode)
 - [ ] Backup retention window confirmed for the actual plan tier in use (§12)

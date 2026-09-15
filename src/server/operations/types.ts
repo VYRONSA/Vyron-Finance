@@ -12,7 +12,7 @@ export type DataQuality = "Live" | "Calculated" | "NotAvailable";
 
 export type Metric<T> = { value: T | null; quality: DataQuality; note?: string };
 
-export const SYSTEM_EVENT_TYPES = ["PermissionDenied", "LoginFailed", "AccountLocked", "SessionExpired", "ApiAuthFailure"] as const;
+export const SYSTEM_EVENT_TYPES = ["PermissionDenied", "LoginFailed", "AccountLocked", "SessionExpired", "ApiAuthFailure", "PlatformBootstrapAttempt"] as const;
 export type SystemEventType = (typeof SYSTEM_EVENT_TYPES)[number];
 
 export type EventSeverity = "info" | "warning" | "high" | "critical";

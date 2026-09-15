@@ -1,54 +1,48 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { BootstrapAdminForm } from "@/components/auth/bootstrap-admin-form";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { isSupabaseAdminConfigured } from "@/lib/supabase/admin";
-import { hasPlatformSuperAdministrator } from "@/server/services/bootstrap-service";
+import { isPlatformBootstrapEnabled } from "@/server/setup/bootstrap-guard";
+
+/** Rendered on every request — never prerendered or served from a cache,
+ * so whether it exists always reflects the live configuration. */
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "First-Run Setup — VYRON FINANCE",
+  robots: { index: false, follow: false, nocache: true },
 };
 
-/** The one place a brand-new installation gets its first real
- * administrator without touching the database by hand — see
- * `bootstrap-service.ts`. Locks itself the moment a Platform Super
- * Administrator exists, checked fresh on every load (never cached),
- * and the API route re-checks the same thing independently — this page
- * gating alone is not the security boundary. */
-export default async function SetupPage() {
+/** First-run setup for a brand-new installation. P0 security remediation:
+ * 404 unless `PLATFORM_BOOTSTRAP_ENABLED` is exactly "true" (production
+ * leaves it unset). The page never reveals whether a platform
+ * administrator exists — the secret-gated API route is the only boundary
+ * and the only thing that reports bootstrap state. */
+export default function SetupPage() {
+  if (!isPlatformBootstrapEnabled()) notFound();
+
   if (!isSupabaseConfigured() || !isSupabaseAdminConfigured()) {
     return (
       <Shell>
         <h1 className="text-2xl font-medium text-vf-ink">Not configured yet</h1>
         <p className="mt-1.5 text-sm text-vf-ink-soft">
-          First-run setup needs NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and
-          SUPABASE_SERVICE_ROLE_KEY in .env.local — see .env.local.example.
+          First-run setup needs NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY.
         </p>
-      </Shell>
-    );
-  }
-
-  const alreadyBootstrapped = await hasPlatformSuperAdministrator();
-  if (alreadyBootstrapped) {
-    return (
-      <Shell>
-        <h1 className="text-2xl font-medium text-vf-ink">Already set up</h1>
-        <p className="mt-1.5 text-sm text-vf-ink-soft">A Platform Super Administrator already exists for this installation.</p>
-        <Link href="/login" className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-vf-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-vf-red-700">
-          Go to login
-        </Link>
       </Shell>
     );
   }
 
   return (
     <Shell>
-      <h1 className="text-2xl font-medium text-vf-ink">Welcome to VYRON FINANCE</h1>
+      <h1 className="text-2xl font-medium text-vf-ink">First-run setup</h1>
       <p className="mt-1.5 text-sm text-vf-ink-soft">
-        This installation has no administrator yet. Create the first Platform Super Administrator to get started —
-        every company and platform setting will be manageable from this account.
+        Invite the first Platform Super Administrator. You need the setup secret configured for this installation, and the address
+        must be the configured owner address. An invitation is emailed there; the administrator sets their own password from the
+        link, and setup is complete once it has been accepted.
       </p>
       <div className="mt-8">
         <BootstrapAdminForm />

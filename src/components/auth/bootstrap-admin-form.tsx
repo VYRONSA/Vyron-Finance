@@ -1,31 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { PasswordInput } from "@/components/ui/password-input";
-import { MIN_PASSWORD_LENGTH, passwordPolicyError } from "@/lib/password-policy";
 
+/** Sent as a request header — never as part of a URL or the request body. */
+const BOOTSTRAP_SECRET_HEADER = "x-vyron-bootstrap-secret";
+
+/** Invites the first Platform Super Administrator. No password is chosen
+ * here: the invitee sets their own from the emailed link. */
 export function BootstrapAdminForm() {
-  const router = useRouter();
+  const [setupSecret, setSetupSecret] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [invited, setInvited] = useState<{ email: string; reissued: boolean } | null>(null);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
 
-    const policyError = passwordPolicyError(password);
-    if (policyError) {
-      setError(policyError);
+    if (!setupSecret) {
+      setError("Enter the setup secret configured for this installation.");
       return;
     }
-    if (password !== confirmPassword) {
-      setError("Passwords don't match.");
+    if (!email.includes("@")) {
+      setError("Enter the platform owner's email address.");
       return;
     }
 
@@ -33,33 +33,41 @@ export function BootstrapAdminForm() {
     try {
       const res = await fetch("/api/setup/bootstrap", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        headers: { "Content-Type": "application/json", [BOOTSTRAP_SECRET_HEADER]: setupSecret },
+        body: JSON.stringify({ email }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setDone(true);
-        setTimeout(() => router.push("/login"), 1800);
+        setInvited({ email, reissued: data.outcome === "reissued" });
+        setSetupSecret("");
       } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error ?? "Couldn't create the administrator account.");
+        setError(data.error ?? "Couldn't send the invitation.");
       }
     } catch {
-      setError("Couldn't reach the authentication service. Check your Supabase configuration.");
+      setError("Couldn't reach the server.");
     } finally {
       setLoading(false);
     }
   }
 
-  if (done) {
+  if (invited) {
     return (
-      <p className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-4 py-3 text-sm text-[#1f6e4b]">
-        Platform Super Administrator created. Taking you to login…
+      <p role="status" className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-4 py-3 text-sm text-[#1f6e4b]">
+        {invited.reissued ? "Invitation sent again" : "Invitation sent"} to {invited.email}. Open the link in that email to set your password. Setup is
+        complete once the invitation has been accepted.
       </p>
     );
   }
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+      <div>
+        <label htmlFor="setup-secret" className="mb-1.5 block text-sm font-medium text-vf-ink">
+          Setup secret
+        </label>
+        <PasswordInput id="setup-secret" name="setup-secret" required autoComplete="off" value={setupSecret} onChange={(e) => setSetupSecret(e.target.value)} />
+      </div>
+
       <div>
         <label htmlFor="setup-email" className="mb-1.5 block text-sm font-medium text-vf-ink">
           Email address
@@ -77,35 +85,6 @@ export function BootstrapAdminForm() {
         />
       </div>
 
-      <div>
-        <label htmlFor="setup-password" className="mb-1.5 block text-sm font-medium text-vf-ink">
-          Password
-        </label>
-        <PasswordInput
-          id="setup-password"
-          name="password"
-          required
-          autoComplete="new-password"
-          minLength={MIN_PASSWORD_LENGTH}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="setup-confirm-password" className="mb-1.5 block text-sm font-medium text-vf-ink">
-          Confirm password
-        </label>
-        <PasswordInput
-          id="setup-confirm-password"
-          name="confirm-password"
-          required
-          autoComplete="new-password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-        />
-      </div>
-
       {error && (
         <p role="alert" className="rounded-lg border border-vf-danger/25 bg-vf-danger/8 px-3.5 py-2.5 text-sm text-vf-danger">
           {error}
@@ -113,7 +92,7 @@ export function BootstrapAdminForm() {
       )}
 
       <Button type="submit" variant="primary" className="w-full" disabled={loading}>
-        {loading ? "Creating…" : "Create Platform Super Administrator"}
+        {loading ? "Sending…" : "Send administrator invitation"}
       </Button>
     </form>
   );

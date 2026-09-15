@@ -35,7 +35,14 @@ Actions: View, Create, Edit, Delete, Approve, Reject, Reverse, Post, Export, Imp
 | Managing Director | Same as Financial Director |
 | Company Owner | Same as Financial Director + `SystemAdministration`/`ManageBilling` (the only company role with either) |
 
-### 4 platform-scope roles (`company_id is null`, apply across every company via the two-branch `user_has_permission()`/`user_can_access_company()` design)
+### 4 platform-scope roles (`company_id is null`) — platform administration only
+
+Since migration `0098_platform_role_tenant_isolation.sql`, a platform-scope role is **platform administration, not tenant access**. Before `0098`, any platform-scope assignment made `user_can_access_company()` and `user_has_permission()` true in every company, which granted read and write access to every tenant's accounting data. Now:
+
+- `user_can_access_company(company)` and `user_has_permission(company, key)` honour **company-scoped assignments only**.
+- `user_has_permission(null, key)` and the new `user_has_platform_permission(key)` answer platform-level questions (for example `ManageBilling`, platform-level `AuditAccess`).
+- Cross-tenant data access exists only through the explicit platform permission **`CrossTenantRead`**. It is **read-only**: one SELECT-only policy per tenant table, and it can never write. By default no role holds it.
+- The billing and licensing platform policies require the explicit `ManageBilling` platform permission. Previously any platform role, including Partner, was enough.
 
 | Role | Grants |
 |---|---|
