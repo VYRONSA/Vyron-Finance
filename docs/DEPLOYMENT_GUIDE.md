@@ -7,8 +7,14 @@ RC2 Phase 12 deliverable (originally produced as RC1 Phase 7.6's Phase I; update
 ## 1. Supabase project creation
 
 1. Create a Supabase account and a new project at supabase.com (or via the Vercel Marketplace — see §9).
-2. Note the **Project Reference** (the subdomain in your project URL, e.g. `vrdiysfgeozidnejbruv`) and choose a strong **database password** at creation time — write it down now. Supabase does not show it again; you'll reset it via Project Settings → Database if lost.
+2. Note the **Project Reference** (the subdomain in your project URL, written `<project-ref>` in the commands below) and choose a strong **database password** at creation time — write it down now. Supabase does not show it again; you'll reset it via Project Settings → Database if lost.
 3. Wait for provisioning to finish (a few minutes).
+
+> **VYRON Finance production project: `gnvhzckxryuttsqnvriv`** ("Vyron Finance Deploy"). This is the ref in the live production `NEXT_PUBLIC_SUPABASE_URL`.
+>
+> Other projects in the same Supabase organisation are **not** production. That includes `vrdiysfgeozidnejbruv` ("Vyron Finance"), which earlier versions of this guide showed as the example ref.
+>
+> Before any `supabase link`, `supabase migration list` or `supabase db push` against production, confirm the ref matches production's `NEXT_PUBLIC_SUPABASE_URL`. Everywhere else in this guide, `<ref>` / `<project-ref>` is a placeholder.
 
 ## 2. Environment variables
 
