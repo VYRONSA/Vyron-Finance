@@ -1,10 +1,11 @@
 /**
  * Repository layer for the Posting Engine — `posting_batches` and the
  * append-only `gl_transactions` ledger itself (see
- * `supabase/migrations/0007_general_ledger.sql`). Nothing outside
- * `posting-engine-service.ts` should import this file: it's the one place
- * that ever writes to `gl_transactions`, matching the reference's own
- * stated invariant for `general_ledger.py`.
+ * `supabase/migrations/0007_general_ledger.sql`). Only the posting
+ * services (`posting-engine-service.ts`, `bank-posting-service.ts`,
+ * `rule-processing-service.ts`) should import this file: it's the one
+ * place that ever writes to `gl_transactions`, matching the reference's
+ * own stated invariant for `general_ledger.py`.
  */
 
 import { createClient } from "@/lib/supabase/server";
@@ -99,6 +100,120 @@ export async function postApprovedJournalsAtomic(
     batch: result.batch ? postingBatchFromRow(result.batch) : null,
     claimedJournalIds: result.claimedJournalIds ?? [],
   };
+}
+
+/** What `fn_post_rule_engine_journal` / `fn_recover_rule_engine_journal_link`
+ * (migration 0100) did for one bank transaction. Only `posted` and
+ * `recovered` changed anything. */
+export type RuleEngineJournalOutcomeKind =
+  | "posted"
+  | "recovered"
+  | "already_linked"
+  | "already_posted"
+  | "not_eligible"
+  | "blocked"
+  | "not_found"
+  | "no_journal";
+
+export type RuleEngineJournalOutcome = {
+  outcome: RuleEngineJournalOutcomeKind;
+  transactionId: number;
+  journalId: number | null;
+  journalNumber: string | null;
+  journalStatus: string | null;
+  batchId: number | null;
+  batchNumber: string | null;
+  reason: string | null;
+};
+
+export type RuleEngineJournalInput = {
+  journalDate: string;
+  journalType: string;
+  description: string;
+  reference: string;
+  financialYearLabel: string;
+  financialPeriod: number;
+  lines: { accountCode: string; debit: number; credit: number; description: string }[];
+};
+
+type RuleEngineJournalRpcRow = {
+  outcome: RuleEngineJournalOutcomeKind;
+  transactionId?: number;
+  journalId?: number | null;
+  journalNumber?: string | null;
+  journalStatus?: string | null;
+  batchId?: number | null;
+  batchNumber?: string | null;
+  reason?: string | null;
+};
+
+function ruleEngineOutcomeFromRpc(transactionId: number, data: unknown): RuleEngineJournalOutcome {
+  // Untyped RPC result — same convention as the two functions above.
+  const row = data as RuleEngineJournalRpcRow;
+  return {
+    outcome: row.outcome,
+    transactionId: Number(row.transactionId ?? transactionId),
+    journalId: row.journalId == null ? null : Number(row.journalId),
+    journalNumber: row.journalNumber ?? null,
+    journalStatus: row.journalStatus ?? null,
+    batchId: row.batchId == null ? null : Number(row.batchId),
+    batchNumber: row.batchNumber ?? null,
+    reason: row.reason ?? null,
+  };
+}
+
+/**
+ * Migration 0100 — claims and posts ONE Banking Rule transaction: the
+ * rule's classification (`claim`, see `buildRuleClaim`), journal, lines,
+ * posting batch, GL rows and the transaction's own link, in a single
+ * database transaction. It replaces `applyRuleActions` -> `createJournal`
+ * -> `postApprovedJournals` -> `markTransactionPosted`, separate calls that
+ * a killed request could interrupt after the ledger was written but before
+ * the transaction was marked (production transaction 2151 / JR000264), or
+ * after the claim but before the journal (a transaction a rule owned but
+ * never posted). It posts only this transaction's journal — never the
+ * company's other Approved journals — and runs the existing-journal
+ * recovery first, so a retry can never create a second journal. Invalid
+ * input throws and nothing is written. `postingDate` is the batch date
+ * (the same run date the journal carries); the database clock is not used.
+ */
+export async function postRuleEngineJournalAtomic(
+  companyId: string,
+  transactionId: number,
+  journal: RuleEngineJournalInput,
+  postedBy: string,
+  postingDate: string,
+  claim: Record<string, unknown>,
+): Promise<RuleEngineJournalOutcome> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fn_post_rule_engine_journal", {
+    p_company_id: companyId,
+    p_transaction_id: transactionId,
+    p_journal: journal,
+    p_posted_by: postedBy,
+    p_posting_date: postingDate,
+    p_claim: claim,
+  });
+  if (error) throw error;
+  return ruleEngineOutcomeFromRpc(transactionId, data);
+}
+
+/**
+ * Migration 0100 — links a transaction to its already-Posted, unreversed
+ * Banking Rule journal when that link is missing. Writes only the
+ * transaction's `journal_id`/`posted_flag` (plus an audit entry); never a
+ * journal, batch or GL row. `no_journal` means there was nothing to
+ * recover.
+ */
+export async function recoverRuleEngineJournalLink(companyId: string, transactionId: number, performedBy: string): Promise<RuleEngineJournalOutcome> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fn_recover_rule_engine_journal_link", {
+    p_company_id: companyId,
+    p_transaction_id: transactionId,
+    p_performed_by: performedBy,
+  });
+  if (error) throw error;
+  return ruleEngineOutcomeFromRpc(transactionId, data);
 }
 
 export type PostedBankJournal = {

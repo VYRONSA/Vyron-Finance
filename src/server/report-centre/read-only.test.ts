@@ -61,6 +61,8 @@ const FORBIDDEN_IMPORTS = [
   "applyRuleActions",
   "applyAiClassification",
   "markTransactionPosted",
+  "postRuleEngineJournalAtomic",
+  "recoverRuleEngineJournalLink",
   "bulkAssign",
   "bulkRecode",
   "generateJournalFromTransactions",

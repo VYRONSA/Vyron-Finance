@@ -1,11 +1,17 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-vi.mock("@/server/repositories/journal-repository", () => ({ createJournal: vi.fn(), linkTransactionToJournal: vi.fn() }));
+vi.mock("@/server/repositories/journal-repository", () => ({
+  createJournal: vi.fn(),
+  linkTransactionToJournal: vi.fn(),
+  listRuleEngineJournalsForTransactions: vi.fn(),
+  updateJournal: vi.fn(),
+  cancelJournal: vi.fn(),
+}));
 vi.mock("@/server/repositories/bank-transaction-split-repository", () => ({ listSplitsForTransaction: vi.fn() }));
 
 import { buildJournalLinesForSplitTransaction, buildJournalLinesForTransaction, generateJournalDraft, generateJournalFromTransactions, resolveBankGlAccount } from "./journal-service";
 import * as journalRepo from "@/server/repositories/journal-repository";
-import type { BankTransactionRecord, Journal } from "@/server/accounting/types";
+import type { BankTransactionRecord, Journal, RuleEngineJournalRef } from "@/server/accounting/types";
 
 function txn(overrides: Partial<BankTransactionRecord> = {}): BankTransactionRecord {
   return {
@@ -367,6 +373,9 @@ describe("generateJournalFromTransactions — posted-during-generation race guar
   beforeEach(() => {
     vi.mocked(journalRepo.createJournal).mockReset().mockResolvedValue(journal());
     vi.mocked(journalRepo.linkTransactionToJournal).mockReset().mockResolvedValue(true);
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockReset().mockResolvedValue(new Map());
+    vi.mocked(journalRepo.updateJournal).mockReset().mockImplementation(async () => journal({ description: "rebuilt" }));
+    vi.mocked(journalRepo.cancelJournal).mockReset().mockImplementation(async () => journal({ status: "Cancelled" }));
   });
 
   it("links every eligible transaction normally when nothing races the generation (baseline, unchanged behavior)", async () => {
@@ -403,5 +412,79 @@ describe("generateJournalFromTransactions — posted-during-generation race guar
         { transactionId: 2, reason: expect.stringContaining("Posted by another process during journal generation") },
       ]),
     );
+  });
+});
+
+describe("Migration 0100 — H. Generate Journal never journals an amount a Banking Rule journal already carries", () => {
+  const bankAccountsById = new Map([[1, { glAccount: "1000", accountNumber: "MAIN-001" }]]);
+  const ruleJournal = (overrides: Partial<RuleEngineJournalRef> = {}): RuleEngineJournalRef => ({ id: 278, journalNumber: "JR000264", status: "Posted", isReversed: false, sourceId: 2, ...overrides });
+
+  beforeEach(() => {
+    vi.mocked(journalRepo.createJournal).mockReset().mockResolvedValue(journal());
+    vi.mocked(journalRepo.linkTransactionToJournal).mockReset().mockResolvedValue(true);
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockReset().mockResolvedValue(new Map());
+    vi.mocked(journalRepo.updateJournal).mockReset().mockImplementation(async () => journal({ description: "rebuilt" }));
+    vi.mocked(journalRepo.cancelJournal).mockReset().mockImplementation(async () => journal({ status: "Cancelled" }));
+  });
+
+  it("skips (before creating anything) a transaction whose Banking Rule journal is Posted, even with journal_id NULL", async () => {
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockResolvedValue(new Map([[2, ruleJournal()]]));
+    const transactions = [txn({ id: 1, debit: 500 }), txn({ id: 2, debit: 6435 })];
+
+    const outcome = await generateJournalFromTransactions("co_1", transactions, bankAccountsById);
+
+    expect(journalRepo.listRuleEngineJournalsForTransactions).toHaveBeenCalledWith("co_1", [1, 2]);
+    const createdLines = vi.mocked(journalRepo.createJournal).mock.calls[0]![1].lines;
+    expect(createdLines.reduce((sum, l) => sum + l.debit, 0)).toBe(500);
+    expect(journalRepo.linkTransactionToJournal).not.toHaveBeenCalledWith("co_1", 2, expect.anything());
+    expect(outcome.includedTransactionIds).toEqual([1]);
+    expect(outcome.skipped).toEqual([{ transactionId: 2, reason: expect.stringContaining("JR000264") }]);
+  });
+
+  it("creates no journal at all when every selected transaction is covered", async () => {
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockResolvedValue(new Map([[2, ruleJournal({ status: "Approved" })]]));
+    const outcome = await generateJournalFromTransactions("co_1", [txn({ id: 2 })], bankAccountsById);
+    expect(journalRepo.createJournal).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ journal: null, includedTransactionIds: [], skipped: [{ transactionId: 2, reason: expect.stringContaining("Approved") }] });
+  });
+
+  it("does not skip for a reversed or cancelled Banking Rule journal", async () => {
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockResolvedValue(new Map([[2, ruleJournal({ isReversed: true })]]));
+    const outcome = await generateJournalFromTransactions("co_1", [txn({ id: 2 })], bankAccountsById);
+    expect(outcome.includedTransactionIds).toEqual([2]);
+  });
+
+  it("rebuilds the draft from the linked transactions only when the database refuses a link, so the draft cannot double-post it", async () => {
+    // The database guard (or a concurrent poster) refuses transaction 2.
+    vi.mocked(journalRepo.linkTransactionToJournal).mockImplementation(async (_co, id) => id !== 2);
+    const transactions = [txn({ id: 1, debit: 500 }), txn({ id: 2, debit: 200 })];
+
+    const outcome = await generateJournalFromTransactions("co_1", transactions, bankAccountsById);
+
+    expect(journalRepo.updateJournal).toHaveBeenCalledTimes(1);
+    const [, journalId, fields] = vi.mocked(journalRepo.updateJournal).mock.calls[0]!;
+    expect(journalId).toBe(500);
+    expect(fields.description).toBe("Generated from 1 transaction(s)");
+    expect(fields.lines).toEqual([
+      { accountCode: "6000", debit: 500, credit: 0, description: "Payment to ABC Supplies" },
+      { accountCode: "1000", debit: 0, credit: 500, description: "Payment to ABC Supplies" },
+    ]);
+    expect(outcome.journal?.description).toBe("rebuilt");
+    expect(outcome.includedTransactionIds).toEqual([1]);
+  });
+
+  it("cancels the draft when no link landed at all", async () => {
+    vi.mocked(journalRepo.linkTransactionToJournal).mockResolvedValue(false);
+    const outcome = await generateJournalFromTransactions("co_1", [txn({ id: 1 })], bankAccountsById);
+    expect(journalRepo.cancelJournal).toHaveBeenCalledWith("co_1", 500);
+    expect(journalRepo.updateJournal).not.toHaveBeenCalled();
+    expect(outcome.journal).toBeNull();
+    expect(outcome.includedTransactionIds).toEqual([]);
+  });
+
+  it("leaves the draft untouched when every link landed", async () => {
+    await generateJournalFromTransactions("co_1", [txn({ id: 1 }), txn({ id: 2 })], bankAccountsById);
+    expect(journalRepo.updateJournal).not.toHaveBeenCalled();
+    expect(journalRepo.cancelJournal).not.toHaveBeenCalled();
   });
 });

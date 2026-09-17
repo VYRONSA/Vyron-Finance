@@ -21,7 +21,7 @@ import { resolveBankGlAccount } from "@/server/services/journal-service";
 import { buildJournalFromEvent } from "@/server/services/posting-rule-service";
 import { postApprovedJournals } from "@/server/services/posting-engine-service";
 import { assertNotMonthEndLocked } from "@/server/services/bank-reconciliation-service";
-import type { BankTransactionRecord } from "@/server/accounting/types";
+import { isLiveRuleEngineJournal, type BankTransactionRecord } from "@/server/accounting/types";
 import type { CashbookBatch, CashbookBatchType } from "@/server/banking/types";
 
 export class ValidationError extends Error {}
@@ -238,6 +238,29 @@ export async function editCashbookEntry(companyId: string, transactionId: number
   });
 }
 
+/** Migration 0100 review (H2) — checked BEFORE anything is created or
+ * posted. This path writes the ledger (`postApprovedJournals`) before it
+ * links the entry (`postCaptureStatus`), so the database's link guard
+ * alone would only fire after a second posting had already reached the
+ * ledger. An entry that is already linked or flagged posted, or that a
+ * live Banking Rule journal already carries, is refused here. (Banking
+ * Rules no longer take Manual entries at all; this also covers any taken
+ * before that change.) A fully atomic Cashbook post-and-link is a separate
+ * change. */
+async function assertNotAlreadyInLedger(companyId: string, entries: BankTransactionRecord[]): Promise<void> {
+  for (const entry of entries) {
+    if (entry.journalId !== null) throw new ValidationError(`Transaction #${entry.id} is already linked to a journal; it cannot be posted again.`);
+    if (entry.postedFlag) throw new ValidationError(`Transaction #${entry.id} is already flagged as posted; it cannot be posted again.`);
+  }
+  const ruleJournals = await journalRepo.listRuleEngineJournalsForTransactions(companyId, entries.map((e) => e.id));
+  for (const entry of entries) {
+    const journal = ruleJournals.get(entry.id);
+    if (journal && isLiveRuleEngineJournal(journal)) {
+      throw new ValidationError(`Transaction #${entry.id} is already carried by Banking Rule journal ${journal.journalNumber} (${journal.status}); it cannot also be posted from the Cashbook.`);
+    }
+  }
+}
+
 /** Determines which real posting rule + dynamic account resolution a
  * captured entry needs, then approves and posts it through the ONE
  * Posting Engine — same "approve and post in one call" pattern every
@@ -253,6 +276,8 @@ export async function approveAndPostCashbookEntry(companyId: string, transaction
 
   const isTransfer = transaction.reference.startsWith("TRANSFER-");
   if (isTransfer) return approveAndPostTransfer(companyId, transaction);
+
+  await assertNotAlreadyInLedger(companyId, [transaction]);
 
   const { code: bankCode } = await requireBankGlAccount(companyId, transaction.bankAccountId!);
   const isReceipt = transaction.credit > 0;
@@ -301,6 +326,7 @@ async function approveAndPostTransfer(companyId: string, fromLeg: BankTransactio
     (t) => t.reference === fromLeg.reference && t.id !== fromLeg.id && t.captureStatus !== "Posted",
   );
   if (!toLeg) throw new ValidationError("Could not find this transfer's other leg — it may already be posted.");
+  await assertNotAlreadyInLedger(companyId, [fromLeg, toLeg]);
 
   const { code: fromCode } = await requireBankGlAccount(companyId, fromLeg.bankAccountId!);
   const { code: toCode } = await requireBankGlAccount(companyId, toLeg.bankAccountId!);

@@ -659,3 +659,23 @@ export type Journal = {
   postingBatchId: number | null;
   lines: JournalLine[];
 };
+
+/** `ae_journals.source_type` of the journal the Banking Rule engine posts
+ * for one bank transaction (`source_id` = that transaction's id). Migration
+ * 0100 allows at most one per transaction. */
+export const RULE_ENGINE_JOURNAL_SOURCE_TYPE = "bank_transaction_rule_engine";
+
+/** The header facts a posting path needs about a transaction's Banking
+ * Rule journal. */
+export type RuleEngineJournalRef = Pick<Journal, "id" | "journalNumber" | "status" | "isReversed"> & { sourceId: number };
+
+/** Whether a Banking Rule journal has moved — or can still move — the
+ * ledger for its transaction: Posted and not reversed, or still on its way
+ * to Posted. The same definition as migration 0100's
+ * `fn_bank_transaction_has_live_rule_engine_journal`. A transaction with a
+ * live journal is already accounted for, whatever its own
+ * `posted_flag`/`journal_id` say, and must never be posted again. */
+export function isLiveRuleEngineJournal(journal: Pick<Journal, "status" | "isReversed">): boolean {
+  if (journal.status === "Posted") return !journal.isReversed;
+  return journal.status === "Draft" || journal.status === "Submitted" || journal.status === "Approved";
+}

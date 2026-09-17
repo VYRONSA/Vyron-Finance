@@ -15,10 +15,10 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { buildBankPostingPlan, type BankPostingPlan, type PostingPlanContext } from "./bank-posting-service";
+import { buildBankPostingPlan, ruleEngineJournalExclusion, type BankPostingPlan, type PostingPlanContext } from "./bank-posting-service";
 import { summarizeTrialBalance } from "./trial-balance-service";
 import { buildIncomeStatement } from "@/server/reporting/income-statement-engine";
-import { transactionPostingStatus, type BankTransactionRecord } from "@/server/accounting/types";
+import { transactionPostingStatus, type BankTransactionRecord, type RuleEngineJournalRef } from "@/server/accounting/types";
 import type { ChartOfAccount, TrialBalanceRow } from "@/server/general-ledger/types";
 import type { FinancialYear } from "@/server/company-management/types";
 
@@ -423,5 +423,47 @@ describe("9. company isolation", () => {
     const plan = buildBankPostingPlan([txn()], context());
     const codes = plan.journals.flatMap((j) => j.lines.map((l) => l.accountCode));
     expect(codes.every((code) => ACCOUNTS.some((a) => a.code === code))).toBe(true);
+  });
+});
+
+describe("Migration 0100 — G. Bank Posting refuses a transaction a Banking Rule journal already covers", () => {
+  // Production transaction 2151: posted to the ledger by JR000264, but its
+  // own posted_flag/journal_id were never stamped.
+  const unlinked = () => txn({ id: 2151, debit: 6435, credit: 0, suggestedGlAccount: "3030", postedFlag: false, journalId: null });
+  const ruleJournal = (overrides: Partial<RuleEngineJournalRef> = {}): RuleEngineJournalRef => ({ id: 278, journalNumber: "JR000264", status: "Posted", isReversed: false, sourceId: 2151, ...overrides });
+  const withJournal = (journal: RuleEngineJournalRef) => context({ ruleEngineJournalsByTransactionId: new Map([[2151, journal]]) });
+
+  it("without the lookup, posted_flag=false + journal_id=NULL looks postable — the gap this closes", () => {
+    const plan = buildBankPostingPlan([unlinked()], context());
+    expect(plan.journals.flatMap((j) => j.transactionIds)).toEqual([2151]);
+  });
+
+  it("reports it as already posted, naming the journal, and plans no journal for it", () => {
+    const plan = buildBankPostingPlan([unlinked()], withJournal(ruleJournal()));
+    expect(plan.journals).toEqual([]);
+    expect(plan.alreadyPosted).toEqual([{ transactionId: 2151, reason: expect.stringContaining("JR000264"), kind: "already-posted" }]);
+    expect(applyPlanToLedger(plan)).toEqual([]);
+  });
+
+  it("the rest of the selection still posts", () => {
+    const plan = buildBankPostingPlan([unlinked(), txn({ id: 7, debit: 100 })], withJournal(ruleJournal()));
+    expect(plan.journals.flatMap((j) => j.transactionIds)).toEqual([7]);
+    expect(plan.alreadyPosted.map((e) => e.transactionId)).toEqual([2151]);
+  });
+
+  it.each(["Draft", "Submitted", "Approved"] as const)("blocks it while its Banking Rule journal is still %s (it could still post)", (status) => {
+    const plan = buildBankPostingPlan([unlinked()], withJournal(ruleJournal({ status })));
+    expect(plan.journals).toEqual([]);
+    expect(plan.blocked).toEqual([{ transactionId: 2151, reason: expect.stringContaining(status), kind: "blocked" }]);
+  });
+
+  it.each([
+    ["reversed", { isReversed: true }],
+    ["rejected", { status: "Rejected" as const }],
+    ["cancelled", { status: "Cancelled" as const }],
+  ])("does not block when the Banking Rule journal is %s (it no longer carries the amount)", (_label, overrides) => {
+    expect(ruleEngineJournalExclusion(2151, ruleJournal(overrides))).toBeNull();
+    const plan = buildBankPostingPlan([unlinked()], withJournal(ruleJournal(overrides)));
+    expect(plan.journals.flatMap((j) => j.transactionIds)).toEqual([2151]);
   });
 });

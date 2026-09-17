@@ -334,8 +334,10 @@ export async function getTransaction(companyId: string, transactionId: number): 
   return data ? bankTransactionFromRow(data) : null;
 }
 
-/** Every transaction the Rule Engine hasn't yet resolved to a journal —
- * the pipeline's own worklist. */
+/** Every transaction the Rule Engine hasn't yet resolved to a journal.
+ * Capped by the API's 1,000-row limit — the Rule Engine sweep pages
+ * through `listRuleEngineWorklistPage` instead; this remains for the
+ * explicit "apply to remaining" action. */
 export async function listUnprocessedTransactions(companyId: string): Promise<BankTransactionRecord[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -348,6 +350,67 @@ export async function listUnprocessedTransactions(companyId: string): Promise<Ba
     .returns<BankTransactionRow[]>();
   if (error) throw error;
   return data.map(bankTransactionFromRow);
+}
+
+/** Cursor for `listRuleEngineWorklistPage`: the last row's sort date (a
+ * missing transaction date sorts as `infinity`) and id. */
+export type RuleEngineWorklistCursor = { sortDate: string; id: number };
+
+export const RULE_ENGINE_WORKLIST_PAGE_MAX = 1000;
+
+export function ruleEngineWorklistCursorAfter(row: Pick<BankTransactionRecord, "transactionDate" | "id">): RuleEngineWorklistCursor {
+  return { sortDate: row.transactionDate || "infinity", id: row.id };
+}
+
+/** Migration 0100 — one keyset page of the Rule Engine's worklist
+ * (`journal_id IS NULL`), newest transaction date first, then id. With
+ * `claimableOnly`, only transactions a Banking Rule may still take
+ * (`fn_bank_transaction_is_claimable_by_rule`). Pages never overlap and
+ * rows posted mid-run cannot shift them, so repeated calls reach every
+ * row however long the worklist is. */
+export async function listRuleEngineWorklistPage(
+  companyId: string,
+  options: { claimableOnly: boolean; after: RuleEngineWorklistCursor | null; limit: number },
+): Promise<BankTransactionRecord[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .rpc("fn_list_rule_engine_worklist", {
+      p_company_id: companyId,
+      p_claimable_only: options.claimableOnly,
+      p_after_sort_date: options.after?.sortDate ?? null,
+      p_after_id: options.after?.id ?? null,
+      p_limit: Math.min(Math.max(options.limit, 0), RULE_ENGINE_WORKLIST_PAGE_MAX),
+    })
+    .select(TRANSACTION_SELECT);
+  if (error) throw error;
+  // Untyped RPC result — same convention as the other RPC readers here.
+  return ((data ?? []) as unknown as BankTransactionRow[]).map(bankTransactionFromRow);
+}
+
+/** Migration 0100 — transactions whose Banking Rule journal is Posted and
+ * unreversed but whose link is missing (the 2151 state), found directly
+ * rather than by walking the worklist. */
+export async function listRuleEngineRecoveryCandidates(companyId: string, limit: number): Promise<BankTransactionRecord[]> {
+  if (limit <= 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .rpc("fn_list_rule_engine_recovery_candidates", { p_company_id: companyId, p_limit: Math.min(limit, RULE_ENGINE_WORKLIST_PAGE_MAX) })
+    .select(TRANSACTION_SELECT);
+  if (error) throw error;
+  // Untyped RPC result — same convention as the other RPC readers here.
+  return ((data ?? []) as unknown as BankTransactionRow[]).map(bankTransactionFromRow);
+}
+
+/** How many transactions have no journal yet (the sweep's whole worklist). */
+export async function countUnprocessedTransactions(companyId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("ae_bank_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .is("journal_id", null);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /** Phase 26E — the AI Classification Sweep's own worklist, the company-
@@ -1202,72 +1265,35 @@ export type RuleResolutionFields = Partial<{
  * exactly as Phase 51 shipped it (explicit-confirmation-gated, batched,
  * its own distinct allocation_reason wording) and is never called from
  * here. */
-export async function applyRuleActions(companyId: string, transactionId: number, fields: RuleResolutionFields, matchedRuleName: string, performedBy: string): Promise<boolean> {
+export async function applyRuleActions(companyId: string, transactionId: number, fields: RuleResolutionFields, matchedRuleName: string, performedBy: string, matchedRuleIds: number[] = []): Promise<boolean> {
+  // Migration 0100 — the guard, the classification write, its allocation
+  // history row and the rule-application rows are now ONE database call
+  // (`fn_claim_bank_transaction_for_rule`), which also refuses Manual
+  // Cashbook entries. Same fields, same G/S/C precedence, same
+  // "Resolved by rule" history wording as the two PostgREST writes it
+  // replaces; they can no longer be separated by a failure.
+  if (Object.values(fields).every((value) => value === undefined)) return true;
   const supabase = await createClient();
-  const update: Record<string, unknown> = {};
-  if (fields.matchedMerchantId !== undefined) update.matched_merchant_id = fields.matchedMerchantId;
-  if (fields.matchedSupplierId !== undefined) update.matched_supplier_id = fields.matchedSupplierId;
-  if (fields.matchedCustomerId !== undefined) update.matched_customer_id = fields.matchedCustomerId;
-  if (fields.suggestedGlAccount !== undefined) update.suggested_gl_account = fields.suggestedGlAccount;
-  if (fields.suggestedVatCode !== undefined) update.suggested_vat_code = fields.suggestedVatCode;
-  if (fields.ruleId !== undefined) update.rule_id = fields.ruleId;
-  if (fields.allocationStatus !== undefined) update.allocation_status = fields.allocationStatus;
-  // Phase 27 — same G/C/S precedence `initialEdit()` (transaction-grid.tsx)
-  // already infers when this column is missing: a resolved Supplier/Customer
-  // match wins over a resolved GL account, matching Matching's own
-  // precedence over a plain GL suggestion elsewhere in this codebase.
-  if (fields.matchedSupplierId !== undefined) update.allocation_type = "S";
-  else if (fields.matchedCustomerId !== undefined) update.allocation_type = "C";
-  else if (fields.suggestedGlAccount !== undefined) update.allocation_type = "G";
-  // Phase 53 — a Banking Rule taking ownership always supersedes a prior
-  // unconfirmed AI guess; clearing the stale 'Future AI' marker once
-  // `rule_id` is the real owner keeps `allocation_method` truthful (a row
-  // can no longer claim to be an AI suggestion once a rule has resolved it).
-  if (fields.ruleId !== undefined) update.allocation_method = null;
-  if (Object.keys(update).length === 0) return true;
-
-  const { data, error: updateError } = await supabase
-    .from("ae_bank_transactions")
-    .update(update)
-    .eq("company_id", companyId)
-    .eq("id", transactionId)
-    .is("journal_id", null)
-    .eq("is_manual_override", false)
-    .is("rule_id", null)
-    .is("matched_supplier_id", null)
-    .is("matched_customer_id", null)
-    .is("matched_merchant_id", null)
-    // Migration 0094 — the hold covers "any automatic suggested GL
-    // assignment" and "any automatic VAT classification", not only the
-    // AI sweep. A Banking Rule run is exactly that, and this update is
-    // where it writes `suggested_gl_account`/`suggested_vat_code`.
-    .eq("review_hold", false)
-    .or('and(allocation_status.eq.Unallocated,suggested_gl_account.is.null),allocation_method.eq."Future AI"')
-    .select("id");
-  if (updateError) throw updateError;
-  if (!data || data.length === 0) return false;
-
-  // Pilot Review Round 1 — LIVE DEFECT found while verifying Phase 6's
-  // scan-and-apply flow, but pre-existing in already-shipped code: this
-  // insert never set `new_status`, a NOT NULL column on
-  // `ae_allocation_history` — every successful automatic rule match
-  // (via "Apply Rule," "Run Rule Engine Now," or this round's new scan-
-  // and-apply) has always thrown here. Masked previously because prior
-  // manual testing only ever exercised rules against transactions that
-  // already had a matched supplier from the separate Matching Engine
-  // (a different, working code path) — a genuinely new company's
-  // imported transactions, resolved by a GL-only rule with no
-  // supplier/customer match, hit this every time.
-  const { error: historyError } = await supabase.from("ae_allocation_history").insert({
-    company_id: companyId,
-    transaction_id: transactionId,
-    new_status: fields.allocationStatus,
-    is_manual_override: false,
-    performed_by: performedBy,
-    allocation_reason: `Resolved by rule "${matchedRuleName}"`,
+  const { data, error } = await supabase.rpc("fn_claim_bank_transaction_for_rule", {
+    p_company_id: companyId,
+    p_transaction_id: transactionId,
+    p_claim: buildRuleClaim(fields, matchedRuleName, matchedRuleIds),
+    p_performed_by: performedBy,
   });
-  if (historyError) throw historyError;
-  return true;
+  if (error) throw error;
+  return data === true;
+}
+
+/** The claim `fn_claim_bank_transaction_for_rule` / `fn_post_rule_engine_journal`
+ * take: only the fields the rule resolved (an absent key leaves that column
+ * alone), plus the rule's name and every matched rule for the history. */
+export function buildRuleClaim(fields: RuleResolutionFields, matchedRuleName: string, matchedRuleIds: number[], performedBy?: string): Record<string, unknown> {
+  const claim: Record<string, unknown> = { ruleName: matchedRuleName, matchedRuleIds };
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) claim[key] = value;
+  }
+  if (performedBy !== undefined) claim.performedBy = performedBy;
+  return claim;
 }
 
 /** Phase 40, Live Defect 2 — production forensic finding: `applyRuleActions`
@@ -1446,15 +1472,11 @@ export async function applyAiClassification(companyId: string, transactionId: nu
   }
 }
 
-export async function markTransactionPosted(companyId: string, transactionId: number, journalId: number): Promise<void> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("ae_bank_transactions")
-    .update({ journal_id: journalId, posted_flag: true })
-    .eq("company_id", companyId)
-    .eq("id", transactionId);
-  if (error) throw error;
-}
+// Migration 0100 — `markTransactionPosted` (a stand-alone
+// `journal_id`/`posted_flag` stamp written AFTER the journal had already
+// been posted) was removed. Posting and linking are now one database call:
+// `posting-repository.ts::postRuleEngineJournalAtomic`, and a missing link
+// is restored only by `recoverRuleEngineJournalLink`.
 
 export type DeleteTransactionsResult = { deletedIds: number[]; blockedIds: number[] };
 

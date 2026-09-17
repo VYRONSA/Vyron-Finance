@@ -5,6 +5,20 @@ import { listAllCompanyIds } from "@/server/repositories/company-repository";
 import { createAdminClient, isSupabaseAdminConfigured } from "@/lib/supabase/admin";
 import { runWithServerExecutionContext } from "@/lib/supabase/execution-context";
 
+/** The platform limit this route already ran under (Vercel's default),
+ * stated explicitly so it can't silently change. Deliberately NOT raised:
+ * safety comes from the deadline below and from atomic posting, not from
+ * more time. */
+export const maxDuration = 300;
+
+/** Migration 0100 — the scheduler stops starting new work this long after
+ * the request began, leaving 100 seconds of the platform limit as margin
+ * for whatever is in flight (each Banking Rules posting is a single atomic
+ * database call, so even a hard kill cannot half-post one). Production
+ * 2026-09-16: three sweeps ran into the 300-second kill; one was cut
+ * between posting JR000264 and linking transaction 2151. */
+const CRON_WORK_BUDGET_MS = 200_000;
+
 /**
  * Cron-compatible entry point for unattended Scheduler execution — an
  * external trigger (Vercel Cron / Supabase `pg_cron` / any scheduler)
@@ -60,18 +74,19 @@ async function handleRunDueTasks(request: Request, requestedCompanyId: string | 
   }
 
   const nowIso = new Date().toISOString();
+  const deadlineAtMs = Date.now() + CRON_WORK_BUDGET_MS;
   const adminClient = createAdminClient();
 
   return runWithServerExecutionContext(adminClient, async () => {
     if (requestedCompanyId) {
-      const outcome = await runDueTasks(requestedCompanyId, nowIso, "Scheduler (cron)");
+      const outcome = await runDueTasks(requestedCompanyId, nowIso, "Scheduler (cron)", { deadlineAtMs });
       return NextResponse.json({ outcome });
     }
 
     const companyIds = await listAllCompanyIds();
     const results: Record<string, Awaited<ReturnType<typeof runDueTasks>>> = {};
     for (const companyId of companyIds) {
-      results[companyId] = await runDueTasks(companyId, nowIso, "Scheduler (cron)");
+      results[companyId] = await runDueTasks(companyId, nowIso, "Scheduler (cron)", { deadlineAtMs });
     }
     return NextResponse.json({ companiesProcessed: companyIds.length, results });
   });

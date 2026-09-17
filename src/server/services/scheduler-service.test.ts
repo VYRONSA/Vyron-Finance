@@ -42,10 +42,10 @@ vi.mock("@/server/billing-platform/engine/feature-flag-engine", () => ({ hasFeat
 vi.mock("@/server/billing-platform/engine/licensing-engine", () => ({ checkUsageLimit: vi.fn() }));
 vi.mock("@/server/billing-platform/engine/usage-metering-engine", () => ({ recordUsageEvent: vi.fn() }));
 
-import { nextTaskRunAt, resumeTask, runDueTasks, runTaskNow, ValidationError } from "./scheduler-service";
+import { nextTaskRunAt, resumeTask, RULE_ENGINE_TASK_BUDGET_MS, runDueTasks, runTaskNow, ValidationError } from "./scheduler-service";
 import * as taskRepo from "@/server/repositories/automation-task-repository";
 import * as templateRepo from "@/server/repositories/recurring-template-repository";
-import { runRuleEngine } from "@/server/services/rule-processing-service";
+import { runRuleEngine, type RuleEngineRunOutcome } from "@/server/services/rule-processing-service";
 import { createNotification } from "@/server/services/notification-service";
 import { createAlert, raiseDeduplicatedAlert, resolveDeduplicatedAlert } from "@/server/services/operations-service";
 import type { AutomaticClassificationSweepOutcome } from "@/server/services/transaction-classification-service";
@@ -57,6 +57,25 @@ import { recordUsageEvent } from "@/server/billing-platform/engine/usage-meterin
 import type { AutomationTask, AutomationTaskRun } from "@/server/automation/types";
 
 const NOW = "2026-08-12T10:00:00.000Z";
+
+function ruleEngineOutcome(overrides: Partial<RuleEngineRunOutcome> = {}): RuleEngineRunOutcome {
+  return {
+    processed: 0,
+    autoPosted: 0,
+    exceptionsRaised: 0,
+    recovered: 0,
+    notPosted: 0,
+    postingErrors: 0,
+    postingAttempts: 0,
+    awaitingReview: 0,
+    remaining: 0,
+    stoppedEarly: false,
+    stopReason: null,
+    intelligenceSkipped: false,
+    results: [],
+    ...overrides,
+  };
+}
 
 function task(overrides: Partial<AutomationTask> & Pick<AutomationTask, "id" | "taskType">): AutomationTask {
   return {
@@ -126,7 +145,7 @@ beforeEach(() => {
 describe("runDueTasks — BankSync bootstrap succeeds (existing behavior unchanged)", () => {
   it("creates the BankSync bootstrap task and still processes a due RecurringTemplate-independent task normally", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun" })]);
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 5, autoPosted: 2, exceptionsRaised: 1, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 5, autoPosted: 2, exceptionsRaised: 1 }));
 
     const outcome = await runDueTasks("co_1", NOW);
 
@@ -183,12 +202,12 @@ describe("runDueTasks — BankSync bootstrap fails (Phase 18C resilience fix)", 
   it("BankSync bootstrap failure does not stop the scheduler from processing other due task types (the core fix)", async () => {
     failBankSyncBootstrapOnly();
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun" })]);
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 3, autoPosted: 1, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 3, autoPosted: 1, exceptionsRaised: 0 }));
 
     const outcome = await runDueTasks("co_1", NOW);
 
     expect(outcome).toEqual({ processed: 1, succeeded: 1, failed: 0, deferred: 0 });
-    expect(runRuleEngine).toHaveBeenCalledWith("co_1", "System");
+    expect(runRuleEngine).toHaveBeenCalledWith("co_1", "System", { deadlineAtMs: expect.any(Number) });
   });
 
   it("captures/logs the BankSync bootstrap failure using the EXISTING notification+alert convention (error handling/logging conventions preserved)", async () => {
@@ -361,7 +380,7 @@ describe("runDueTasks — stale-Running crash recovery (Phase 25I)", () => {
   it("a failure inside the reclaim sweep itself does not abort the rest of the scheduler run", async () => {
     vi.mocked(taskRepo.listStaleRunningTasks).mockRejectedValue(new Error("automation_tasks unreachable"));
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun" })]);
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 1, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 1, autoPosted: 0, exceptionsRaised: 0 }));
 
     const outcome = await runDueTasks("co_1", NOW);
 
@@ -384,7 +403,7 @@ describe("runDueTasks — double-execution race guard (Phase 25H)", () => {
 
   it("claims each due task before running it", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 42, taskType: "RuleEngineRun" })]);
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 0, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 0, autoPosted: 0, exceptionsRaised: 0 }));
 
     await runDueTasks("co_1", NOW);
 
@@ -404,24 +423,24 @@ describe("runTaskNow — double-execution race guard (Phase 25H)", () => {
 
   it("claims the task before running it when it's genuinely free to run", async () => {
     vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 5, taskType: "RuleEngineRun" }));
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 0, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 0, autoPosted: 0, exceptionsRaised: 0 }));
 
     await runTaskNow("co_1", 5, NOW, "user@vyron");
 
     expect(taskRepo.claimTaskForRunning).toHaveBeenCalledWith("co_1", 5);
-    expect(runRuleEngine).toHaveBeenCalledWith("co_1", "user@vyron");
+    expect(runRuleEngine).toHaveBeenCalledWith("co_1", "user@vyron", { deadlineAtMs: expect.any(Number) });
   });
 });
 
 describe("runDueTasks — tenant isolation unchanged", () => {
   it("scopes every repository call to the exact company passed in, never a different one", async () => {
     vi.mocked(taskRepo.listDueTasks).mockImplementation(async (companyId) => (companyId === "company-a" ? [task({ id: 1, taskType: "RuleEngineRun", companyId: "company-a" })] : []));
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 1, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 1, autoPosted: 0, exceptionsRaised: 0 }));
 
     await runDueTasks("company-a", NOW);
 
     expect(taskRepo.listDueTasks).toHaveBeenCalledWith("company-a", NOW);
-    expect(runRuleEngine).toHaveBeenCalledWith("company-a", "System");
+    expect(runRuleEngine).toHaveBeenCalledWith("company-a", "System", { deadlineAtMs: expect.any(Number) });
     expect(taskRepo.listAutomationTasks).toHaveBeenCalledWith("company-a");
     for (const call of vi.mocked(taskRepo.listAutomationTasks).mock.calls) expect(call[0]).toBe("company-a");
     for (const call of vi.mocked(taskRepo.createAutomationTask).mock.calls) expect(call[0]).toBe("company-a");
@@ -433,7 +452,7 @@ describe("runDueTasks — tenant isolation unchanged", () => {
       return task({ id: 1, taskType: input.taskType, companyId });
     });
     vi.mocked(taskRepo.listDueTasks).mockImplementation(async (companyId) => [task({ id: 1, taskType: "RuleEngineRun", companyId })]);
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 1, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 1, autoPosted: 0, exceptionsRaised: 0 }));
 
     const outcomeA = await runDueTasks("company-a", NOW);
     const outcomeB = await runDueTasks("company-b", NOW);
@@ -473,7 +492,7 @@ describe("runDueTasks — AiClassificationSweep bootstrap (Phase 26E)", () => {
       return task({ id: 1, taskType: input.taskType, companyId });
     });
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun" })]);
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 1, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 1, autoPosted: 0, exceptionsRaised: 0 }));
 
     const outcome = await runDueTasks("co_1", NOW);
 
@@ -726,7 +745,7 @@ describe("task failure handling — Suspended + deduplicated alerts (migration 0
 
   it("recovery: a success after failures resolves the task's alert and sends one recovery notification", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 2, maxRetries: 3 })]);
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 1, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 1, autoPosted: 0, exceptionsRaised: 0 }));
     vi.mocked(resolveDeduplicatedAlert).mockResolvedValue(1);
 
     await runDueTasks("co_1", NOW);
@@ -737,7 +756,7 @@ describe("task failure handling — Suspended + deduplicated alerts (migration 0
 
   it("an ordinary success (never failing) does not touch alerts at all", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun", retryCount: 0 })]);
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 1, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 1, autoPosted: 0, exceptionsRaised: 0 }));
 
     await runDueTasks("co_1", NOW);
 
@@ -820,7 +839,7 @@ describe("Review — Run Now never re-activates a paused, disabled or suspended 
 
   it("an ordinary (Queued) task still records Success after a manual run", async () => {
     vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 5, taskType: "RuleEngineRun" }));
-    vi.mocked(runRuleEngine).mockResolvedValue({ processed: 0, autoPosted: 0, exceptionsRaised: 0, results: [] });
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 0, autoPosted: 0, exceptionsRaised: 0 }));
 
     await runTaskNow("co_1", 5, NOW, "user@vyron");
 
@@ -861,5 +880,81 @@ describe("Review — sweep infrastructure errors are sanitized before they are s
     const reason = String(vi.mocked(taskRepo.suspendTask).mock.calls[0]?.[2]);
     expect(reason).not.toContain("hunter2pass");
     expect(JSON.stringify(vi.mocked(raiseDeduplicatedAlert).mock.calls)).not.toContain("hunter2pass");
+  });
+});
+
+describe("Migration 0100 — the Banking Rules sweep is bounded by time", () => {
+  it("J. passes the request deadline down, capped by the sweep's own budget", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 10, taskType: "RuleEngineRun" })]);
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+    const requestDeadline = Date.now() + 10_000;
+
+    await runDueTasks("co_1", NOW, "Scheduler (cron)", { deadlineAtMs: requestDeadline });
+
+    const passed = vi.mocked(runRuleEngine).mock.calls[0]?.[2]?.deadlineAtMs;
+    expect(passed).toBe(requestDeadline);
+  });
+
+  it("J. without a request deadline the sweep still gets a finite budget well inside the platform limit", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 10, taskType: "RuleEngineRun" })]);
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+    const before = Date.now();
+
+    await runDueTasks("co_1", NOW);
+
+    const passed = vi.mocked(runRuleEngine).mock.calls[0]?.[2]?.deadlineAtMs ?? Infinity;
+    expect(passed - before).toBeLessThanOrEqual(RULE_ENGINE_TASK_BUDGET_MS + 1_000);
+    expect(RULE_ENGINE_TASK_BUDGET_MS).toBeLessThan(300_000);
+  });
+
+  it("J. does not start (or claim) any task once the request deadline has passed — they stay due for the next pass", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 10, taskType: "RuleEngineRun" }), task({ id: 11, taskType: "CommunicationQueue" })]);
+
+    const outcome = await runDueTasks("co_1", NOW, "Scheduler (cron)", { deadlineAtMs: Date.now() - 1 });
+
+    expect(outcome).toEqual({ processed: 0, succeeded: 0, failed: 0, deferred: 0, postponed: 2 });
+    expect(taskRepo.claimTaskForRunning).not.toHaveBeenCalled();
+    expect(runRuleEngine).not.toHaveBeenCalled();
+    expect(taskRepo.deferTask).not.toHaveBeenCalled();
+  });
+
+  it("records the sweep's progress (remaining, stoppedEarly, recovered) in the run summary", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 10, taskType: "RuleEngineRun" })]);
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome({ processed: 40, autoPosted: 38, recovered: 1, postingAttempts: 39, awaitingReview: 562, remaining: 200, stoppedEarly: true, stopReason: "time-budget", intelligenceSkipped: true }));
+
+    await runDueTasks("co_1", NOW);
+
+    expect(taskRepo.finishTaskRun).toHaveBeenCalledWith(
+      "co_1",
+      expect.any(Number),
+      "Success",
+      null,
+      expect.objectContaining({ processed: 40, autoPosted: 38, recovered: 1, postingAttempts: 39, awaitingReview: 562, remaining: 200, stoppedEarly: true, stopReason: "time-budget", intelligenceSkipped: true }),
+    );
+  });
+
+  it("a sweep that failed outright goes through the normal retry/suspend path", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 10, taskType: "RuleEngineRun", retryCount: 2, maxRetries: 3 })]);
+    vi.mocked(runRuleEngine).mockRejectedValue(new Error("Banking Rules could not post any transaction (3 failed): database unavailable"));
+
+    await runDueTasks("co_1", NOW);
+
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 10, expect.objectContaining({ status: "Suspended", retryCount: 3 }));
+  });
+});
+
+describe("Migration 0100 — nextTaskRunAt for the Banking Rules sweep", () => {
+  const RULE_TASK = task({ id: 10, taskType: "RuleEngineRun" });
+  const minutesAfter = (iso: string) => (Date.parse(iso) - Date.parse(NOW)) / 60_000;
+
+  it("comes back in 5 minutes when it stopped early while still making progress", () => {
+    expect(minutesAfter(nextTaskRunAt(RULE_TASK, NOW, { stoppedEarly: true, autoPosted: 5, recovered: 0 }))).toBe(5);
+    expect(minutesAfter(nextTaskRunAt(RULE_TASK, NOW, { stoppedEarly: true, autoPosted: 0, recovered: 1 }))).toBe(5);
+  });
+
+  it("waits the normal hour when it finished, made no progress, or has no summary", () => {
+    expect(minutesAfter(nextTaskRunAt(RULE_TASK, NOW, { stoppedEarly: false, autoPosted: 5 }))).toBe(60);
+    expect(minutesAfter(nextTaskRunAt(RULE_TASK, NOW, { stoppedEarly: true, autoPosted: 0, recovered: 0 }))).toBe(60);
+    expect(minutesAfter(nextTaskRunAt(RULE_TASK, NOW))).toBe(60);
   });
 });

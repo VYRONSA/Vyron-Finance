@@ -13,7 +13,7 @@ vi.mock("@/server/services/scheduler-service", () => ({ runDueTasks: vi.fn() }))
 vi.mock("@/server/repositories/company-repository", () => ({ listAllCompanyIds: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(), isSupabaseAdminConfigured: vi.fn() }));
 
-import { GET, POST } from "./route";
+import { GET, POST, maxDuration } from "./route";
 import { requireCronSecret } from "@/server/auth/require-cron-secret";
 import { runDueTasks } from "@/server/services/scheduler-service";
 import { listAllCompanyIds } from "@/server/repositories/company-repository";
@@ -67,7 +67,7 @@ describe("POST /api/automation/run-due-tasks", () => {
 
     expect(response.status).toBe(200);
     expect(runDueTasks).toHaveBeenCalledTimes(1);
-    expect(runDueTasks).toHaveBeenCalledWith("co_1", expect.any(String), "Scheduler (cron)");
+    expect(runDueTasks).toHaveBeenCalledWith("co_1", expect.any(String), "Scheduler (cron)", { deadlineAtMs: expect.any(Number) });
     expect(listAllCompanyIds).not.toHaveBeenCalled();
     expect(body.outcome).toEqual({ processed: 2, succeeded: 2, failed: 0, deferred: 0 });
   });
@@ -81,9 +81,9 @@ describe("POST /api/automation/run-due-tasks", () => {
 
     expect(response.status).toBe(200);
     expect(runDueTasks).toHaveBeenCalledTimes(3);
-    expect(runDueTasks).toHaveBeenCalledWith("co_1", expect.any(String), "Scheduler (cron)");
-    expect(runDueTasks).toHaveBeenCalledWith("co_2", expect.any(String), "Scheduler (cron)");
-    expect(runDueTasks).toHaveBeenCalledWith("co_3", expect.any(String), "Scheduler (cron)");
+    expect(runDueTasks).toHaveBeenCalledWith("co_1", expect.any(String), "Scheduler (cron)", { deadlineAtMs: expect.any(Number) });
+    expect(runDueTasks).toHaveBeenCalledWith("co_2", expect.any(String), "Scheduler (cron)", { deadlineAtMs: expect.any(Number) });
+    expect(runDueTasks).toHaveBeenCalledWith("co_3", expect.any(String), "Scheduler (cron)", { deadlineAtMs: expect.any(Number) });
     expect(body.companiesProcessed).toBe(3);
     expect(Object.keys(body.results)).toEqual(["co_1", "co_2", "co_3"]);
   });
@@ -95,7 +95,7 @@ describe("POST /api/automation/run-due-tasks", () => {
 
     expect(response.status).toBe(200);
     expect(listAllCompanyIds).toHaveBeenCalledTimes(1);
-    expect(runDueTasks).toHaveBeenCalledWith("co_1", expect.any(String), "Scheduler (cron)");
+    expect(runDueTasks).toHaveBeenCalledWith("co_1", expect.any(String), "Scheduler (cron)", { deadlineAtMs: expect.any(Number) });
   });
 
   it("one company's failure does not stop the others from being processed", async () => {
@@ -184,5 +184,21 @@ describe("GET /api/automation/run-due-tasks — Vercel Cron's actual entry point
     expect(responseB.status).toBe(200);
     expect(runDueTasks).toHaveBeenCalledTimes(2);
     expect(sawOverlap).toBe(true);
+  });
+});
+
+describe("Migration 0100 — the cron request works to a deadline inside the platform limit", () => {
+  it("keeps the platform limit at 300 seconds (not raised) and gives every company the same deadline, at least 90 seconds before it", async () => {
+    vi.mocked(listAllCompanyIds).mockResolvedValue(["co_1", "co_2"]);
+    const started = Date.now();
+
+    await POST(request({}));
+
+    expect(maxDuration).toBe(300);
+    const deadlines = vi.mocked(runDueTasks).mock.calls.map((call) => call[3]?.deadlineAtMs ?? Infinity);
+    expect(new Set(deadlines).size).toBe(1);
+    expect(deadlines[0]! - started).toBeLessThanOrEqual(210_000);
+    expect(deadlines[0]! - started).toBeGreaterThan(0);
+    expect(started + maxDuration * 1000 - deadlines[0]!).toBeGreaterThanOrEqual(90_000);
   });
 });

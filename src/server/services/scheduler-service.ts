@@ -222,7 +222,20 @@ async function ensureAiClassificationSweepTaskSafely(companyId: string, nowIso: 
   }
 }
 
-async function runTask(companyId: string, task: AutomationTask, todayIso: string, performedBy: string, nowIso: string, taskRunId: number | null = null): Promise<{ status: AutomationTaskStatus; summary: Record<string, unknown> }> {
+/** Migration 0100 — the most one Banking Rules sweep may run before it
+ * stops starting new transactions (the cron request's own deadline can cut
+ * it shorter). */
+export const RULE_ENGINE_TASK_BUDGET_MS = 150_000;
+
+async function runTask(
+  companyId: string,
+  task: AutomationTask,
+  todayIso: string,
+  performedBy: string,
+  nowIso: string,
+  taskRunId: number | null = null,
+  deadlineAtMs?: number,
+): Promise<{ status: AutomationTaskStatus; summary: Record<string, unknown> }> {
   if (task.taskType === "RecurringTemplate") {
     if (task.referenceId === null) throw new Error("RecurringTemplate task has no referenceId.");
     const template = await templateRepo.getRecurringTemplate(companyId, task.referenceId);
@@ -235,8 +248,28 @@ async function runTask(companyId: string, task: AutomationTask, todayIso: string
   }
 
   if (task.taskType === "RuleEngineRun") {
-    const outcome = await runRuleEngine(companyId, performedBy);
-    return { status: "Success", summary: { processed: outcome.processed, autoPosted: outcome.autoPosted, exceptionsRaised: outcome.exceptionsRaised } };
+    // Migration 0100 — bounded: the sweep stops starting new transactions
+    // at whichever comes first, its own budget or the request's deadline,
+    // and reports what it left for the next run.
+    const taskDeadline = Date.now() + RULE_ENGINE_TASK_BUDGET_MS;
+    const outcome = await runRuleEngine(companyId, performedBy, { deadlineAtMs: deadlineAtMs === undefined ? taskDeadline : Math.min(deadlineAtMs, taskDeadline) });
+    return {
+      status: "Success",
+      summary: {
+        processed: outcome.processed,
+        autoPosted: outcome.autoPosted,
+        exceptionsRaised: outcome.exceptionsRaised,
+        recovered: outcome.recovered,
+        notPosted: outcome.notPosted,
+        postingErrors: outcome.postingErrors,
+        postingAttempts: outcome.postingAttempts,
+        awaitingReview: outcome.awaitingReview,
+        remaining: outcome.remaining,
+        stoppedEarly: outcome.stoppedEarly,
+        stopReason: outcome.stopReason,
+        intelligenceSkipped: outcome.intelligenceSkipped,
+      },
+    };
   }
 
   if (task.taskType === "CommunicationQueue") {
@@ -428,7 +461,22 @@ async function reportTaskRecovery(companyId: string, task: AutomationTask, nowIs
   }
 }
 
-export type SchedulerRunOutcome = { processed: number; succeeded: number; failed: number; deferred: number };
+export type SchedulerRunOutcome = {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  deferred: number;
+  /** Migration 0100 — due tasks not started because the caller's deadline
+   * had passed; still due, so the next scheduler pass runs them. Present
+   * only when non-zero. */
+  postponed?: number;
+};
+
+export type SchedulerRunOptions = {
+  /** Epoch ms after which no further task is started, and running work
+   * (the Banking Rules sweep) stops starting new transactions. */
+  deadlineAtMs?: number;
+};
 
 // Phase 25I — deliberately conservative: long enough that even a slow
 // BankSync call against a real bank provider would have completed or
@@ -509,7 +557,7 @@ async function reclaimStaleRunningTasksSafely(companyId: string, nowIso: string)
  * itself must always run regardless (it's what could lift a suspension,
  * not a feature the plan gates), so it is deliberately never subject to
  * this check. */
-export async function runDueTasks(companyId: string, nowIso: string, performedBy = "System"): Promise<SchedulerRunOutcome> {
+export async function runDueTasks(companyId: string, nowIso: string, performedBy = "System", options: SchedulerRunOptions = {}): Promise<SchedulerRunOutcome> {
   await syncRecurringTemplateTasks(companyId);
   await syncSubscriptionLifecycleTask(companyId, nowIso);
   await ensureBankSyncTaskSafely(companyId, nowIso);
@@ -535,8 +583,15 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
   let processed = 0;
   let succeeded = 0;
   let failed = 0;
+  let postponed = 0;
 
   for (const task of due) {
+    // Migration 0100 — never start a task the request no longer has time
+    // for. It is left unclaimed and still due, so the next pass takes it.
+    if (options.deadlineAtMs !== undefined && Date.now() >= options.deadlineAtMs) {
+      postponed++;
+      continue;
+    }
     // Atomic claim — guards against an overlapping scheduler pass (or a
     // concurrent "Run Now" on the same task) executing this task twice.
     // A null claim means another process already has it; skip it this
@@ -547,7 +602,7 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
     const run = await taskRepo.startTaskRun(companyId, task.id);
     const start = performance.now();
     try {
-      const { status, summary } = await runTask(companyId, task, todayIso, performedBy, nowIso, run.id);
+      const { status, summary } = await runTask(companyId, task, todayIso, performedBy, nowIso, run.id, options.deadlineAtMs);
       const durationMs = Math.round(performance.now() - start);
       await taskRepo.finishTaskRun(companyId, run.id, "Success", null, summary);
       await taskRepo.recordTaskOutcome(companyId, task.id, {
@@ -606,7 +661,7 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
     }
   }
 
-  return { processed, succeeded, failed, deferred };
+  return postponed > 0 ? { processed, succeeded, failed, deferred, postponed } : { processed, succeeded, failed, deferred };
 }
 
 /** Phase 26I — investigation found every AiClassificationSweep run
@@ -667,6 +722,14 @@ export function nextTaskRunAt(task: AutomationTask, nowIso: string, summary?: Re
     // of no-confidence answers or failures waits the normal hour; "still
     // eligible" alone never re-asks the same transactions.
     if (summary?.progress === true && hasMoreEligible) return new Date(Date.parse(nowIso) + 2 * 60_000).toISOString();
+    return new Date(Date.parse(nowIso) + 60 * 60_000).toISOString();
+  }
+  // Migration 0100 — a Banking Rules sweep that stopped at its budget while
+  // still posting (or recovering) comes back in 5 minutes to continue; one
+  // that stopped without progress, or finished, waits the normal hour.
+  if (task.taskType === "RuleEngineRun") {
+    const progress = (typeof summary?.autoPosted === "number" ? summary.autoPosted : 0) + (typeof summary?.recovered === "number" ? summary.recovered : 0);
+    if (summary?.stoppedEarly === true && progress > 0) return new Date(Date.parse(nowIso) + 5 * 60_000).toISOString();
     return new Date(Date.parse(nowIso) + 60 * 60_000).toISOString();
   }
   return new Date(Date.parse(nowIso) + 60 * 60_000).toISOString();

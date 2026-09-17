@@ -13,7 +13,7 @@
 import * as journalRepo from "@/server/repositories/journal-repository";
 import * as splitRepo from "@/server/repositories/bank-transaction-split-repository";
 import { buildSplitGlLines } from "@/server/matching/split-transaction-engine";
-import type { BankTransactionRecord, Journal } from "@/server/accounting/types";
+import { isLiveRuleEngineJournal, type BankTransactionRecord, type Journal } from "@/server/accounting/types";
 
 export class ValidationError extends Error {}
 
@@ -318,7 +318,24 @@ export async function generateJournalFromTransactions(
     );
   }
 
-  const { lines, includedTransactionIds, skipped } = generateJournalDraft(transactions, bankAccountsById, splitsByTransactionId);
+  // Migration 0100 — a transaction a live Banking Rule journal already
+  // carries into the ledger is not journaled again, even though its own
+  // `journal_id` may still be NULL (an interrupted rule-engine post).
+  const ruleEngineJournals = await journalRepo.listRuleEngineJournalsForTransactions(
+    companyId,
+    transactions.filter((t) => t.journalId === null).map((t) => t.id),
+  );
+  const coveredSkipped: { transactionId: number; reason: string }[] = [];
+  const candidates = transactions.filter((t) => {
+    const existing = ruleEngineJournals.get(t.id);
+    if (t.journalId !== null || !existing || !isLiveRuleEngineJournal(existing)) return true;
+    coveredSkipped.push({ transactionId: t.id, reason: `Already covered by Banking Rule journal ${existing.journalNumber} (${existing.status}) — not journaled again.` });
+    return false;
+  });
+
+  const draft = generateJournalDraft(candidates, bankAccountsById, splitsByTransactionId);
+  const { lines, includedTransactionIds } = draft;
+  const skipped = [...coveredSkipped, ...draft.skipped];
 
   if (includedTransactionIds.length === 0) {
     return { journal: null, includedTransactionIds, skipped };
@@ -352,5 +369,28 @@ export async function generateJournalFromTransactions(
     .filter((r) => !r.linked)
     .map((r) => ({ transactionId: r.id, reason: "Posted by another process during journal generation — protected from being re-linked." }));
 
-  return { journal, includedTransactionIds: actuallyIncludedIds, skipped: [...skipped, ...raceSkipped] };
+  if (raceSkipped.length === 0) {
+    return { journal, includedTransactionIds: actuallyIncludedIds, skipped: [...skipped, ...raceSkipped] };
+  }
+
+  // Migration 0100 — the draft must not keep lines for a transaction it
+  // could not link: approving and posting it would put that amount in the
+  // ledger a second time. Rebuild the draft from the linked transactions
+  // only, or cancel it when none linked. (Each transaction contributes its
+  // own balanced group of lines, so the rebuilt draft still balances.)
+  if (actuallyIncludedIds.length === 0) {
+    await journalRepo.cancelJournal(companyId, journal.id);
+    return { journal: null, includedTransactionIds: [], skipped: [...skipped, ...raceSkipped] };
+  }
+  const linkedIds = new Set(actuallyIncludedIds);
+  const rebuilt = generateJournalDraft(
+    candidates.filter((t) => linkedIds.has(t.id)).map((t) => ({ ...t, journalId: null })),
+    bankAccountsById,
+    splitsByTransactionId,
+  );
+  const updated = await journalRepo.updateJournal(companyId, journal.id, {
+    description: `Generated from ${actuallyIncludedIds.length} transaction(s)`,
+    lines: rebuilt.lines,
+  });
+  return { journal: updated, includedTransactionIds: actuallyIncludedIds, skipped: [...skipped, ...raceSkipped] };
 }

@@ -21,24 +21,27 @@ vi.mock("@/server/repositories/cashbook-repository", () => ({
   listBatchTransactions: vi.fn(),
   postCaptureStatus: vi.fn(),
   setCaptureStatus: vi.fn(),
+  createManualTransaction: vi.fn(),
+  getCashbookBatch: vi.fn(),
+  setBatchStatus: vi.fn(),
   LIST_CAP: 10_000,
 }));
 vi.mock("@/server/repositories/bank-account-repository", () => ({ getBankAccount: vi.fn() }));
-vi.mock("@/server/repositories/journal-repository", () => ({ createJournal: vi.fn() }));
+vi.mock("@/server/repositories/journal-repository", () => ({ createJournal: vi.fn(), listRuleEngineJournalsForTransactions: vi.fn() }));
 vi.mock("@/server/services/chart-of-accounts-service", () => ({ listChartOfAccounts: vi.fn() }));
 vi.mock("@/server/services/journal-service", () => ({ resolveBankGlAccount: vi.fn((bankAccount: { glAccount: string }) => bankAccount.glAccount) }));
 vi.mock("@/server/services/posting-rule-service", () => ({ buildJournalFromEvent: vi.fn() }));
 vi.mock("@/server/services/posting-engine-service", () => ({ postApprovedJournals: vi.fn() }));
 vi.mock("@/server/services/bank-reconciliation-service", () => ({ assertNotMonthEndLocked: vi.fn() }));
 
-import { approveAndPostCashbookEntry, ValidationError } from "./cashbook-service";
+import { approveAndPostBatch, approveAndPostCashbookEntry, reverseCashbookEntry, ValidationError } from "./cashbook-service";
 import * as repo from "@/server/repositories/cashbook-repository";
 import * as bankAccountRepo from "@/server/repositories/bank-account-repository";
 import * as journalRepo from "@/server/repositories/journal-repository";
 import { listChartOfAccounts } from "@/server/services/chart-of-accounts-service";
 import { buildJournalFromEvent } from "@/server/services/posting-rule-service";
 import { postApprovedJournals } from "@/server/services/posting-engine-service";
-import type { BankTransactionRecord } from "@/server/accounting/types";
+import type { BankTransactionRecord, RuleEngineJournalRef } from "@/server/accounting/types";
 
 function txn(overrides: Partial<BankTransactionRecord> = {}): BankTransactionRecord {
   return {
@@ -63,6 +66,7 @@ beforeEach(() => {
   vi.mocked(buildJournalFromEvent).mockReset().mockResolvedValue({ ok: true, lines: [] } as never);
   vi.mocked(journalRepo.createJournal).mockReset().mockResolvedValue({ id: 900 } as never);
   vi.mocked(postApprovedJournals).mockReset().mockResolvedValue({ posted: [{ journalId: 900 }], skipped: [] } as never);
+  vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockReset().mockResolvedValue(new Map());
 });
 
 describe("approveAndPostCashbookEntry — posting race guard (Phase 29C)", () => {
@@ -121,5 +125,91 @@ describe("approveAndPostTransfer — posting race guard (Phase 29C)", () => {
   it("throws when THIS leg loses the race after the other leg already succeeded", async () => {
     vi.mocked(repo.postCaptureStatus).mockImplementation(async (_companyId, id) => (id === 501 ? null : txn({ id, captureStatus: "Posted", journalId: 900 })));
     await expect(approveAndPostCashbookEntry("co_1", 501)).rejects.toThrow(ValidationError);
+  });
+});
+
+function ruleJournal(overrides: Partial<RuleEngineJournalRef> = {}): RuleEngineJournalRef {
+  return { id: 278, journalNumber: "JR000264", status: "Posted", isReversed: false, sourceId: 501, ...overrides };
+}
+
+describe("approveAndPostCashbookEntry — refused BEFORE anything is written (0100 review H2)", () => {
+  function expectNothingWritten() {
+    expect(buildJournalFromEvent).not.toHaveBeenCalled();
+    expect(journalRepo.createJournal).not.toHaveBeenCalled();
+    expect(postApprovedJournals).not.toHaveBeenCalled();
+    expect(repo.postCaptureStatus).not.toHaveBeenCalled();
+  }
+
+  it.each([
+    ["Posted", ruleJournal()],
+    ["Approved", ruleJournal({ status: "Approved" })],
+    ["Draft", ruleJournal({ status: "Draft" })],
+    ["Submitted", ruleJournal({ status: "Submitted" })],
+  ])("refuses an entry a %s Banking Rule journal already carries", async (_label, journal) => {
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockResolvedValue(new Map([[501, journal]]));
+    await expect(approveAndPostCashbookEntry("co_1", 501)).rejects.toThrow(/already carried by Banking Rule journal JR000264/);
+    expect(journalRepo.listRuleEngineJournalsForTransactions).toHaveBeenCalledWith("co_1", [501]);
+    expectNothingWritten();
+  });
+
+  it("refuses an entry that is already linked to a journal, without even looking further", async () => {
+    vi.mocked(repo.getCashbookTransaction).mockResolvedValue(txn({ journalId: 77 }));
+    await expect(approveAndPostCashbookEntry("co_1", 501)).rejects.toThrow(/already linked to a journal/);
+    expectNothingWritten();
+  });
+
+  it("refuses an entry already flagged as posted", async () => {
+    vi.mocked(repo.getCashbookTransaction).mockResolvedValue(txn({ postedFlag: true }));
+    await expect(approveAndPostCashbookEntry("co_1", 501)).rejects.toThrow(/already flagged as posted/);
+    expectNothingWritten();
+  });
+
+  it("still posts when the only Banking Rule journal was reversed (its ledger effect was cancelled) or rejected", async () => {
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockResolvedValue(new Map([[501, ruleJournal({ isReversed: true })]]));
+    await expect(approveAndPostCashbookEntry("co_1", 501)).resolves.toMatchObject({ captureStatus: "Posted" });
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockResolvedValue(new Map([[501, ruleJournal({ status: "Rejected" })]]));
+    await expect(approveAndPostCashbookEntry("co_1", 501)).resolves.toMatchObject({ captureStatus: "Posted" });
+  });
+
+  it("an ordinary receipt and payment post exactly as before (one journal, one post, one link)", async () => {
+    vi.mocked(repo.getCashbookTransaction).mockResolvedValueOnce(txn({ debit: 0, credit: 750 }));
+    await approveAndPostCashbookEntry("co_1", 501);
+    expect(buildJournalFromEvent).toHaveBeenLastCalledWith("co_1", "Cashbook Receipt", expect.objectContaining({ grossAmount: 750 }));
+    await approveAndPostCashbookEntry("co_1", 501);
+    expect(buildJournalFromEvent).toHaveBeenLastCalledWith("co_1", "Cashbook Payment", expect.objectContaining({ grossAmount: 5000 }));
+    expect(journalRepo.createJournal).toHaveBeenCalledTimes(2);
+    expect(journalRepo.createJournal).toHaveBeenLastCalledWith("co_1", expect.objectContaining({ sourceType: "cashbook_entry", sourceId: 501, status: "Approved" }));
+    expect(postApprovedJournals).toHaveBeenCalledTimes(2);
+    expect(repo.postCaptureStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("a transfer is refused when EITHER leg is already carried", async () => {
+    const fromLeg = txn({ id: 501, reference: "TRANSFER-1", debit: 2000, credit: 0, bankAccountId: 1 });
+    const toLeg = txn({ id: 502, reference: "TRANSFER-1", debit: 0, credit: 2000, bankAccountId: 2 });
+    vi.mocked(repo.getCashbookTransaction).mockResolvedValue(fromLeg);
+    vi.mocked(repo.listCashbookTransactions).mockResolvedValue([toLeg]);
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockResolvedValue(new Map([[502, ruleJournal({ sourceId: 502 })]]));
+    await expect(approveAndPostCashbookEntry("co_1", 501)).rejects.toThrow(/#502 is already carried/);
+    expect(journalRepo.listRuleEngineJournalsForTransactions).toHaveBeenCalledWith("co_1", [501, 502]);
+    expectNothingWritten();
+  });
+
+  it("a reversal (a brand-new Manual entry) is not affected", async () => {
+    const original = txn({ id: 600, captureStatus: "Posted", journalId: 900 });
+    const reversal = txn({ id: 601, debit: 0, credit: 5000, reference: "REV-CB-1" });
+    vi.mocked(repo.getCashbookTransaction).mockImplementation(async (_co, id) => (id === 600 ? original : reversal));
+    vi.mocked(repo.createManualTransaction).mockResolvedValue(reversal);
+    await expect(reverseCashbookEntry("co_1", 600)).resolves.toMatchObject({ captureStatus: "Posted" });
+    expect(journalRepo.listRuleEngineJournalsForTransactions).toHaveBeenCalledWith("co_1", [601]);
+  });
+
+  it("a batch stops at the first carried entry instead of posting it twice", async () => {
+    const entries = [txn({ id: 1 }), txn({ id: 2 })];
+    vi.mocked(repo.getCashbookBatch).mockResolvedValue({ id: 9, batchNumber: "CB9", status: "Draft" } as never);
+    vi.mocked(repo.listBatchTransactions).mockResolvedValue(entries);
+    vi.mocked(repo.getCashbookTransaction).mockImplementation(async (_co, id) => entries.find((e) => e.id === id)!);
+    vi.mocked(journalRepo.listRuleEngineJournalsForTransactions).mockImplementation(async (_co, ids) => new Map(ids.includes(2) ? [[2, ruleJournal({ sourceId: 2 })]] : []));
+    await expect(approveAndPostBatch("co_1", 9)).rejects.toThrow(/#2 is already carried/);
+    expect(postApprovedJournals).toHaveBeenCalledTimes(1);
   });
 });

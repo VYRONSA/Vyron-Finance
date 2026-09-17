@@ -43,6 +43,31 @@ export type NewBankingException = {
 
 const UNIQUE_VIOLATION = "23505";
 
+const OPEN_EXCEPTION_LOOKUP_CHUNK = 200;
+
+/** Migration 0100 — which of these transactions already have an Open
+ * exception of this type, in batches, so a sweep need not re-insert (and
+ * fail on) each one. `raiseExceptionIdempotent` stays the authority. */
+export async function listTransactionIdsWithOpenException(companyId: string, exceptionType: ExceptionType, transactionIds: number[]): Promise<Set<number>> {
+  const result = new Set<number>();
+  const ids = [...new Set(transactionIds)];
+  if (ids.length === 0) return result;
+  const supabase = await createClient();
+  for (let i = 0; i < ids.length; i += OPEN_EXCEPTION_LOOKUP_CHUNK) {
+    const { data, error } = await supabase
+      .from("banking_exceptions")
+      .select("bank_transaction_id")
+      .eq("company_id", companyId)
+      .eq("exception_type", exceptionType)
+      .eq("status", "Open")
+      .in("bank_transaction_id", ids.slice(i, i + OPEN_EXCEPTION_LOOKUP_CHUNK))
+      .returns<{ bank_transaction_id: number }[]>();
+    if (error) throw error;
+    for (const row of data) result.add(Number(row.bank_transaction_id));
+  }
+  return result;
+}
+
 /** Idempotent per (transaction, type, Open) — re-running the rule engine
  * over an already-flagged transaction never creates a duplicate open
  * exception, mirroring `import-repository.ts::ingestBankTransactionIdempotent`'s

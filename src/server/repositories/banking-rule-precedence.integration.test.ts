@@ -138,9 +138,69 @@ function makeFakeSupabase(tables: Tables) {
   // field-for-field, so a test proving "AI can never re-claim a
   // Rule-owned transaction" is verifying the actual production guard,
   // not a stand-in.
+  // Mirrors migration 0100's `fn_claim_bank_transaction_for_rule` (and its
+  // `fn_bank_transaction_is_claimable_by_rule` guard) field-for-field — the
+  // single write `applyRuleActions` makes since 0100. The real function is
+  // exercised in supabase/tests/atomic_rule_engine_posting.test.sql.
+  function claimForRule(params: Record<string, unknown>): { data: unknown; error: unknown } {
+    const claim = params.p_claim as Record<string, unknown>;
+    const has = (key: string) => Object.prototype.hasOwnProperty.call(claim, key);
+    const settable = ["matchedMerchantId", "matchedSupplierId", "matchedCustomerId", "suggestedGlAccount", "suggestedVatCode", "ruleId", "allocationStatus"];
+    if (!settable.some(has)) return { data: true, error: null };
+    const ruleIds = [...((claim.matchedRuleIds as number[] | undefined) ?? []), ...(has("ruleId") ? [claim.ruleId as number] : [])];
+    const rules = tables["banking_rules"] ?? [];
+    if (ruleIds.some((id) => !rules.some((r) => r.id === id && r.company_id === params.p_company_id))) {
+      return { data: null, error: { message: "VYRON_RULE_CLAIM_RULE_MISMATCH: every rule must belong to the company." } };
+    }
+    const row = (tables["ae_bank_transactions"] ?? []).find(
+      (r) =>
+        r.company_id === params.p_company_id &&
+        r.id === params.p_transaction_id &&
+        (r.journal_id ?? null) === null &&
+        r.is_manual_override === false &&
+        (r.rule_id ?? null) === null &&
+        (r.matched_supplier_id ?? null) === null &&
+        (r.matched_customer_id ?? null) === null &&
+        (r.matched_merchant_id ?? null) === null &&
+        r.review_hold === false &&
+        r.entry_source !== "Manual" &&
+        ((r.allocation_status === "Unallocated" && (r.suggested_gl_account ?? null) === null) || r.allocation_method === "Future AI"),
+    );
+    if (!row) return { data: false, error: null };
+    if (has("matchedMerchantId")) row.matched_merchant_id = claim.matchedMerchantId;
+    if (has("matchedSupplierId")) row.matched_supplier_id = claim.matchedSupplierId;
+    if (has("matchedCustomerId")) row.matched_customer_id = claim.matchedCustomerId;
+    if (has("suggestedGlAccount")) row.suggested_gl_account = claim.suggestedGlAccount;
+    if (has("suggestedVatCode")) row.suggested_vat_code = claim.suggestedVatCode;
+    if (has("ruleId")) row.rule_id = claim.ruleId;
+    if (has("allocationStatus")) row.allocation_status = claim.allocationStatus;
+    if (has("matchedSupplierId")) row.allocation_type = "S";
+    else if (has("matchedCustomerId")) row.allocation_type = "C";
+    else if (has("suggestedGlAccount")) row.allocation_type = "G";
+    if (has("ruleId")) row.allocation_method = null;
+    tables["ae_allocation_history"] = tables["ae_allocation_history"] ?? [];
+    tables["ae_allocation_history"].push({
+      company_id: params.p_company_id,
+      transaction_id: params.p_transaction_id,
+      new_status: claim.allocationStatus,
+      is_manual_override: false,
+      performed_by: params.p_performed_by,
+      allocation_reason: `Resolved by rule "${(claim.ruleName as string) || "Unnamed rule"}"`,
+    });
+    tables["banking_rule_applications"] = tables["banking_rule_applications"] ?? [];
+    for (const ruleId of (claim.matchedRuleIds as number[] | undefined) ?? []) {
+      tables["banking_rule_applications"].push({ company_id: params.p_company_id, rule_id: ruleId, bank_transaction_id: params.p_transaction_id });
+    }
+    return { data: true, error: null };
+  }
+
   function rpc(name: string, params: Record<string, unknown>) {
     return {
       then(resolve: (v: { data: unknown; error: unknown }) => void) {
+        if (name === "fn_claim_bank_transaction_for_rule") {
+          resolve(claimForRule(params));
+          return;
+        }
         if (name !== "fn_apply_ai_classification") throw new Error(`banking-rule-precedence fake: unsupported rpc "${name}"`);
         const rows = tables["ae_bank_transactions"] ?? [];
         const row = rows.find(
@@ -203,6 +263,7 @@ function txnRow(overrides: Row = {}): Row {
     // `applyRuleActions` now filters on it, so the fake row must carry
     // it too or every rule application silently matches nothing.
     review_hold: false,
+    entry_source: "Imported",
     ...overrides,
   };
 }
@@ -218,7 +279,11 @@ let applyRuleActions: typeof import("./transaction-explorer-repository").applyRu
 let applyAiClassification: typeof import("./transaction-explorer-repository").applyAiClassification;
 
 beforeEach(async () => {
-  currentTables = { ae_bank_transactions: [txnRow()], ae_allocation_history: [] };
+  currentTables = {
+    ae_bank_transactions: [txnRow()],
+    ae_allocation_history: [],
+    banking_rules: [8, 9, 103, 106, 200].map((id) => ({ id, company_id: COMPANY })),
+  };
   fakeSupabase = makeFakeSupabase(currentTables);
   vi.resetModules();
   const repo = await import("./transaction-explorer-repository");
@@ -318,6 +383,35 @@ describe("Phase 53 — applyRuleActions: BANKING RULE > UNCONFIRMED AI SUGGESTIO
     const applied = await applyRuleActions(COMPANY, 791, { matchedSupplierId: 636, ruleId: 106, allocationStatus: "Allocated" }, "Auto: Three Streams Cut002 -> Supplier", "System");
     expect(applied).toBe(false);
     expect(row()).toMatchObject({ matched_supplier_id: 42, allocation_method: "Supplier Default" });
+  });
+});
+
+describe("Migration 0100 — the claim is one database write", () => {
+  it("records the matched rules' applications with the classification", async () => {
+    const applied = await applyRuleActions(COMPANY, 791, { suggestedGlAccount: "6940", ruleId: 106, allocationStatus: "Suggested" }, "Auto: GL rule", "System", [106, 9]);
+    expect(applied).toBe(true);
+    expect(currentTables.banking_rule_applications).toEqual([
+      { company_id: COMPANY, rule_id: 106, bank_transaction_id: 791 },
+      { company_id: COMPANY, rule_id: 9, bank_transaction_id: 791 },
+    ]);
+  });
+
+  it("never classifies a Manual Cashbook entry (H2), even one carrying only an AI suggestion", async () => {
+    currentTables.ae_bank_transactions[0] = txnRow({ entry_source: "Manual", allocation_status: "Suggested", allocation_method: "Future AI", suggested_gl_account: "6940" });
+    const applied = await applyRuleActions(COMPANY, 791, { suggestedGlAccount: "6100", ruleId: 106, allocationStatus: "Suggested" }, "Auto: GL rule", "System", [106]);
+    expect(applied).toBe(false);
+    expect(row()).toMatchObject({ suggested_gl_account: "6940", rule_id: null, allocation_method: "Future AI" });
+    expect(currentTables.ae_allocation_history).toHaveLength(0);
+  });
+
+  it("does not classify a transaction on review hold (migration 0094, unchanged)", async () => {
+    currentTables.ae_bank_transactions[0] = txnRow({ review_hold: true });
+    await expect(applyRuleActions(COMPANY, 791, { suggestedGlAccount: "6940", ruleId: 106, allocationStatus: "Suggested" }, "Auto: GL rule", "System")).resolves.toBe(false);
+  });
+
+  it("surfaces a rule from another company as an error", async () => {
+    await expect(applyRuleActions(COMPANY, 791, { suggestedGlAccount: "6940", ruleId: 5555, allocationStatus: "Suggested" }, "Foreign", "System")).rejects.toMatchObject({ message: expect.stringContaining("RULE_MISMATCH") });
+    expect(row()).toMatchObject({ rule_id: null });
   });
 });
 

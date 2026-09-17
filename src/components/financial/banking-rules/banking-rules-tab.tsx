@@ -636,7 +636,7 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Inactive">("All");
   const [runningEngine, setRunningEngine] = useState(false);
-  const [runOutcome, setRunOutcome] = useState<{ processed: number; autoPosted: number; exceptionsRaised: number } | null>(null);
+  const [runOutcome, setRunOutcome] = useState<{ processed: number; autoPosted: number; exceptionsRaised: number; stoppedEarly?: boolean; remaining?: number } | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<RuleConflict[]>([]);
   // Finding #150 — bulk Enable/Disable/Delete, mirroring the multi-select
@@ -804,6 +804,7 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
       {runOutcome && (
         <p role="status" className="text-sm text-vf-ink-soft">
           Processed {runOutcome.processed} transaction(s) — {runOutcome.autoPosted} automatically posted, {runOutcome.exceptionsRaised} exception(s) raised.
+          {runOutcome.stoppedEarly && ` This run stopped at its time or posting limit; ${runOutcome.remaining ?? 0} transaction(s) are left for the next run.`}
         </p>
       )}
 

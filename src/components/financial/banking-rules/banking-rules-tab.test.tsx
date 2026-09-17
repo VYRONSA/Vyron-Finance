@@ -7,7 +7,7 @@
  * the exact on-screen behaviour is proven, not just the pure function.
  */
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn(), replace: vi.fn() }),
@@ -122,5 +122,31 @@ describe("BankingRulesTab — search box (Phase 51, Fix 4)", () => {
     expect(screen.getByDisplayValue("Auto: Salary → GL")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Auto: Fish → Supplier")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Auto: Bank Charge → GL")).toBeInTheDocument();
+  });
+});
+
+describe("BankingRulesTab — Run Rule Engine Now (0100 review L4)", () => {
+  function mockRun(outcome: Record<string, unknown>) {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ outcome }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("says when a run stopped early and how many transactions are left", async () => {
+    mockRun({ processed: 40, autoPosted: 38, exceptionsRaised: 2, stoppedEarly: true, remaining: 150 });
+    render(<BankingRulesTab companyId="co_1" rules={[]} previewMode={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Run Rule Engine Now" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("150 transaction(s) are left for the next run"));
+    expect(screen.getByRole("status")).toHaveTextContent("Processed 40 transaction(s) — 38 automatically posted, 2 exception(s) raised.");
+    vi.unstubAllGlobals();
+  });
+
+  it("says nothing about a next run when the run finished", async () => {
+    mockRun({ processed: 3, autoPosted: 1, exceptionsRaised: 0, stoppedEarly: false, remaining: 0 });
+    render(<BankingRulesTab companyId="co_1" rules={[]} previewMode={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Run Rule Engine Now" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Processed 3 transaction(s)"));
+    expect(screen.getByRole("status")).not.toHaveTextContent("next run");
+    vi.unstubAllGlobals();
   });
 });

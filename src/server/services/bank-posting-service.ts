@@ -38,7 +38,10 @@
  *    (migration 0092) claims each transaction with
  *    `posted_flag = false and journal_id is null` before writing
  *    anything, so the same transaction can never be posted twice — not by
- *    a double-click, not by two accountants, not by a retry.
+ *    a double-click, not by two accountants, not by a retry. Migration
+ *    0100 adds the case those two flags cannot see: a transaction a live
+ *    Banking Rule journal already carries into the ledger is neither
+ *    planned here nor claimed by the database.
  *
  * What this module never does is change the client's figures. A
  * transaction that cannot be posted is reported back with the reason and
@@ -60,10 +63,12 @@ import { computeFinancialPeriod, computeFinancialYearLabel } from "@/server/serv
 import { buildJournalLinesForSplitTransaction, buildJournalLinesForTransaction, type BankAccountGlInfo, type LedgerControlAccounts } from "@/server/services/journal-service";
 import * as postingRuleRepo from "@/server/repositories/posting-rule-repository";
 import {
+  isLiveRuleEngineJournal,
   satisfiesSupplierInvoiceMatching,
   transactionPostingStatus,
   SUPPLIER_INVOICE_MATCHING_REQUIRED_REASON,
   type BankTransactionRecord,
+  type RuleEngineJournalRef,
 } from "@/server/accounting/types";
 import type { PostingBatch } from "@/server/general-ledger/types";
 
@@ -133,7 +138,30 @@ export type PostingPlanContext = {
    * function stays pure and independently testable — the caller reserves
    * a contiguous block from `nextJournalNumber`. */
   journalNumberAt: (index: number) => string;
+  /** Migration 0100 — each selected transaction's Banking Rule journal, if
+   * it has one. A live one means the amount is already in (or on its way
+   * to) the ledger even when the transaction's own `posted_flag` and
+   * `journal_id` were never stamped. Omitted = none. */
+  ruleEngineJournalsByTransactionId?: Map<number, RuleEngineJournalRef>;
 };
+
+/** Why a transaction that a live Banking Rule journal covers is not
+ * posted again — or `null` when no such journal exists. */
+export function ruleEngineJournalExclusion(transactionId: number, journal: RuleEngineJournalRef | undefined): PostingExclusion | null {
+  if (!journal || !isLiveRuleEngineJournal(journal)) return null;
+  if (journal.status === "Posted") {
+    return {
+      transactionId,
+      reason: `Already posted to the General Ledger by Banking Rule journal ${journal.journalNumber}. Its link to this transaction is restored automatically by the Banking Rules sweep — do not post it again.`,
+      kind: "already-posted",
+    };
+  }
+  return {
+    transactionId,
+    reason: `Banking Rule journal ${journal.journalNumber} (${journal.status}) already covers this transaction — post or cancel that journal instead of posting the transaction again.`,
+    kind: "blocked",
+  };
+}
 
 /**
  * Pure. The whole decision of what gets posted, how it is grouped, and
@@ -166,6 +194,11 @@ export function buildBankPostingPlan(transactions: BankTransactionRecord[], cont
     }
     if (txn.journalId !== null) {
       blocked.push({ transactionId: txn.id, reason: "Already attached to journal — review that journal instead of posting this transaction again.", kind: "blocked" });
+      continue;
+    }
+    const ruleEngineExclusion = ruleEngineJournalExclusion(txn.id, context.ruleEngineJournalsByTransactionId?.get(txn.id));
+    if (ruleEngineExclusion) {
+      (ruleEngineExclusion.kind === "already-posted" ? alreadyPosted : blocked).push(ruleEngineExclusion);
       continue;
     }
     if (!txn.transactionDate) {
@@ -288,7 +321,7 @@ async function loadPostingContext(companyId: string, transactionIds: number[]): 
   const transactions = await repo.getTransactionsByIds(companyId, transactionIds);
 
   const bankAccountIds = [...new Set(transactions.map((t) => t.bankAccountId).filter((id): id is number => id !== null))];
-  const [bankAccounts, accounts, company, financialYears, journalNumberBase, supplierPaymentRule, customerReceiptRule] = await Promise.all([
+  const [bankAccounts, accounts, company, financialYears, journalNumberBase, supplierPaymentRule, customerReceiptRule, ruleEngineJournalsByTransactionId] = await Promise.all([
     Promise.all(bankAccountIds.map((id) => bankAccountRepo.getBankAccount(companyId, id))),
     chartOfAccountsRepo.listChartOfAccounts(companyId),
     getCompany(companyId),
@@ -296,6 +329,7 @@ async function loadPostingContext(companyId: string, transactionIds: number[]): 
     journalRepo.nextJournalNumber(companyId),
     postingRuleRepo.getPostingRuleByEventType(companyId, "Supplier Payment"),
     postingRuleRepo.getPostingRuleByEventType(companyId, "Customer Receipt"),
+    journalRepo.listRuleEngineJournalsForTransactions(companyId, transactions.map((t) => t.id)),
   ]);
 
   // Read from the company's OWN rules (seeded by `seed_company_defaults()`
@@ -341,6 +375,7 @@ async function loadPostingContext(companyId: string, transactionIds: number[]): 
       financialYears,
       financialYearStartMonth: company?.financialYearStartMonth ?? 3,
       journalNumberAt: (index) => `JR${String(baseNumber + index).padStart(6, "0")}`,
+      ruleEngineJournalsByTransactionId,
     },
   };
 }

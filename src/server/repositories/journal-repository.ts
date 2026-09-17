@@ -11,7 +11,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getPerformedByLabel } from "@/server/auth/require-session";
 import { journalFromRow, type JournalRow } from "@/server/accounting/mappers";
-import type { Journal, JournalStatus } from "@/server/accounting/types";
+import { RULE_ENGINE_JOURNAL_SOURCE_TYPE, type Journal, type JournalStatus, type RuleEngineJournalRef } from "@/server/accounting/types";
 
 // RC1 Phase 3 (Performance Hardening) — see customer-repository.ts::LIST_CAP
 // for the established convention this follows.
@@ -106,14 +106,14 @@ export async function getJournal(companyId: string, journalId: number): Promise<
   return data ? journalFromRow(data) : null;
 }
 
-/** Phase 25I — `(source_type, source_id)` has no unique constraint (an
+/** Phase 25I — `(source_type, source_id)` is not unique in general (an
  * automation source, unlike `journal_number`, was never meant to be a
  * hard identity key), so this is an existence CHECK, not a guarantee —
  * callers that create one journal per source (e.g.
- * `rule-processing-service.ts::processTransaction`) call this first to
- * avoid creating a second one when a prior attempt already succeeded but
- * the caller's own follow-up bookkeeping (e.g. stamping the source
- * record's `journal_id`) failed or was never reached. */
+ * `journal-workflow-service.ts::reverseJournal`) call this first to avoid
+ * creating a second one. The Banking Rule source is the exception:
+ * migration 0100 makes it unique and the rule engine posts atomically
+ * (`posting-repository.ts::postRuleEngineJournalAtomic`). */
 export async function getJournalBySource(companyId: string, sourceType: string, sourceId: number): Promise<Journal | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -316,7 +316,13 @@ export async function markJournalReversed(companyId: string, originalJournalId: 
  * caller's own read and this write is no longer linked here, rather
  * than silently re-pointing its `journal_id` to a second, unrelated
  * journal. Returns whether the link actually happened so the caller can
- * report the transaction as skipped instead of silently over-counting it. */
+ * report the transaction as skipped instead of silently over-counting it.
+ *
+ * Migration 0100 — the database also refuses the link when a live Banking
+ * Rule journal already carries this transaction (its
+ * `ae_bank_transactions_rule_engine_journal_guard` trigger), even though
+ * `journal_id` is still NULL. That refusal is the same "not linked"
+ * answer, not a crash. */
 export async function linkTransactionToJournal(companyId: string, transactionId: number, journalId: number): Promise<boolean> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -326,6 +332,47 @@ export async function linkTransactionToJournal(companyId: string, transactionId:
     .eq("id", transactionId)
     .is("journal_id", null)
     .select("id");
-  if (error) throw error;
+  if (error) {
+    if (isRuleEngineJournalGuardError(error)) return false;
+    throw error;
+  }
   return !!data && data.length > 0;
+}
+
+/** Migration 0100's trigger refusal (`VYRON_RULE_ENGINE_JOURNAL_EXISTS`). */
+export function isRuleEngineJournalGuardError(error: unknown): boolean {
+  const message = typeof error === "object" && error !== null && "message" in error ? String((error as { message: unknown }).message) : "";
+  return message.includes("VYRON_RULE_ENGINE_JOURNAL_EXISTS");
+}
+
+// PostgREST puts `.in()` values in the URL; keep each request well under
+// its length limit.
+const SOURCE_LOOKUP_CHUNK = 200;
+
+/** Migration 0100 — every Banking Rule journal (any status) for the given
+ * bank transactions, keyed by transaction id. One query per 200 ids, so a
+ * whole worklist or posting selection costs a handful of round trips
+ * instead of one per transaction. At most one journal per transaction
+ * (unique index `ae_journals_rule_engine_source_key`). */
+export async function listRuleEngineJournalsForTransactions(companyId: string, transactionIds: number[]): Promise<Map<number, RuleEngineJournalRef>> {
+  const result = new Map<number, RuleEngineJournalRef>();
+  const ids = [...new Set(transactionIds)];
+  if (ids.length === 0) return result;
+  const supabase = await createClient();
+  for (let i = 0; i < ids.length; i += SOURCE_LOOKUP_CHUNK) {
+    const chunk = ids.slice(i, i + SOURCE_LOOKUP_CHUNK);
+    const { data, error } = await supabase
+      .from("ae_journals")
+      .select("id, journal_number, status, is_reversed, source_id")
+      .eq("company_id", companyId)
+      .eq("source_type", RULE_ENGINE_JOURNAL_SOURCE_TYPE)
+      .in("source_id", chunk)
+      .returns<{ id: number; journal_number: string; status: JournalStatus; is_reversed: boolean | null; source_id: number }[]>();
+    if (error) throw error;
+    for (const row of data) {
+      const sourceId = Number(row.source_id);
+      result.set(sourceId, { id: Number(row.id), journalNumber: row.journal_number, status: row.status, isReversed: row.is_reversed ?? false, sourceId });
+    }
+  }
+  return result;
 }
