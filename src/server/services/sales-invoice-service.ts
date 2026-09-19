@@ -34,6 +34,9 @@ import { buildJournalFromEvent } from "@/server/services/posting-rule-service";
 import { postApprovedJournals } from "@/server/services/posting-engine-service";
 import { listVatTreatments } from "@/server/services/vat-treatment-service";
 import { createAndAutoPost } from "@/server/services/inventory-transaction-service";
+import { getCustomer } from "@/server/services/customer-service";
+import { getCompany } from "@/server/services/company-service";
+import { computeInvoiceTotalsFromCodes } from "@/server/sales/invoice-totals";
 import type { SalesInvoice, SalesInvoiceDocumentType, SalesInvoiceStatus } from "@/server/sales/types";
 
 export class ValidationError extends Error {}
@@ -45,12 +48,89 @@ const EVENT_TYPE_BY_DOCUMENT: Record<SalesInvoiceDocumentType, string> = {
   "Credit Note": "Customer Credit Note",
 };
 
-export function validateInvoiceLines(lines: { description: string; quantity: number; unitPrice: number }[]): void {
+export function validateInvoiceLines(lines: { description: string; quantity: number; unitPrice: number; discount?: number }[]): void {
   if (lines.length === 0) throw new ValidationError("A sales invoice needs at least one line.");
   for (const line of lines) {
     if (!line.description?.trim()) throw new ValidationError("Every line needs a description.");
     if (line.quantity <= 0) throw new ValidationError("Quantity must be greater than zero.");
     if (line.unitPrice < 0) throw new ValidationError("Unit price cannot be negative.");
+    // Phase 5J — a discount now reduces what is charged and what VAT is
+    // owed on it, so it has to be bounded. A negative discount is a
+    // surcharge entered in the wrong field; one larger than the line is
+    // a negative line, which would understate output VAT.
+    const discount = line.discount ?? 0;
+    if (!Number.isFinite(discount) || discount < 0) throw new ValidationError("A discount cannot be negative.");
+    if (discount > Math.round(line.quantity * line.unitPrice * 100) / 100) {
+      throw new ValidationError("A discount cannot be more than the line it applies to.");
+    }
+  }
+}
+
+/** Phase 5J — which due date a new document gets, and where it came from.
+ *
+ * `customers.payment_terms_days` has existed since 0008 (`not null
+ * default 30`), is captured on the customer form and shown on their
+ * detail page — and was read by nothing in the invoicing path. Every
+ * invoice was due whenever someone typed a date, and an invoice created
+ * from an order got no due date at all. A null due date is not neutral:
+ * `shared/aging.ts` puts the whole balance in `Current`, so such an
+ * invoice is never overdue in any ageing report, statement or dashboard.
+ *
+ * The hierarchy, most specific first:
+ *   1. an explicit date on the request — someone chose it, so it stands,
+ *      and `paymentTermsDays` is recorded as null because no terms
+ *      produced it;
+ *   2. the customer's own payment terms;
+ *   3. the company default (`companies.default_payment_terms_days`, 0106).
+ *
+ * Pure and exported so the derivation is testable without a database,
+ * and so the form can show the same date it is going to get.
+ */
+export function resolveDueDate(input: {
+  explicitDueDate?: string | null;
+  invoiceDate: string;
+  customerPaymentTermsDays?: number | null;
+  companyDefaultPaymentTermsDays?: number | null;
+}): { dueDate: string | null; paymentTermsDays: number | null } {
+  const explicit = input.explicitDueDate?.trim();
+  if (explicit) return { dueDate: explicit, paymentTermsDays: null };
+
+  const terms = input.customerPaymentTermsDays ?? input.companyDefaultPaymentTermsDays ?? null;
+  if (terms === null || !Number.isFinite(terms) || terms < 0) return { dueDate: null, paymentTermsDays: null };
+
+  // Date-only arithmetic in UTC: `invoiceDate` is a DATE column with no
+  // timezone, and adding days through a local-time Date would shift the
+  // result across a DST boundary.
+  const base = Date.parse(`${input.invoiceDate}T00:00:00Z`);
+  if (Number.isNaN(base)) return { dueDate: null, paymentTermsDays: null };
+  const due = new Date(base + terms * 86_400_000).toISOString().slice(0, 10);
+  return { dueDate: due, paymentTermsDays: terms };
+}
+
+/** Phase 5J — the particulars VAT Act s21(3) requires on a credit or
+ * debit note, checked where the message can name the missing field.
+ *
+ * Deliberately NOT a database constraint: credit notes issued before this
+ * phase genuinely carry neither, and a CHECK would retroactively
+ * invalidate documents already given to customers and to SARS. The rule
+ * binds new documents; the historical ones stay exactly as they were
+ * issued, and the printed document says plainly when a reason is not on
+ * record rather than implying one.
+ *
+ * An Invoice may carry neither — there is no earlier document for it to
+ * reference, and nothing to explain. */
+export function validateAdjustmentNoteParticulars(input: {
+  documentType: SalesInvoiceDocumentType;
+  originalInvoiceId?: number | null;
+  reason?: string;
+}): void {
+  if (input.documentType === "Invoice") return;
+  const noun = input.documentType === "Credit Note" ? "credit note" : "debit note";
+  if (!input.originalInvoiceId) {
+    throw new ValidationError(`A ${noun} must name the invoice it adjusts.`);
+  }
+  if (!input.reason?.trim()) {
+    throw new ValidationError(`A ${noun} must state the reason it was issued.`);
   }
 }
 
@@ -58,17 +138,90 @@ export const listSalesInvoices = repo.listSalesInvoices;
 export const listSalesInvoicesByCustomer = repo.listSalesInvoicesByCustomer;
 export const getSalesInvoice = repo.getSalesInvoice;
 
+/**
+ * Phase 5J — this is where a Sales document's figures are decided, once.
+ *
+ * Three things changed, and all three are accounting behaviour:
+ *
+ *  - Per-line VAT codes and discounts now determine the subtotal, VAT and
+ *    total (`sales/invoice-totals.ts`). They were captured and stored but
+ *    ignored, so a line marked Zero Rated was still charged VAT at the
+ *    header rate and a discount reduced nothing.
+ *  - The due date is derived from payment terms when none is given
+ *    (`resolveDueDate`), instead of being left null and therefore never
+ *    overdue.
+ *  - A credit or debit note must name the invoice it adjusts and say why
+ *    (`validateAdjustmentNoteParticulars`).
+ *
+ * The client never decides any of this. The form previews the identical
+ * arithmetic from the identical module, but the figures stored are the
+ * ones computed here, from the company's own `vat_treatments`.
+ */
 export async function createSalesInvoice(companyId: string, input: repo.NewSalesInvoice): Promise<SalesInvoice> {
   if (!input.customerId) throw new ValidationError("Customer is required.");
   if (!input.invoiceDate) throw new ValidationError("Invoice date is required.");
   if (!input.vatTreatmentCode) throw new ValidationError("VAT Treatment is required.");
   validateInvoiceLines(input.lines);
 
+  /* Phase 5J — a caller may not choose a tax invoice's serial number.
+   *
+   * `NewSalesInvoice.invoiceNumber` is optional, and the POST route hands
+   * the request body to this function verbatim — so any Sales:Create user
+   * could name their own invoice number, which defeats the whole point of
+   * the 0105 counter: duplicate serials across documents, or a number
+   * jumped ahead of the counter that a later real invoice then collides
+   * with. VAT Act s20(4)(b) makes that number a legal identifier.
+   *
+   * The number is allocated by the database, always, for anything coming
+   * through this service. The Xero import legitimately preserves the
+   * numbers Xero already issued, and calls the REPOSITORY directly for
+   * exactly that reason — it is migrating a historical ledger, not
+   * issuing new documents. */
+  const { invoiceNumber: _rejected, ...rest } = input;
+  if (_rejected !== undefined) {
+    throw new ValidationError("An invoice number is allocated by the system and cannot be supplied.");
+  }
+  input = rest;
+
+  const documentType = input.documentType ?? "Invoice";
+  validateAdjustmentNoteParticulars({ documentType, originalInvoiceId: input.originalInvoiceId, reason: input.reason });
+
+  // A credit note must adjust an invoice of THIS company's, belonging to
+  // the same customer — otherwise it would reference a document that
+  // cannot be reconciled to it, and RLS alone would not catch a same-
+  // tenant mismatch.
+  if (input.originalInvoiceId) {
+    const original = await repo.getSalesInvoice(companyId, input.originalInvoiceId);
+    if (!original) throw new NotFoundError(`No sales invoice with id ${input.originalInvoiceId}.`);
+    if (original.customerId !== input.customerId) {
+      throw new ValidationError(`${original.invoiceNumber} belongs to a different customer.`);
+    }
+    if (original.documentType !== "Invoice") {
+      throw new ValidationError(`${original.invoiceNumber} is a ${original.documentType}, not an invoice.`);
+    }
+  }
+
   const vatTreatments = await listVatTreatments(companyId);
   const treatment = vatTreatments.find((t) => t.code === input.vatTreatmentCode);
   if (!treatment) throw new ValidationError(`Unknown VAT treatment "${input.vatTreatmentCode}".`);
 
-  return repo.createSalesInvoice(companyId, input, treatment.rate);
+  const ratesByCode = new Map(vatTreatments.map((t) => [t.code, t.rate]));
+  const computed = computeInvoiceTotalsFromCodes(input.lines, treatment.rate, ratesByCode);
+  if (!computed.ok) throw new ValidationError(`Unknown VAT treatment "${computed.unknownVatCode}" on a line.`);
+
+  const [customer, company] = await Promise.all([getCustomer(companyId, input.customerId), getCompany(companyId)]);
+  if (!customer) throw new NotFoundError(`No customer with id ${input.customerId}.`);
+  const { dueDate, paymentTermsDays } = resolveDueDate({
+    explicitDueDate: input.dueDate,
+    invoiceDate: input.invoiceDate,
+    customerPaymentTermsDays: customer.paymentTermsDays,
+    companyDefaultPaymentTermsDays: company?.defaultPaymentTermsDays ?? null,
+  });
+  if (dueDate && dueDate < input.invoiceDate) {
+    throw new ValidationError("The due date cannot be before the invoice date.");
+  }
+
+  return repo.createSalesInvoice(companyId, { ...input, dueDate, paymentTermsDays }, computed.totals);
 }
 
 /** Finding #053 — Order -> Invoice conversion used to require the order
@@ -178,14 +331,37 @@ export async function approveAndPostInvoice(companyId: string, invoiceId: number
     throw new ValidationError(`Cannot approve ${invoice.invoiceNumber} from status ${invoice.status}.`);
   }
 
-  const vatTreatments = await listVatTreatments(companyId);
-  const treatment = vatTreatments.find((t) => t.code === invoice.vatTreatmentCode);
-  const vatRatePercent = treatment?.rate ?? 0;
   const eventType = EVENT_TYPE_BY_DOCUMENT[invoice.documentType];
 
+  /* Phase 5J — the journal is posted from the invoice's OWN saved
+   * figures, not from a fresh split of its total.
+   *
+   * This used to look the VAT treatment up again at approval time and
+   * hand `buildJournalFromEvent` a gross amount plus one rate, letting
+   * `splitGrossAmount` re-derive the net/VAT. Three things were wrong
+   * with that, and all three disappear by passing the stored split:
+   *
+   *  - One blended rate cannot express an invoice whose lines are taxed
+   *    differently. Now that per-line VAT codes count, a document with a
+   *    standard-rated and a zero-rated line has no single rate that
+   *    reproduces its VAT, so the journal would not have matched the
+   *    document the customer was sent.
+   *  - The lookup was `treatment?.rate ?? 0`. A treatment renamed or
+   *    deactivated between capture and approval silently zero-rated the
+   *    posting: the whole gross went to Sales, no VAT Output line at all,
+   *    no error raised — while the invoice itself still showed the VAT.
+   *  - `vat_treatments.rate` is mutable. A rate change between capture and
+   *    approval posted the new rate against the old total.
+   *
+   * The figures being used are the ones on the invoice, which are the
+   * ones on the PDF, which are the ones the VAT report reads. They cannot
+   * disagree, because there is only one of them. */
   const built = await buildJournalFromEvent(companyId, eventType, {
     grossAmount: invoice.total,
-    vatRatePercent,
+    // Retained for callers/rules that read it; the split below is what
+    // the amounts are actually taken from.
+    vatRatePercent: invoice.subtotal === 0 ? 0 : (invoice.vatAmount / invoice.subtotal) * 100,
+    amounts: { gross: invoice.total, net: invoice.subtotal, vat: invoice.vatAmount },
     description: `${invoice.documentType} ${invoice.invoiceNumber}`,
   });
   if (!built.ok) {
@@ -193,6 +369,26 @@ export async function approveAndPostInvoice(companyId: string, invoiceId: number
   }
 
   const journal = await journalRepo.createJournal(companyId, {
+    /* Phase 5J — the journal is dated the DOCUMENT's date, not today's.
+     *
+     * `createJournal` defaults `journalDate` to `new Date()` when the
+     * caller omits one, and this caller omitted one. `posting_date` comes
+     * from that date, and the trial balance, the financial statements and
+     * the statutory VAT Return (which reads GL accounts 2100/2200 by
+     * `posting_date`) all period-assign from it. So an invoice dated
+     * 31 August but approved on 3 September recognised its revenue and
+     * its output VAT in SEPTEMBER, while every document-based report put
+     * it in August. The two could never reconcile, and the VAT201 for the
+     * August period was understated by exactly that invoice.
+     *
+     * Consequence to be aware of: a document dated inside a closed or
+     * locked financial period can no longer be posted — the Posting
+     * Engine refuses it, the invoice honestly stays Approved-but-unposted
+     * with the reason shown, and `retryPostInvoice` picks it up once the
+     * period is reopened. That is the correct answer: the previous
+     * behaviour did not avoid the problem, it silently posted the entry
+     * into the wrong period instead. */
+    journalDate: invoice.invoiceDate,
     journalType: invoice.documentType,
     description: `${invoice.documentType} ${invoice.invoiceNumber}${invoice.reference ? ` — ${invoice.reference}` : ""}`,
     reference: invoice.reference || invoice.invoiceNumber,

@@ -1,0 +1,122 @@
+{
+  "caseId": "zero-vat",
+  "documentId": "zero-vat.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-10166",
+  "invoiceDate": "2026-06-29",
+  "dueDate": "2026-07-29",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Maize meal 10kg",
+      "supplierSku": "MM10",
+      "quantity": 1,
+      "uom": "bag",
+      "unitPrice": 50,
+      "discount": 0,
+      "vatRatePercent": 0,
+      "vatAmount": 0,
+      "lineTotal": 50
+    },
+    {
+      "description": "Brown bread 700g",
+      "supplierSku": "BB700",
+      "quantity": 1,
+      "uom": "loaf",
+      "unitPrice": 60,
+      "discount": 0,
+      "vatRatePercent": 0,
+      "vatAmount": 0,
+      "lineTotal": 60
+    },
+    {
+      "description": "Full cream milk 2L",
+      "supplierSku": "FCM2",
+      "quantity": 1,
+      "uom": "bottle",
+      "unitPrice": 70,
+      "discount": 0,
+      "vatRatePercent": 0,
+      "vatAmount": 0,
+      "lineTotal": 70
+    },
+    {
+      "description": "Eggs large 18s",
+      "supplierSku": "EG18",
+      "quantity": 1,
+      "uom": "tray",
+      "unitPrice": 80,
+      "discount": 0,
+      "vatRatePercent": 0,
+      "vatAmount": 0,
+      "lineTotal": 80
+    },
+    {
+      "description": "Long grain rice 2kg",
+      "supplierSku": "LR2",
+      "quantity": 1,
+      "uom": "bag",
+      "unitPrice": 90,
+      "discount": 0,
+      "vatRatePercent": 0,
+      "vatAmount": 0,
+      "lineTotal": 90
+    },
+    {
+      "description": "Brown lentils 1kg",
+      "supplierSku": "BL1",
+      "quantity": 1,
+      "uom": "pack",
+      "unitPrice": 100,
+      "discount": 0,
+      "vatRatePercent": 0,
+      "vatAmount": 0,
+      "lineTotal": 100
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 450,
+    "vatAmount": 0,
+    "total": 450
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      50,
+      60,
+      70,
+      80,
+      90,
+      100
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 450,
+    "vat": 0,
+    "total": 450
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "ZERO-RATED, not VAT-free. The supplier IS registered, the VAT number IS printed, the VAT column IS present and reads 0.00. Compare with no-vat, which is a different thing that looks the same."
+}

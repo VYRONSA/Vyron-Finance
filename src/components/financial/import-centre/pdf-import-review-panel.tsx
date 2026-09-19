@@ -96,7 +96,14 @@ export function PdfImportReviewPanel({
   const [transactions, setTransactions] = useState<ParsedBankTransaction[]>(() => readStoredTransactions(companyId, preview.batchId, preview.transactions));
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmedOutcome, setConfirmedOutcome] = useState<{ importedCount: number; duplicateCount: number; rulesAutoAllocated: number; exceptions: { description: string }[] } | null>(null);
+  const [confirmedOutcome, setConfirmedOutcome] = useState<{
+    importedCount: number;
+    duplicateCount: number;
+    rulesAutoAllocated: number;
+    exceptions: { description: string }[];
+    /** Phase 5C — what the attached Banking Rules pass deliberately did not do. */
+    rulePass?: { notPermitted: number; notAttempted: number; stopReason: "time-budget" | "posting-limit" | null };
+  } | null>(null);
 
   const { balanceReconciliation, runningBalanceIssues, transactionCount, invalidValueIssues } = preview.validation;
 
@@ -149,6 +156,7 @@ export function PdfImportReviewPanel({
         importedCount={confirmedOutcome.importedCount}
         duplicateCount={confirmedOutcome.duplicateCount}
         rulesAllocatedCount={confirmedOutcome.rulesAutoAllocated}
+        rulePass={confirmedOutcome.rulePass ?? null}
         exceptionCount={preview.exceptions.length + (confirmedOutcome.exceptions?.length ?? 0)}
         onImportAnother={onDiscard}
         onFinish={onDiscard}

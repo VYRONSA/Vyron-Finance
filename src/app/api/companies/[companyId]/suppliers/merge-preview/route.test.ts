@@ -44,8 +44,8 @@ describe("GET .../suppliers/merge-preview (Phase 33A)", () => {
 
   it("calls getSupplierMergePreview with the ids parsed from the query string and returns the preview", async () => {
     const preview = {
-      supplierA: { id: 1, name: "Acme", supplierCode: "SUP-1", status: "Active" as const, vatNumber: "", taxNumber: "", paymentTermsDays: 30, linkedRecordCount: 5 },
-      supplierB: { id: 2, name: "Acme (dup)", supplierCode: "", status: "Active" as const, vatNumber: "", taxNumber: "", paymentTermsDays: 0, linkedRecordCount: 0 },
+      supplierA: { id: 1, name: "Acme", supplierCode: "SUP-1", status: "Active" as const, vatNumber: "", taxNumber: "", registrationNumber: "", paymentTermsDays: 30, linkedRecordCount: 5 },
+      supplierB: { id: 2, name: "Acme (dup)", supplierCode: "", status: "Active" as const, vatNumber: "", taxNumber: "", registrationNumber: "", paymentTermsDays: 0, linkedRecordCount: 0 },
     };
     vi.mocked(getSupplierMergePreview).mockResolvedValue(preview);
 

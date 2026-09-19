@@ -42,7 +42,7 @@ function supplier(overrides: Partial<Supplier> = {}): Supplier {
     bankAccountNumber: "",
     bankBranchCode: "",
     vatNumber: "",
-    taxNumber: "",
+    taxNumber: "", registrationNumber: "",
     riskRating: "Low",
     paymentTermsDays: 0,
     spendingLimit: 0,
@@ -124,15 +124,15 @@ describe("getSupplierMergePreview (Phase 33A)", () => {
   it("returns both candidates' full detail plus a live linked-record count each", async () => {
     vi.mocked(getSupplier).mockImplementation(async (_companyId, id) =>
       id === 1
-        ? supplier({ id: 1, name: "Acme Supplies", supplierCode: "SUP-A", status: "Active", vatNumber: "4123456789", taxNumber: "T1", paymentTermsDays: 30 })
-        : supplier({ id: 2, name: "ACME Supplies (dup)", supplierCode: "", status: "Active", vatNumber: "", taxNumber: "", paymentTermsDays: 0 }),
+        ? supplier({ id: 1, name: "Acme Supplies", supplierCode: "SUP-A", status: "Active", vatNumber: "4123456789", taxNumber: "T1", registrationNumber: "", paymentTermsDays: 30 })
+        : supplier({ id: 2, name: "ACME Supplies (dup)", supplierCode: "", status: "Active", vatNumber: "", taxNumber: "", registrationNumber: "", paymentTermsDays: 0 }),
     );
     vi.mocked(mergeRepo.getSupplierLinkedRecordCount).mockImplementation(async (_companyId, id) => (id === 1 ? 40 : 0));
 
     const preview = await getSupplierMergePreview("co_1", 1, 2);
 
-    expect(preview.supplierA).toEqual({ id: 1, name: "Acme Supplies", supplierCode: "SUP-A", status: "Active", vatNumber: "4123456789", taxNumber: "T1", paymentTermsDays: 30, linkedRecordCount: 40 });
-    expect(preview.supplierB).toEqual({ id: 2, name: "ACME Supplies (dup)", supplierCode: "", status: "Active", vatNumber: "", taxNumber: "", paymentTermsDays: 0, linkedRecordCount: 0 });
+    expect(preview.supplierA).toEqual({ id: 1, name: "Acme Supplies", supplierCode: "SUP-A", status: "Active", vatNumber: "4123456789", taxNumber: "T1", registrationNumber: "", paymentTermsDays: 30, linkedRecordCount: 40 });
+    expect(preview.supplierB).toEqual({ id: 2, name: "ACME Supplies (dup)", supplierCode: "", status: "Active", vatNumber: "", taxNumber: "", registrationNumber: "", paymentTermsDays: 0, linkedRecordCount: 0 });
   });
 });
 

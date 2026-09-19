@@ -133,11 +133,25 @@ export type SalesInvoice = {
   cancelledBy: string | null;
   cancelledAt: string | null;
   /** Finding #114 — which Invoice this Credit Note reverses; always null
-   * for a real Invoice/Debit Note. Nullable, not required — a Credit
-   * Note can still be raised with no specific original invoice (a
-   * general goodwill credit), same as `orderId`/`deliveryId` are already
-   * optional links, not mandatory ones. */
+   * for a real Invoice/Debit Note.
+   *
+   * Phase 5J — still nullable at the DATA layer, because credit notes
+   * issued before 5J genuinely do not name one and rewriting them to
+   * pretend otherwise would falsify a tax record. New credit and debit
+   * notes must name one: `sales-invoice-service.ts` requires it at
+   * creation (VAT Act s21(3) — the note must carry enough detail to
+   * identify the original tax invoice). */
   originalInvoiceId: number | null;
+  /** Phase 5J — why this Credit/Debit Note was issued (VAT Act s21(3)).
+   * Always `""` on an Invoice, and `""` on a note issued before 0106
+   * added the column: those have no reason on record, and the document
+   * prints that honestly rather than inventing one. */
+  reason: string;
+  /** Phase 5J — the payment terms this document's `dueDate` was derived
+   * from, captured at issue so a later edit to the customer's terms
+   * cannot silently re-date an invoice already sent. Null when the due
+   * date was set by hand, or on any document predating 0106. */
+  paymentTermsDays: number | null;
   lines: SalesInvoiceLine[];
 };
 

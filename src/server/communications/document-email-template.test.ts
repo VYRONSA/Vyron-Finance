@@ -17,7 +17,7 @@ function company(overrides: Partial<Company> = {}): Company {
     id: "company-a", organisationId: "org_1", name: "Fenwick & Rowe Ltd", industry: "Professional Services",
     status: "active", registrationNumber: "2019/123456/07", address: "12 Fenwick Street, Cape Town",
     financialYearStartMonth: 3, baseCurrencyCode: "ZAR", createdAt: "2025-02-10T09:00:00Z",
-    tradingName: "", vatNumber: "", telephone: "", email: "", website: "", postalAddress: "",
+    tradingName: "", vatNumber: "", telephone: "", email: "", website: "", postalAddress: "", invoiceFooter: "", paymentInstructions: "", defaultPaymentTermsDays: 30,
     city: "", province: "", postalCode: "", country: "",
     ...overrides,
   };

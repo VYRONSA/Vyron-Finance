@@ -1,0 +1,290 @@
+{
+  "caseId": "many-lines",
+  "documentId": "many-lines.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Umgeni Packaging Co",
+    "vatNumber": "4223344556",
+    "registrationNumber": "2008/112233/07"
+  },
+  "invoiceNumber": "UP-10044",
+  "invoiceDate": "2026-06-25",
+  "dueDate": "2026-07-25",
+  "orderReference": "PO-4502",
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Packaging component 01",
+      "supplierSku": "UP-500",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 50,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 7.5,
+      "lineTotal": 50
+    },
+    {
+      "description": "Packaging component 02",
+      "supplierSku": "UP-501",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 55,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 8.25,
+      "lineTotal": 55
+    },
+    {
+      "description": "Packaging component 03",
+      "supplierSku": "UP-502",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 60,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 9,
+      "lineTotal": 60
+    },
+    {
+      "description": "Packaging component 04",
+      "supplierSku": "UP-503",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 65,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 9.75,
+      "lineTotal": 65
+    },
+    {
+      "description": "Packaging component 05",
+      "supplierSku": "UP-504",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 70,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 10.5,
+      "lineTotal": 70
+    },
+    {
+      "description": "Packaging component 06",
+      "supplierSku": "UP-505",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 11.25,
+      "lineTotal": 75
+    },
+    {
+      "description": "Packaging component 07",
+      "supplierSku": "UP-506",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 80,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 12,
+      "lineTotal": 80
+    },
+    {
+      "description": "Packaging component 08",
+      "supplierSku": "UP-507",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 85,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 12.75,
+      "lineTotal": 85
+    },
+    {
+      "description": "Packaging component 09",
+      "supplierSku": "UP-508",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 90,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 13.5,
+      "lineTotal": 90
+    },
+    {
+      "description": "Packaging component 10",
+      "supplierSku": "UP-509",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 95,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 14.25,
+      "lineTotal": 95
+    },
+    {
+      "description": "Packaging component 11",
+      "supplierSku": "UP-510",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 100,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 15,
+      "lineTotal": 100
+    },
+    {
+      "description": "Packaging component 12",
+      "supplierSku": "UP-511",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 105,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 15.75,
+      "lineTotal": 105
+    },
+    {
+      "description": "Packaging component 13",
+      "supplierSku": "UP-512",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 110,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 16.5,
+      "lineTotal": 110
+    },
+    {
+      "description": "Packaging component 14",
+      "supplierSku": "UP-513",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 115,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 17.25,
+      "lineTotal": 115
+    },
+    {
+      "description": "Packaging component 15",
+      "supplierSku": "UP-514",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 120,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 18,
+      "lineTotal": 120
+    },
+    {
+      "description": "Packaging component 16",
+      "supplierSku": "UP-515",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 125,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 18.75,
+      "lineTotal": 125
+    },
+    {
+      "description": "Packaging component 17",
+      "supplierSku": "UP-516",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 130,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 19.5,
+      "lineTotal": 130
+    },
+    {
+      "description": "Packaging component 18",
+      "supplierSku": "UP-517",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 135,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 20.25,
+      "lineTotal": 135
+    },
+    {
+      "description": "Packaging component 19",
+      "supplierSku": "UP-518",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 140,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 21,
+      "lineTotal": 140
+    },
+    {
+      "description": "Packaging component 20",
+      "supplierSku": "UP-519",
+      "quantity": 1,
+      "uom": "each",
+      "unitPrice": 145,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 21.75,
+      "lineTotal": 145
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1950,
+    "vatAmount": 292.5,
+    "total": 2242.5
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      50,
+      55,
+      60,
+      65,
+      70,
+      75,
+      80,
+      85,
+      90,
+      95,
+      100,
+      105,
+      110,
+      115,
+      120,
+      125,
+      130,
+      135,
+      140,
+      145
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1950,
+    "vat": 292.5,
+    "total": 2242.5
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "present"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "20 lines, unit prices rising 50.00 to 145.00 in steps of 5.00, across two pages. Tests whether long tables are truncated silently."
+}

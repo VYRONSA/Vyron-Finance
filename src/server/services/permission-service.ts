@@ -60,6 +60,29 @@ export async function requirePermission(companyId: string, permissionKey: Permis
   return { ok: true };
 }
 
+/** Phase 5C — the same resolution `requirePermission` performs, as a
+ * plain question rather than a gate: does this caller hold this
+ * permission?
+ *
+ * Deliberately does NOT record a `PermissionDenied` event. Its callers
+ * use it to decide how much of an operation to perform, not whether to
+ * refuse one — an importer who legitimately holds `Banking:Create` but
+ * not `Banking:Post` imports transactions and leaves the posting for
+ * someone who can, which is correct behaviour, not a denial. Logging it
+ * as one would fill the Security Dashboard with false positives and
+ * hide real refusals. The genuine refusals on these paths still go
+ * through `requirePermission` and are still logged.
+ *
+ * Returns `false` — never throws — when the user has no role in the
+ * company, matching `requirePermission`'s own "unassigned is not
+ * permissive" stance. */
+export async function hasPermission(companyId: string, permissionKey: PermissionKey): Promise<boolean> {
+  const userId = await getCurrentUserId();
+  const resolved = await getEffectiveRole(userId, companyId);
+  if (!resolved) return false;
+  return resolveEffectivePermissions(resolved.role, resolved.allRoles).has(permissionKey);
+}
+
 /** For platform-wide capabilities (the Internal Billing Console, and
  * anything else genuinely cross-tenant) — checks the signed-in user's
  * `company_id is null` role assignment(s) directly via one query, no

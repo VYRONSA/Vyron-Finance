@@ -8,6 +8,7 @@ import { Field } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
 import { customerOptions, glAccountOptions, vatCodeOptions } from "@/lib/account-picker-options";
+import { computeInvoiceTotalsFromCodes } from "@/server/sales/invoice-totals";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChevronDown, IconChevronLeft, IconFileText, IconPlus } from "@/components/ui/icons";
@@ -44,6 +45,89 @@ function money(value: number): string {
 type EditableLine = { description: string; quantity: string; unitPrice: string; glAccount: string | null; vatCode: string | null; discount: string };
 const BLANK_LINE: EditableLine = { description: "", quantity: "1", unitPrice: "", glAccount: null, vatCode: null, discount: "0" };
 
+export type InvoiceFormErrors = {
+  customerId?: string;
+  invoiceDate?: string;
+  dueDate?: string;
+  /** Phase 5J — the two particulars VAT Act s21(3) requires on a credit
+   * or debit note. */
+  originalInvoiceId?: string;
+  reason?: string;
+  /** Per-line messages, keyed by line index. */
+  lines?: Record<number, { description?: string; quantity?: string; unitPrice?: string; discount?: string }>;
+};
+
+/** Phase 5I — client-side validation for the fields the form already has.
+ *
+ * Pure and exported so it is testable without mounting the screen. It
+ * deliberately mirrors the server's own rules
+ * (`sales-invoice-service.ts::validateInvoiceLines` and the required-field
+ * checks above it) rather than inventing new ones — the server stays the
+ * authority and re-checks all of this; this exists so the person is told
+ * WHICH field is wrong before a round trip, instead of getting one
+ * sentence at the bottom of the panel.
+ *
+ * Phase 5J — it now also checks the two things that became accounting
+ * inputs this phase: a discount has to be a real amount within the line
+ * it reduces (it changes the VAT charged), and a credit or debit note has
+ * to carry the particulars VAT Act s21(3) requires. Both mirror
+ * `sales-invoice-service.ts`'s own rules; neither replaces them. */
+export function validateInvoiceForm(input: {
+  customerId: number;
+  invoiceDate: string;
+  dueDate: string;
+  lines: EditableLine[];
+  documentType?: SalesInvoiceDocumentType;
+  originalInvoiceId?: number | null;
+  reason?: string;
+}): InvoiceFormErrors {
+  const errors: InvoiceFormErrors = {};
+
+  if (!input.customerId) errors.customerId = "Choose the customer this document is for.";
+  if (!input.invoiceDate) errors.invoiceDate = "An invoice date is required.";
+
+  if (input.documentType && input.documentType !== "Invoice") {
+    const noun = input.documentType === "Credit Note" ? "credit note" : "debit note";
+    if (!input.originalInvoiceId) errors.originalInvoiceId = `Choose the invoice this ${noun} adjusts.`;
+    if (!input.reason?.trim()) errors.reason = `Say why this ${noun} is being issued.`;
+  }
+  // A due date is optional — but a due date BEFORE the invoice date is
+  // always a mistake, and it would feed AR ageing.
+  if (input.dueDate && input.invoiceDate && input.dueDate < input.invoiceDate) {
+    errors.dueDate = "The due date cannot be before the invoice date.";
+  }
+
+  const lineErrors: Record<number, { description?: string; quantity?: string; unitPrice?: string; discount?: string }> = {};
+  input.lines.forEach((line, i) => {
+    const e: { description?: string; quantity?: string; unitPrice?: string; discount?: string } = {};
+    if (!line.description.trim()) e.description = "Describe what is being charged for.";
+
+    const qty = Number(line.quantity);
+    if (line.quantity.trim() === "" || Number.isNaN(qty)) e.quantity = "Enter a quantity.";
+    else if (qty <= 0) e.quantity = "Quantity must be more than zero.";
+
+    const price = Number(line.unitPrice);
+    if (line.unitPrice.trim() === "" || Number.isNaN(price)) e.unitPrice = "Enter a unit price.";
+    else if (price < 0) e.unitPrice = "Unit price cannot be negative.";
+
+    // Phase 5J — a discount now reduces the charge AND the VAT on it, so
+    // it can no longer be any number someone types. Same bounds the
+    // server enforces.
+    const discount = Number(line.discount);
+    if (line.discount.trim() !== "") {
+      if (Number.isNaN(discount) || discount < 0) e.discount = "A discount cannot be negative.";
+      else if (!Number.isNaN(qty) && !Number.isNaN(price) && discount > Math.round(qty * price * 100) / 100) {
+        e.discount = "A discount cannot be more than the line.";
+      }
+    }
+
+    if (Object.keys(e).length > 0) lineErrors[i] = e;
+  });
+  if (Object.keys(lineErrors).length > 0) errors.lines = lineErrors;
+
+  return errors;
+}
+
 function InvoiceFormPanel({
   companyId,
   customers,
@@ -61,28 +145,83 @@ function InvoiceFormPanel({
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const [customerId, setCustomerId] = useState(customers[0]?.id ?? 0);
+  // Phase 5I — NO default customer. This used to be `customers[0]?.id`,
+  // so a form opened and saved without touching the customer field
+  // silently billed whichever customer happened to sort first. An invoice
+  // is a legal document naming a party; that party must be chosen on
+  // purpose. `0` means "nothing chosen" and the form refuses to submit.
+  const [customerId, setCustomerId] = useState(0);
   const activeCustomerOptions = customerOptions(customers.filter((c) => c.isActive));
   const [documentType, setDocumentType] = useState<SalesInvoiceDocumentType>("Invoice");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState("");
   const [vatTreatmentCode, setVatTreatmentCode] = useState(vatTreatments[0]?.code ?? "");
   const [reference, setReference] = useState("");
+  // Phase 5I — `notes` already existed in the API, the database and the
+  // printed document; only the form never offered it, so nothing typed on
+  // an invoice could ever reach the page it prints on.
+  const [notes, setNotes] = useState("");
   const [originalInvoiceId, setOriginalInvoiceId] = useState<number | null>(null);
+  // Phase 5J — VAT Act s21(3)(a)(vi)/(b)(vi): a credit or debit note must
+  // carry "a brief explanation of the circumstances giving rise to" it.
+  // There was nowhere to record one, so no note this system issued could
+  // satisfy that.
+  const [reason, setReason] = useState("");
   const [lines, setLines] = useState<EditableLine[]>([{ ...BLANK_LINE }]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Phase 5I — set once Save has been attempted, so the form does not
+   * scold someone about fields they have not reached yet. */
+  const [attempted, setAttempted] = useState(false);
   const glOptions = glAccountOptions(chartOfAccounts);
   const vatOptions = vatCodeOptions(vatTreatments);
   const invoiceOptions = invoices.filter((i) => i.documentType === "Invoice" && i.customerId === customerId).map((i) => ({ value: i.id, label: i.invoiceNumber, sublabel: money(i.total) }));
 
-  const total = Math.round(lines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0), 0) * 100) / 100;
+  /* Phase 5J — the preview runs THE server's calculation, not a second
+   * one. `computeInvoiceTotalsFromCodes` is the same module
+   * `sales-invoice-service.ts` uses, imported directly (it depends on
+   * nothing but pure arithmetic, so it bundles for the client), against
+   * the same `vat_treatments` rates the server will resolve.
+   *
+   * The server still recomputes everything on save and stores ITS result.
+   * This is a preview so the figures are not a surprise — it is not an
+   * input to anything. An unknown VAT code falls back to showing zeros
+   * rather than throwing; the server names the offending code. */
+  const previewRates = new Map(vatTreatments.map((v) => [v.code, v.rate]));
+  const headerRate = vatTreatments.find((v) => v.code === vatTreatmentCode)?.rate ?? 0;
+  const preview = computeInvoiceTotalsFromCodes(
+    lines.map((l) => ({
+      quantity: Number(l.quantity) || 0,
+      unitPrice: Number(l.unitPrice) || 0,
+      discount: Number(l.discount) || 0,
+      vatCode: l.vatCode,
+    })),
+    headerRate,
+    previewRates,
+  );
+  const totals = preview.ok ? preview.totals : { subtotal: 0, discountTotal: 0, vatAmount: 0, total: 0, lines: [] };
+  const total = totals.total;
+
+  const errors = validateInvoiceForm({ customerId, invoiceDate, dueDate, lines, documentType, originalInvoiceId, reason });
+  const hasErrors = Object.keys(errors).length > 0 || errors.lines !== undefined;
+  /** A field's message, but only once Save has been attempted — the form
+   * should not scold someone about fields they have not reached yet.
+   * Typed to the single-message keys so it can never be handed the
+   * per-line record by mistake. */
+  const show = (key: "customerId" | "invoiceDate" | "dueDate"): string | undefined => (attempted ? errors[key] : undefined);
 
   function updateLine(index: number, patch: Partial<EditableLine>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }
 
   async function submit() {
+    setAttempted(true);
+    // Client validation COMPLEMENTS the server's — it never replaces it.
+    // The server re-validates every one of these (customer, date, VAT
+    // treatment, line description, quantity > 0, unit price >= 0) and is
+    // still the authority; this just stops a round trip and points at the
+    // field rather than showing one message at the bottom.
+    if (hasErrors) return;
     setLoading(true);
     setError(null);
     try {
@@ -96,7 +235,11 @@ function InvoiceFormPanel({
           dueDate: dueDate || null,
           vatTreatmentCode,
           reference,
-          originalInvoiceId: documentType === "Credit Note" ? originalInvoiceId : null,
+          notes,
+          // Phase 5J — a Debit Note references and explains its original
+          // invoice too (s21(3)(b)), not just a Credit Note.
+          originalInvoiceId: documentType === "Invoice" ? null : originalInvoiceId,
+          reason: documentType === "Invoice" ? "" : reason,
           lines: lines.map((l) => ({
             description: l.description,
             quantity: Number(l.quantity) || 0,
@@ -124,10 +267,30 @@ function InvoiceFormPanel({
     <div className="rounded-vf-md border border-vf-paper-border p-4">
       <p className="mb-3 text-sm font-semibold text-vf-ink">New Sales Document</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Field label="Customer" htmlFor="inv-customer" required className="lg:col-span-2">
+        <Field label="Customer" htmlFor="inv-customer" required className="lg:col-span-2" error={show("customerId")}>
           {/* Finding #200 — see deliveries-tab.tsx's identical note.
               Finding #167 — searchable Combobox instead of a plain Select. */}
-          <Combobox aria-label="Customer" value={customerId || null} options={activeCustomerOptions} placeholder="Search customer…" onCommit={(val) => setCustomerId(val ?? 0)} />
+          {/* Phase 5I — placeholder reflects what can now be searched. */}
+          <Combobox aria-label="Customer" value={customerId || null} options={activeCustomerOptions} placeholder="Search name, code, VAT or registration no…" onCommit={(val) => setCustomerId(val ?? 0)} />
+          {/* Phase 5I — the invoice form deliberately does NOT create a
+              customer inline. A customer captured in a hurry, with a name
+              and nothing else, lacks the recipient's VAT number and address
+              that a tax invoice needs (VAT Act s.20(4)(c)), and is how one
+              customer ends up duplicated with their balance split across two
+              records. Instead: say why the list is empty and point at the
+              screen that captures a customer properly. */}
+          {/* The panel cannot be opened at all with no customers — the New
+              Document button refuses. What DOES reach here is a company
+              whose customers all happen to be inactive: the button opens,
+              the list is empty, and nothing says why. */}
+          {activeCustomerOptions.length === 0 && (
+            <p className="mt-1 text-xs text-vf-ink-faint">
+              Every customer on file is marked inactive.{" "}
+              <a className="font-medium underline hover:text-vf-red-600" href={`/company/${companyId}/customers`}>
+                Go to Customers
+              </a>
+            </p>
+          )}
         </Field>
         <Field label="Document Type" htmlFor="inv-type" required>
           <Select id="inv-type" value={documentType} onChange={(e) => setDocumentType(e.target.value as SalesInvoiceDocumentType)}>
@@ -136,10 +299,10 @@ function InvoiceFormPanel({
             ))}
           </Select>
         </Field>
-        <Field label="Date" htmlFor="inv-date" required>
+        <Field label="Date" htmlFor="inv-date" required error={show("invoiceDate")}>
           <Input id="inv-date" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
         </Field>
-        <Field label="Due Date" htmlFor="inv-due">
+        <Field label="Due Date" htmlFor="inv-due" error={show("dueDate")}>
           <Input id="inv-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </Field>
         <Field label="VAT Treatment" htmlFor="inv-vat" required>
@@ -154,14 +317,37 @@ function InvoiceFormPanel({
         <Field label="Reference" htmlFor="inv-ref">
           <Input id="inv-ref" value={reference} onChange={(e) => setReference(e.target.value)} />
         </Field>
-        {documentType === "Credit Note" && (
-          /* Finding #114 — which Invoice this Credit Note reverses;
-             narrowed to the same customer's real Invoices. Optional — a
-             general goodwill credit with no specific original invoice is
-             still valid. */
-          <Field label="Original Invoice" htmlFor="inv-original">
-            <Combobox aria-label="Original Invoice" value={originalInvoiceId} options={invoiceOptions} placeholder="Not specified" onCommit={setOriginalInvoiceId} />
-          </Field>
+        {/* Phase 5I — `notes` already existed in the API, the database and
+            the printed document; the form simply never offered it. */}
+        <Field label="Notes" htmlFor="inv-notes">
+          <Input id="inv-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Shown on the printed document" />
+        </Field>
+        {documentType !== "Invoice" && (
+          /* Finding #114 added the link; Phase 5J makes it required and
+             extends it to Debit Notes.
+             VAT Act s21(3) requires a credit or debit note to carry
+             "information sufficient to identify the transaction to which
+             [it] refers" (a)(vii)/(b)(vii) and "a brief explanation of the
+             circumstances giving rise to" it (a)(vi)/(b)(vi). SARS's own
+             worked examples in VAT 404 satisfy the first with the original
+             tax invoice's number and date.
+             It used to be optional, on the reasoning that a general
+             goodwill credit names no invoice. That is not a document this
+             system can issue compliantly, so the field is now required
+             rather than quietly producing a non-compliant note. */
+          <>
+            <Field label="Original Invoice" htmlFor="inv-original" required error={attempted ? errors.originalInvoiceId : undefined}>
+              <Combobox aria-label="Original Invoice" value={originalInvoiceId} options={invoiceOptions} placeholder="Choose the invoice being adjusted" onCommit={setOriginalInvoiceId} />
+            </Field>
+            <Field label="Reason" htmlFor="inv-reason" required className="lg:col-span-2" error={attempted ? errors.reason : undefined}>
+              <Input
+                id="inv-reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Charged for 400 units instead of 300"
+              />
+            </Field>
+          </>
         )}
       </div>
 
@@ -194,6 +380,13 @@ function InvoiceFormPanel({
             <Button variant="subtle" size="sm" disabled={lines.length <= 1} onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}>
               Remove
             </Button>
+            {/* Phase 5I — per-line problems, named against the line they
+                belong to rather than as one message at the bottom. */}
+            {attempted && errors.lines?.[i] && (
+              <p role="alert" className="w-full text-xs text-vf-danger">
+                Line {i + 1}: {[errors.lines[i]!.description, errors.lines[i]!.quantity, errors.lines[i]!.unitPrice, errors.lines[i]!.discount].filter(Boolean).join(" ")}
+              </p>
+            )}
           </div>
         ))}
         <Button variant="subtle" size="sm" className="w-fit" onClick={() => setLines((prev) => [...prev, { ...BLANK_LINE }])}>
@@ -201,9 +394,51 @@ function InvoiceFormPanel({
         </Button>
       </div>
 
-      <p className="mt-3 font-mono text-sm font-semibold tabular-nums text-vf-ink">Total (excl. VAT): {money(total)}</p>
+      {/* Phase 5J — the real breakdown, and it is trustworthy now.
+          Phase 5I could only state the sum of quantity x unit price,
+          because the per-line VAT codes and discounts fed nothing; it said
+          so rather than inventing a VAT line. They feed the totals now, so
+          the figures below are the ones that will be saved — computed by
+          the same module the server uses, against the same VAT rates. The
+          server still recomputes and stores its own result; this is a
+          preview, never an input. */}
+      <div className="mt-3 flex justify-end">
+        <dl className="w-72 space-y-1 text-sm">
+          {totals.discountTotal > 0 && (
+            <>
+              <div className="flex justify-between text-vf-ink-soft">
+                <dt>Lines before discount</dt>
+                <dd className="font-mono tabular-nums">{money(Math.round((totals.subtotal + totals.discountTotal) * 100) / 100)}</dd>
+              </div>
+              <div className="flex justify-between text-vf-ink-soft">
+                <dt>Discount</dt>
+                <dd className="font-mono tabular-nums">−{money(totals.discountTotal)}</dd>
+              </div>
+            </>
+          )}
+          <div className="flex justify-between text-vf-ink-soft">
+            <dt>Subtotal (excl. VAT)</dt>
+            <dd className="font-mono tabular-nums">{money(totals.subtotal)}</dd>
+          </div>
+          <div className="flex justify-between text-vf-ink-soft">
+            <dt>VAT</dt>
+            <dd className="font-mono tabular-nums">{money(totals.vatAmount)}</dd>
+          </div>
+          <div className="flex justify-between border-t border-vf-ink/20 pt-1 text-base font-semibold text-vf-ink">
+            <dt>Total</dt>
+            <dd className="font-mono tabular-nums">{money(totals.total)}</dd>
+          </div>
+        </dl>
+      </div>
+      <p className="mt-1 text-right text-xs text-vf-ink-faint">
+        {preview.ok
+          ? <>A line with no VAT code uses the {documentType === "Invoice" ? "invoice" : "document"}&rsquo;s VAT Treatment. The server recalculates these figures on saving.</>
+          : <>One line uses a VAT code this company does not have — saving will say which.</>}
+      </p>
 
       <div className="mt-3 flex gap-2">
+        {/* Phase 5I — `!customerId` keeps Save unreachable until a
+            customer is chosen on purpose; there is no default any more. */}
         <Button variant="primary" size="sm" disabled={loading || !customerId || !vatTreatmentCode || total <= 0} onClick={submit}>
           Create {documentType}
         </Button>
@@ -243,7 +478,16 @@ export function InvoicesTab({
   const viewedInvoice = invoices.find((i) => i.id === viewInvoiceId) ?? null;
 
   const base = `/api/companies/${companyId}/sales/invoices`;
-  const disabledTitle = previewMode ? "Available once a production Supabase project is connected" : undefined;
+  // Phase 5I — the button was already disabled when a company had no
+  // customers or no VAT treatments, but said so only in preview mode. The
+  // other two cases greyed it out and gave no reason at all.
+  const disabledTitle = previewMode
+    ? "Available once a production Supabase project is connected"
+    : customers.length === 0
+      ? "Add a customer first — a sales document has to name the party being billed"
+      : vatTreatments.length === 0
+        ? "Set up a VAT treatment first — a sales document has to state how VAT applies"
+        : undefined;
   const customerName = (id: number) => customers.find((c) => c.id === id)?.name ?? `Customer #${id}`;
 
   const term = search.trim().toLowerCase();
@@ -440,6 +684,10 @@ export function InvoicesTab({
           open={viewInvoiceId !== null}
           onClose={() => setViewInvoiceId(null)}
           previewMode={previewMode}
+          // Phase 5J — resolved from the list this tab already holds, so
+          // the preview carries the same s21(3) particulars the PDF does,
+          // without a second fetch.
+          originalInvoice={invoices.find((i) => i.id === viewedInvoice.originalInvoiceId) ?? null}
         />
       )}
     </div>

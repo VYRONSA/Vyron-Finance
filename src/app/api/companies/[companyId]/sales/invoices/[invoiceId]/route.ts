@@ -16,6 +16,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
   if (!session.ok) return session.response;
 
   const { companyId, invoiceId } = await params;
+
+  // Phase 5I — same gap as the collection route: reading one invoice is a
+  // Sales capability, and the PDF route for this document already
+  // required `Sales:View`. RLS still enforces the tenant boundary.
+  const check = await requirePermission(companyId, "Sales:View");
+  if (!check.ok) return check.response;
+
   const invoice = await getSalesInvoice(companyId, Number(invoiceId));
   if (!invoice) return NextResponse.json({ error: "Sales invoice not found." }, { status: 404 });
   return NextResponse.json({ invoice });

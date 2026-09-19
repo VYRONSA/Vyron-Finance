@@ -1,0 +1,64 @@
+{
+  "caseId": "missing-invoice-number",
+  "documentId": "missing-invoice-number.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": null,
+  "invoiceDate": "2026-07-07",
+  "dueDate": "2026-08-06",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Cooking oil 20L",
+      "supplierSku": "CO20",
+      "quantity": 3,
+      "uom": "drum",
+      "unitPrice": 640,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 288,
+      "lineTotal": 1920
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1920,
+    "vatAmount": 288,
+    "total": 2208
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1920
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1920,
+    "vat": 288,
+    "total": 2208
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "missing",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [
+      "missing-required-field"
+    ],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "blocked-missing-invoice-number"
+  },
+  "notes": "No serial number is printed anywhere on the page. The correct answer is null. A plausible invented number ('INV-001', the date, the PO) is the worst possible outcome: it would post, and it would be untraceable."
+}

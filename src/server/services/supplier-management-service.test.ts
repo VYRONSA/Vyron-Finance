@@ -51,7 +51,7 @@ function supplier(overrides: Partial<Supplier> = {}): Supplier {
     bankAccountNumber: "",
     bankBranchCode: "",
     vatNumber: "",
-    taxNumber: "",
+    taxNumber: "", registrationNumber: "",
     riskRating: "Low",
     paymentTermsDays: 0,
     spendingLimit: 0,

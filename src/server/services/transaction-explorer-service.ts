@@ -426,10 +426,17 @@ export async function allocateRow(companyId: string, transactionIds: number[], i
 }
 
 /** Runs the Banking Rule Engine against exactly the selected
- * transactions — the real "Apply Rule" bulk action. */
-export async function applyRule(companyId: string, transactionIds: number[], performedBy: string): Promise<TransactionProcessingResult[]> {
+ * transactions — the real "Apply Rule" bulk action.
+ *
+ * Phase 5C — `mayPost` is the caller's `Banking:Post` answer. `false`
+ * keeps every classification this action legitimately performs under
+ * `Banking:Edit` and leaves the transactions a rule would have POSTED
+ * completely untouched, so a user who may post still can (see
+ * `ProcessTransactionOptions.mayPost`). Defaults to `true` — the
+ * behaviour before this phase — so no internal caller changes. */
+export async function applyRule(companyId: string, transactionIds: number[], performedBy: string, mayPost = true): Promise<TransactionProcessingResult[]> {
   requireIds(transactionIds);
-  return applyRulesToTransactions(companyId, transactionIds, performedBy);
+  return applyRulesToTransactions(companyId, transactionIds, performedBy, [], { mayPost });
 }
 
 /** Pilot Review Round 1, Phase 7 — the repeated-allocation intelligence
@@ -461,7 +468,7 @@ export async function getRepeatedAllocationCount(
  * naturally participates alongside every other active rule; no separate
  * single-rule code path was needed. */
 export async function applyRulesToRemainingBatchTransactions(
-  companyId: string, importBatch: string, excludeTransactionId: number | null, performedBy: string, newRuleId: number | null = null,
+  companyId: string, importBatch: string, excludeTransactionId: number | null, performedBy: string, newRuleId: number | null = null, mayPost = true,
 ): Promise<TransactionProcessingResult[]> {
   if (!importBatch) return [];
   const { transactions } = await listTransactionsForExport(companyId, {
@@ -472,7 +479,8 @@ export async function applyRulesToRemainingBatchTransactions(
   const ids = transactions.map((t) => t.id).filter((id) => id !== excludeTransactionId);
   if (ids.length === 0) return [];
   // Master Implementation Tracker — Programme 2, Epic E2, Finding #207.
-  return applyRulesToTransactions(companyId, ids, performedBy, newRuleId !== null ? [newRuleId] : []);
+  // Phase 5C — `mayPost`: see `applyRule` above.
+  return applyRulesToTransactions(companyId, ids, performedBy, newRuleId !== null ? [newRuleId] : [], { mayPost });
 }
 
 export type RuleApplicationSummary = {

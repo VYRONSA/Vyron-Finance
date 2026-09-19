@@ -1,0 +1,62 @@
+{
+  "caseId": "foreign-currency",
+  "documentId": "foreign-currency.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Atlas Software International Inc",
+    "vatNumber": null,
+    "registrationNumber": null
+  },
+  "invoiceNumber": "ASI-77214",
+  "invoiceDate": "2026-07-13",
+  "dueDate": "2026-08-12",
+  "orderReference": null,
+  "currency": "USD",
+  "lines": [
+    {
+      "description": "Annual software subscription — 25 seats",
+      "supplierSku": "ASI-SUB-25",
+      "quantity": 1,
+      "uom": "licence",
+      "unitPrice": 1200,
+      "discount": 0,
+      "vatRatePercent": null,
+      "vatAmount": null,
+      "lineTotal": 1200
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1200,
+    "total": 1200
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1200
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1200,
+    "vat": null,
+    "total": 1200
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "not-applicable",
+    "supplierRegistrationNumber": "not-applicable",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent",
+    "vatAmount": "not-applicable"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "unresolved",
+    "duplicate": "none",
+    "conversion": "not-supported-foreign-currency"
+  },
+  "notes": "USD 1 200.00, stated three times on the page ('TOTAL USD', the $ symbol, and the footer). A foreign supplier, so no South African VAT arises — not-applicable, not missing. Finance's CreatePurchaseBillInput has no currency field at all, so converting this would book R1 200.00. Expected: extract correctly, then refuse. No rate, no conversion, no silent ZAR."
+}

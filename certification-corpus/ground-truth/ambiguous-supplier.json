@@ -1,0 +1,62 @@
+{
+  "caseId": "ambiguous-supplier",
+  "documentId": "ambiguous-supplier.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supply (Pty) Ltd",
+    "vatNumber": null,
+    "registrationNumber": null
+  },
+  "invoiceNumber": "KWS-3310",
+  "invoiceDate": "2026-07-03",
+  "dueDate": "2026-08-02",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Dry goods assortment",
+      "supplierSku": "DGA",
+      "quantity": 1,
+      "uom": "pallet",
+      "unitPrice": 640,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 96,
+      "lineTotal": 640
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 640,
+    "vatAmount": 96,
+    "total": 736
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      640
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 640,
+    "vat": 96,
+    "total": 736
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "ambiguous",
+    "supplierVatNumber": "correctly-absent",
+    "supplierRegistrationNumber": "correctly-absent",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "ambiguous",
+    "duplicate": "none",
+    "conversion": "blocked-no-supplier"
+  },
+  "notes": "'Karoo Wholesale Supply (Pty) Ltd' is a DIFFERENT legal entity from 'Karoo Wholesale Supplies'. No VAT number and no registration number are printed, so there is nothing deterministic to match on. The correct outcome is to ask a human, not to pick the closer string."
+}

@@ -179,7 +179,7 @@ describe("idempotency", () => {
   it("processes a new event exactly once (same event ID processed once)", async () => {
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 5, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 5, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     const outcome = await processResendInboundEmail(event(), "msg_1");
 
@@ -234,7 +234,7 @@ describe("tenant isolation", () => {
     vi.mocked(identityAdminRepo.findActiveCompanyBankStatementEmailByIdentifier).mockResolvedValue(identity({ companyId: "company-a" }));
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     const outcome = await processResendInboundEmail(event({ to: ["company-a-a7k3.bank@imports.vyronfinance.co.za"] }), "msg_1");
 
@@ -247,7 +247,7 @@ describe("tenant isolation", () => {
     vi.mocked(identityAdminRepo.findActiveCompanyBankStatementEmailByIdentifier).mockResolvedValue(identity({ companyId: "company-b", stableIdentifier: "company-b-x9q2" }));
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     const outcome = await processResendInboundEmail(event({ to: ["company-b-x9q2.bank@imports.vyronfinance.co.za"] }), "msg_1");
 
@@ -279,7 +279,7 @@ describe("tenant isolation", () => {
     vi.mocked(identityAdminRepo.findActiveCompanyBankStatementEmailByIdentifier).mockResolvedValue(identity({ companyId: "company-a" }));
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     await processResendInboundEmail(event(), "msg_1");
 
@@ -292,7 +292,7 @@ describe("attachment handling", () => {
   function expectDispatchToPdfPath() {
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata({ filename: "statement.pdf" }));
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
   }
 
   it("accepts a PDF attachment, dispatching through preview + confirm", async () => {
@@ -378,7 +378,7 @@ describe("import pipeline integration", () => {
   it("marks the webhook event processed and records a successful-import timestamp", async () => {
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     await processResendInboundEmail(event(), "msg_1");
 
@@ -461,7 +461,7 @@ describe("failure handling", () => {
   it("never sends a notification for a successful import", async () => {
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     await processResendInboundEmail(event(), "msg_1");
 
@@ -477,7 +477,7 @@ describe("Phase 21D — server-to-server admin execution context", () => {
       capturedClient = getServerExecutionContextClient();
       return { batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never;
     });
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     await processResendInboundEmail(event(), "msg_1");
 
@@ -501,7 +501,7 @@ describe("Phase 21D — server-to-server admin execution context", () => {
   it("no execution context is active before or after processing a webhook (never leaks)", async () => {
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     expect(getServerExecutionContextClient()).toBeUndefined();
     await processResendInboundEmail(event(), "msg_1");
@@ -522,7 +522,7 @@ describe("Phase 21D — server-to-server admin execution context", () => {
   it("never includes the service-role key in a returned outcome", async () => {
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     const outcome = await processResendInboundEmail(event(), "msg_1");
 
@@ -532,7 +532,7 @@ describe("Phase 21D — server-to-server admin execution context", () => {
   it("Phase 21K regression: the Resend path still queries/inserts webhook events scoped to provider='resend', unchanged by the IMAP provider widening", async () => {
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     await processResendInboundEmail(event(), "msg_1");
 
@@ -578,7 +578,7 @@ describe("pollBankStatementImapMailbox — Phase 21K", () => {
     vi.mocked(parseImapMessageToInboundEmailMessage).mockResolvedValue(imapMessage({ providerEventId: "999:1" }));
     vi.mocked(identityAdminRepo.findActiveCompanyBankStatementEmailByIdentifier).mockResolvedValue(identity({ companyId: "company-a", stableIdentifier: "company-a-a7k3" }));
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 3, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 3, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     const outcome = await pollBankStatementImapMailbox();
 
@@ -602,7 +602,7 @@ describe("pollBankStatementImapMailbox — Phase 21K", () => {
     );
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
     vi.mocked(confirmPdfBankStatementImport)
-      .mockResolvedValueOnce({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] })
+      .mockResolvedValueOnce({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] })
       .mockRejectedValueOnce(new Error("database connection reset"));
 
     const outcome = await pollBankStatementImapMailbox();
@@ -668,7 +668,7 @@ describe("pollBankStatementImapMailbox — Phase 21K", () => {
     vi.mocked(webhookEventRepo.findResendWebhookEvent).mockResolvedValue(webhookEventRecord({ id: 55, provider: "imap", providerEventId: "999:1", status: "received", companyId: null }));
     vi.mocked(identityAdminRepo.findActiveCompanyBankStatementEmailByIdentifier).mockResolvedValue(identity({ companyId: "company-a", stableIdentifier: "company-a-a7k3" }));
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     const outcome = await pollBankStatementImapMailbox();
 
@@ -735,7 +735,7 @@ describe("pollBankStatementImapMailbox — Phase 21K", () => {
     vi.mocked(webhookEventRepo.findResendWebhookEvent).mockResolvedValue(webhookEventRecord({ id: 77, provider: "imap", providerEventId: "999:1", status: "received", companyId: null }));
     vi.mocked(identityAdminRepo.findActiveCompanyBankStatementEmailByIdentifier).mockResolvedValue(identity({ companyId: "company-a", stableIdentifier: "company-a-a7k3" }));
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
 
     await Promise.all([pollBankStatementImapMailbox(), pollBankStatementImapMailbox()]);
 
@@ -764,7 +764,7 @@ describe("pollBankStatementImapMailbox — Phase 21K", () => {
   it("documents: the SAME real statement delivered via both Resend and IMAP gets independent transport-level idempotency records — the EXISTING accounting-level natural-key constraint (unchanged, untouched by this phase) is the real backstop against a genuine cross-channel duplicate import, not this table (Phase 21K Part 13)", async () => {
     vi.mocked(fetchAttachmentMetadata).mockResolvedValue(attachmentMetadata());
     vi.mocked(previewPdfBankStatement).mockResolvedValue({ batchId: "B1", sourceFilename: "statement.pdf", metadata: {} as never, transactions: [], expectedTransactionCount: null } as never);
-    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, validation: {} as never, exceptions: [] });
+    vi.mocked(confirmPdfBankStatementImport).mockResolvedValue({ batch: {} as never, importedCount: 1, duplicateCount: 0, rulesAutoAllocated: 0, rulePass: { notPermitted: 0, notAttempted: 0, stopReason: null }, validation: {} as never, exceptions: [] });
     const resendOutcome = await processResendInboundEmail(event(), "resend-delivery-1");
     expect(resendOutcome.status).toBe("processed");
     expect(webhookEventRepo.insertResendWebhookEvent).toHaveBeenCalledWith("resend-delivery-1", "email.received", "resend");

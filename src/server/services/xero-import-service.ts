@@ -391,13 +391,49 @@ async function importSalesInvoices(companyId: string, invoices: XeroInvoiceGroup
         description: buildLineDescription(line.description, line.taxType),
         quantity: line.quantity,
         unitPrice: line.unitAmount,
-        discount: line.discount,
+        /* Phase 5J — the discount stored is DERIVED from Xero's own
+         * figures, not copied from Xero's `Discount` column.
+         *
+         * Xero's `Discount` is a PERCENTAGE. This repository's `discount`
+         * is a money amount — the meaning `purchasing/line-amounts.ts`
+         * gives it on Purchase Orders, Bills and Sales Orders, and now on
+         * Sales Invoices too. Copying one into the other stored "5"
+         * meaning "5%" into a column everything else reads as "R5.00".
+         * The parser's own fixture shows it: quantity 16 at 28.64 with
+         * Discount 5 has LineAmount 458.24 — exactly 16 x 28.64, so the
+         * percentage reduced nothing.
+         *
+         * `lineAmount` is Xero's authoritative post-discount net, so its
+         * shortfall against list price IS the discount in money, whatever
+         * unit Xero expressed it in. Unit-correct by construction, with
+         * no assumption about Xero's column.
+         *
+         * Rows imported BEFORE this change still hold the raw percentage
+         * and are deliberately NOT rewritten — see
+         * docs/INVOICING_ACCOUNTING_5J.md, "Historical data". */
+        discount: Math.max(0, Math.round((line.quantity * line.unitAmount - line.lineAmount) * 100) / 100),
         glAccount: line.accountCode || null,
         vatCode: mapXeroTaxTypeToVatCode(line.taxType),
-        netAmount: line.lineAmount,
-        vatAmount: line.taxAmount,
       }));
-      const vatRatePercent = dominantVatCode(invoice.lines) === "Standard Rated" ? 15 : 0;
+      /* Phase 5J — Xero's own figures are stored verbatim, never
+       * recomputed. A migration reproduces the source ledger; an imported
+       * invoice is a historical record, not a document this system is
+       * issuing. The header overwrite below still applies Xero's exact
+       * Total/TaxTotal/AmountDue afterwards, exactly as before. */
+      const importedTotals = {
+        lines: invoice.lines.map((line, i) => ({
+          grossAmount: Math.round(line.quantity * line.unitAmount * 100) / 100,
+          discount: lines[i].discount ?? 0,
+          netAmount: line.lineAmount,
+          vatRatePercent: line.lineAmount === 0 ? 0 : Math.round((line.taxAmount / line.lineAmount) * 10000) / 100,
+          vatAmount: line.taxAmount,
+          lineTotal: Math.round((line.lineAmount + line.taxAmount) * 100) / 100,
+        })),
+        subtotal: Math.round((invoice.total - invoice.taxTotal) * 100) / 100,
+        discountTotal: Math.round(lines.reduce((sum, l) => sum + (l.discount ?? 0), 0) * 100) / 100,
+        vatAmount: invoice.taxTotal,
+        total: invoice.total,
+      };
       const created = await createSalesInvoice(
         companyId,
         {
@@ -411,7 +447,7 @@ async function importSalesInvoices(companyId: string, invoices: XeroInvoiceGroup
           notes: `Migrated from Xero. Xero status: ${invoice.xeroStatus}. Currency: ${invoice.currency}.`,
           lines,
         },
-        vatRatePercent,
+        importedTotals,
       );
 
       // Xero's own Total/TaxTotal/InvoiceAmountDue are exact, already-

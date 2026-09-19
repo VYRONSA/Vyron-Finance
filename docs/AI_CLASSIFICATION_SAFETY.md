@@ -1,6 +1,6 @@
 # AI Classification Safety — Implementation Specification
 
-Status: implemented locally on branch `ai-sweep-safety` (migration `0099_ai_classification_safety.sql`), revised after the pre-deployment review. **Not deployed.** Northwood task #6 and Metanoia task #11 stay paused after deployment until a controlled test is explicitly approved.
+Status: **deployed to production on 2026-09-15** — commit `ce73e433681bfcf6d9425e53d1ffb13701777dab`, Vercel deployment `dpl_2vDNykSp7Jzk81QwxYVdvBBJ7Gmz`, migration `0099_ai_classification_safety.sql`. Northwood task #6 is Paused and inactive; Metanoia task #11 is inactive. The controlled recovery test and the captured root cause are recorded in §18.
 
 ## 1. Why
 
@@ -286,7 +286,9 @@ All tests use synthetic or local data and fake providers. No AI provider request
 | `supabase/tests/ai_classification_safety.test.sql` | The database half, in one rolled-back transaction: queue transitions and gate holds, reservations and give-backs, fuse exactness (100 vs 101, cannot raise, UTC boundaries), circuit and probe rules, ordering and isolation, a 30-day simulation of the historical loop and Metanoia 101, tenant isolation in both directions, privileges, alert de-duplication, Suspended, the accounting boundary |
 | `src/server/services/ai-classification-safety.scenario.test.ts` | End to end against a local stack: the real service and `nextTaskRunAt` on a simulated clock (historical loop, Metanoia 101, circuit), plus **real concurrency**: 150 parallel gate calls give exactly 100 allowed, for each of two companies at once; exactly one probe among 25 callers; a sweep and "Classify with AI" racing at 90/100 send exactly 10. Skipped unless `AI_SAFETY_LOCAL_SUPABASE_URL` (localhost only) and `AI_SAFETY_LOCAL_SERVICE_ROLE_KEY` are set. |
 
-## 16. Deployment and first controlled test (for review, not done)
+## 16. Deployment and first controlled test
+
+Steps 1–4 were carried out on 2026-09-15; the outcome is recorded in §18. Step 5 has not been done: restoring the provider is a separate decision.
 
 1. Apply migration 0099. It is additive and re-runnable, and changes no existing rows. Its constraint names were checked against production (read-only).
 2. Deploy the application.
@@ -307,3 +309,83 @@ All tests use synthetic or local data and fake providers. No AI provider request
 - **VYRON AI (copilot).** It uses the same gateway and key through `vyron-ai-engine.ts` and is not behind this gate. It is user-initiated and plan-limited. Whether it should share the circuit breaker is a decision.
 - **No UI yet.** There is no UI yet for queue state, attempts, circuit status, or "Retry AI" into the sweep queue.
 - **Customer metering.** Customer metering and licensing are unchanged. See `METERING_LICENSING_DECISION_NOTE.md`.
+
+## 18. Incident record: controlled Northwood recovery test (2026-09-15)
+
+Purpose: capture the cause of the Northwood AI classification failure (task #6 failing every run since 2026-09-11) through the deployed safety layer, and show that the layer contains it. No attempt was made to fix the provider.
+
+### Production state during the test
+
+| | |
+|---|---|
+| Application | commit `ce73e433681bfcf6d9425e53d1ffb13701777dab`, Vercel deployment `dpl_2vDNykSp7Jzk81QwxYVdvBBJ7Gmz` |
+| Database | migration 0099 |
+| Task under test | Northwood task #6 (`AiClassificationSweep`) |
+| Metanoia task #11 | inactive throughout; never modified |
+
+### Timeline (UTC)
+
+| Time | Event |
+|---|---|
+| 12:49:14 | Task #6 paused as a containment step (before deployment) |
+| 18:19 | Migration 0099 applied |
+| 18:34:51 | Deployment `dpl_2vDNykSp7Jzk81QwxYVdvBBJ7Gmz` ready |
+| 19:16 | Read-only pre-flight passed: circuit closed with counters at 0, Northwood daily usage 0, no attempts, no queue rows, accounting fingerprint unchanged |
+| 19:18:20 | Task #6 activated, the same way Resume does: `Paused`/inactive → `Queued`/active, retry count 104 → 0. Schedule unchanged, no Run Now. |
+| 19:18:46 | The normal cron's scheduler pass picked up task #6: automation run **18560** ran from 19:18:50 to 19:18:52 |
+| 19:19:04 | Task #6 set inactive, so no further run could be scheduled |
+| 19:19:09 | Task #6 returned to `Paused`/inactive |
+| 19:27 | Read-only closure verification (below) |
+
+### What the first run recorded
+
+| Item | Value |
+|---|---|
+| Automation run | 18560 |
+| Candidates offered by the queue | 20 (73 eligible) |
+| First transaction attempted | 229 |
+| Provider requests | **exactly 1** |
+| Attempt record | id 1, outcome `provider_error`, source `sweep`, performed by "Scheduler (cron)" |
+| Provider / model | `vercel-ai-gateway` / `openai/gpt-4o-mini` |
+| HTTP status | **402** |
+| Error category | `payment-required` |
+| Stored provider message (sanitized, 205 characters) | "A positive credit balance is required for all requests, including BYOK, so fallback providers remain available. Add credits at https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dtop-up to continue." |
+| Usage returned by the provider | none |
+| Attempt duration | 576 ms |
+| Circuit breaker | opened immediately, reason `payment-required`; next probe due 19:18:46 + 1 h = 20:18:46; backoff 3,600 s; timeout and 5xx counters 0 |
+| Batch | stopped after the first request (`stoppedReason: provider_failure`); the other 19 candidates were not sent |
+| Daily fuse | one reservation: Northwood 1/100 |
+| Internal usage metric | one `ai_provider_requests` event |
+| Queue state | transaction 229 `active` (a provider failure puts no hold on the transaction) |
+| Alerts and notifications | one critical alert (id 107, `ai-classification:provider-unavailable`) and one notification |
+| Scheduler retry count | not consumed: 0 after the run, no suspension |
+| Accounting | all 30 accounting tables unchanged (fingerprint), 0 journals, 0 allocation-history rows |
+| Task #6 afterwards | `Paused`, inactive |
+| Task #11 | inactive, unchanged |
+
+### Findings — by strength of evidence
+
+**Proven.** These are recorded in production by VYRON's own safety layer.
+- VYRON received **HTTP 402, error category `payment-required`**, from the Vercel AI Gateway for the classification request (attempt record 1, run 18560).
+- Exactly one provider request was made, and the batch stopped after it.
+- The circuit opened on the 402, as configured.
+- One daily-usage reservation, one attempt record and one critical alert were created.
+- No accounting data changed.
+- Task #6 was returned to `Paused`/inactive; task #11 remained inactive.
+
+**Reported by the provider, not independently verified.** The provider's message says a positive AI Gateway credit balance is required for all requests: the Vercel AI Gateway account has no positive credit balance. VYRON did not read the account balance or the provider configuration.
+
+**Not proven**
+- **Why the Vercel AI Gateway request metrics show no request.** They showed no request for the period that includes the rejected request (checked through 19:27 UTC). No explanation has been confirmed.
+- **Whether the earlier failures had this same cause.** That covers every run from 2026-09-11 to the containment pause. The pre-deployment code did not record provider errors, so the timing is consistent with it but it cannot be shown.
+
+### State after the test (read-only verification, 19:27 UTC)
+- **Tasks:** task #6 is `Paused`/inactive, retry count 0; task #11 is inactive.
+- **Circuit:** open (`payment-required`, HTTP 402), next probe 20:18:46.
+- **Usage:** Northwood 1/100; exactly one attempt record; no second provider request; no task #6 or AI sweep run since the test.
+- **Accounting:** unchanged.
+
+### What remains open
+- **The circuit covers every classification path.** After the next probe time, a Northwood bank sync or import can send exactly one probe request. If the provider still rejects it, the circuit stays open and the wait doubles.
+- **Restoring the provider is a separate decision.** That means providing AI Gateway credit, and then letting a probe close the circuit.
+- **Resuming task #6 or #11 needs explicit approval.**

@@ -1,0 +1,65 @@
+{
+  "caseId": "arithmetic-mismatch",
+  "documentId": "arithmetic-mismatch.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-10222",
+  "invoiceDate": "2026-07-08",
+  "dueDate": "2026-08-07",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Maize meal 10kg",
+      "supplierSku": "MM10",
+      "quantity": 10,
+      "uom": "bag",
+      "unitPrice": 100,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": null,
+      "lineTotal": 1000,
+      "printedVatAmount": 165
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1000,
+    "vatAmount": 165,
+    "total": 1165
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1000
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1000,
+    "vat": 150,
+    "total": 1150
+  },
+  "documentIsArithmeticallyWrong": true,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [
+      "totals-mismatch"
+    ],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "review-arithmetic-disagreement"
+  },
+  "notes": "THE DOCUMENT IS WRONG AND STAYS WRONG. It prints VAT of 165.00 on a net of 1 000.00, where 15% is 150.00, and a total of 1 165.00 instead of 1 150.00. The correct extraction is what is PRINTED (165.00 / 1 165.00); the correct SYSTEM behaviour is to notice the disagreement and ask. An extraction that returns 150.00 has silently corrected a supplier's invoice, which is how a wrong figure enters a ledger looking right."
+}

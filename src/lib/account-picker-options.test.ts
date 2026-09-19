@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { glAccountOptions, vatCodeOptions, supplierOptions } from "./account-picker-options";
+import { customerOptions, glAccountOptions, vatCodeOptions, supplierOptions } from "./account-picker-options";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { VatTreatment } from "@/server/company-management/types";
 import type { Supplier } from "@/server/accounting/types";
+import type { Customer } from "@/server/customer-management/types";
 
 function account(overrides: Partial<ChartOfAccount> & Pick<ChartOfAccount, "id" | "accountCode">): ChartOfAccount {
   return {
@@ -50,7 +51,7 @@ function supplier(overrides: Partial<Supplier> & Pick<Supplier, "id" | "name">):
   return {
     companyId: "co_1", alternativeNames: [], defaultGlAccount: null, defaultVatCode: null, status: "Active",
     supplierCode: "", supplierCategory: "", supplierType: "Company", bankName: "", bankAccountNumber: "",
-    bankBranchCode: "", vatNumber: "", taxNumber: "", riskRating: "Low", paymentTermsDays: 0, spendingLimit: 0,
+    bankBranchCode: "", vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low", paymentTermsDays: 0, spendingLimit: 0,
     ...overrides,
   };
 }
@@ -73,5 +74,69 @@ describe("supplierOptions (Phase 38)", () => {
     ]);
     expect(result).toHaveLength(1);
     expect(result[0].value).toBe(1);
+  });
+});
+
+// -----------------------------------------------------------------------
+// Phase 5I — the invoice customer selector.
+//
+// It used to be searchable on customer code + name only, so picking the
+// right "Metanoia" out of several meant guessing. The identifiers a
+// person actually checks — VAT number and registration number — are on
+// the customer record already and are now both searchable and visible.
+// -----------------------------------------------------------------------
+
+function customer(overrides: Partial<Customer> & Pick<Customer, "id" | "name">): Customer {
+  return {
+    companyId: "co_1", customerCode: "CUST001", customerType: "Company", customerGroup: "", industry: "",
+    vatNumber: "", registrationNumber: "", creditLimit: 0, paymentTermsDays: 30, currencyCode: null,
+    priceList: "", salesRep: "", isActive: true, riskRating: "Low", notes: "", createdAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("customerOptions (Phase 5I)", () => {
+  const acme = customer({
+    id: 1, name: "Acme Ltd", customerCode: "ACME", vatNumber: "4123456789", registrationNumber: "2016/112233/07",
+  });
+
+  it("is searchable by name", () => {
+    expect(customerOptions([acme])[0]!.searchText).toContain("Acme Ltd");
+  });
+
+  it("is searchable by customer code", () => {
+    expect(customerOptions([acme])[0]!.searchText).toContain("ACME");
+  });
+
+  it("is searchable by VAT number", () => {
+    expect(customerOptions([acme])[0]!.searchText).toContain("4123456789");
+  });
+
+  it("is searchable by registration number", () => {
+    expect(customerOptions([acme])[0]!.searchText).toContain("2016/112233/07");
+  });
+
+  it("shows the identifiers in the result, so the wrong customer is visibly wrong", () => {
+    const sublabel = customerOptions([acme])[0]!.sublabel;
+    expect(sublabel).toContain("ACME");
+    expect(sublabel).toContain("4123456789");
+    expect(sublabel).toContain("2016/112233/07");
+  });
+
+  it("omits blank identifiers rather than leaving stray separators", () => {
+    const bare = customer({ id: 2, name: "No Details Ltd", customerCode: "ND", vatNumber: "", registrationNumber: "" });
+    expect(customerOptions([bare])[0]!.sublabel).toBe("ND");
+    expect(customerOptions([bare])[0]!.searchText).toBe("ND No Details Ltd");
+  });
+
+  it("keeps the label as the plain customer name", () => {
+    expect(customerOptions([acme])[0]!.label).toBe("Acme Ltd");
+    expect(customerOptions([acme])[0]!.value).toBe(1);
+  });
+
+  it("builds options only from the list it is given — tenant scoping stays with the caller", () => {
+    // The picker never queries; it maps whatever already-scoped list the
+    // page loaded, so it cannot reach another company's customers.
+    expect(customerOptions([])).toEqual([]);
   });
 });

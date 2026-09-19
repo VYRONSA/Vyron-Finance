@@ -1,0 +1,62 @@
+{
+  "caseId": "jpg",
+  "documentId": "jpg.jpg",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Highveld Fasteners",
+    "vatNumber": "4778899001",
+    "registrationNumber": "2013/667788/07"
+  },
+  "invoiceNumber": "HF-2208",
+  "invoiceDate": "2026-06-02",
+  "dueDate": "2026-07-02",
+  "orderReference": "PO-4488",
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Hex bolt M12 x 80 (box of 100)",
+      "supplierSku": "HB1280",
+      "quantity": 3,
+      "uom": "box",
+      "unitPrice": 425.5,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 191.48,
+      "lineTotal": 1276.5
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1276.5,
+    "vatAmount": 191.48,
+    "total": 1467.98
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1276.5
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1276.5,
+    "vat": 191.48,
+    "total": 1467.98
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "present"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "Also the rounding case: 15% of 1 276.50 is 191.475, printed as 191.48. A reader that returns 191.47 has rounded the other way and the difference is real."
+}

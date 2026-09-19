@@ -103,9 +103,17 @@ export function DocumentPreviewOverlay({
         tabIndex={-1}
         className="relative z-10 flex h-fit w-full max-w-[860px] flex-col gap-0 self-start rounded-vf-md bg-vf-paper shadow-2xl print:static print:max-w-none print:rounded-none print:shadow-none"
       >
-        <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-vf-md border-b border-vf-paper-border bg-vf-paper px-5 py-3 print:hidden">
-          <p className="text-sm font-medium text-vf-ink">{title}</p>
-          <div className="flex items-center gap-2">
+        {/* Phase 5J — wraps instead of overflowing at phone width.
+            Measured at 390x844: this toolbar pushed 49px past the dialog's
+            right edge, taking the Close button with it, on EVERY document
+            type (invoice, statement, report) — a pre-existing defect, not
+            one this phase introduced. `flex-wrap` on the row and `min-w-0`
+            on the title (a flex item's automatic minimum size is its
+            content width) let the actions drop below the title rather than
+            widen the dialog. */}
+        <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-t-vf-md border-b border-vf-paper-border bg-vf-paper px-5 py-3 print:hidden">
+          <p className="min-w-0 truncate text-sm font-medium text-vf-ink">{title}</p>
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="primary" size="sm" onClick={() => window.print()}>
               Print
             </Button>

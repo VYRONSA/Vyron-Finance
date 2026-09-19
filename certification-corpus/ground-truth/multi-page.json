@@ -1,0 +1,218 @@
+{
+  "caseId": "multi-page",
+  "documentId": "multi-page.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-10077",
+  "invoiceDate": "2026-06-14",
+  "dueDate": "2026-07-14",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Cake flour 12.5kg",
+      "supplierSku": "KW-200",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "White sugar 10kg",
+      "supplierSku": "KW-201",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Brown sugar 10kg",
+      "supplierSku": "KW-202",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Long grain rice 10kg",
+      "supplierSku": "KW-203",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Sunflower oil 2L",
+      "supplierSku": "KW-204",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Baked beans 410g",
+      "supplierSku": "KW-205",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Chopped tomatoes 410g",
+      "supplierSku": "KW-206",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Pilchards in tomato 400g",
+      "supplierSku": "KW-207",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Instant coffee 750g",
+      "supplierSku": "KW-208",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Rooibos tea 200 bags",
+      "supplierSku": "KW-209",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Full cream milk powder 1kg",
+      "supplierSku": "KW-210",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Peanut butter 800g",
+      "supplierSku": "KW-211",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Mixed fruit jam 900g",
+      "supplierSku": "KW-212",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    },
+    {
+      "description": "Cream crackers 200g",
+      "supplierSku": "KW-213",
+      "quantity": 2,
+      "uom": "case",
+      "unitPrice": 75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 22.5,
+      "lineTotal": 150
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 2100,
+    "vatAmount": 315,
+    "total": 2415
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      150,
+      150,
+      150,
+      150,
+      150,
+      150,
+      150,
+      150,
+      150,
+      150,
+      150,
+      150,
+      150,
+      150
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 2100,
+    "vat": 315,
+    "total": 2415
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "14 lines across two pages. Lines 8-14 are on page 2; an extraction that reads only page 1 must be visible as a line-count failure, not as a plausible smaller invoice."
+}

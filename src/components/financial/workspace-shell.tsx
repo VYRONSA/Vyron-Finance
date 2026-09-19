@@ -1,121 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn, getInitials } from "@/lib/utils";
 import { BrandMark } from "@/components/ui/brand-mark";
+import { NAV_GROUPS, activeNavGroup, isNavItemActive } from "./workspace-nav";
+import { WorkspaceNavSections } from "./workspace-nav-sections";
 import { NotificationBell } from "@/components/financial/notification-bell";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { SessionExpiryGuard } from "@/components/auth/session-expiry-guard";
-import {
-  IconAlertTriangle,
-  IconArchive,
-  IconBank,
-  IconBanknote,
-  IconBarChart,
-  IconBell,
-  IconBookOpen,
-  IconBuilding,
-  IconChevronDown,
-  IconChevronLeft,
-  IconClock,
-  IconFileText,
-  IconGrid,
-  IconHelpCircle,
-  IconImport,
-  IconListChecks,
-  IconReceipt,
-  IconReconcile,
-  IconRefresh,
-  IconSearch,
-  IconSettings,
-  IconShieldCheck,
-  IconSliders,
-  IconSparkles,
-  IconTarget,
-  IconUsers,
-} from "@/components/ui/icons";
+import { IconChevronDown, IconChevronLeft, IconHelpCircle, IconMenu, IconSearch, IconX } from "@/components/ui/icons";
 
-// `exact` — highlight only on the page itself, not its sub-pages (the
-// Reporting Centre home would otherwise light up on every category).
-type ModuleLink = { label: string; href?: string; icon: ComponentType<{ className?: string }>; exact?: boolean };
-
-// Groups and items match the approved reference exactly. Items with no
-// `href` have no built page yet — per the "stop building placeholders"
-// instruction they're rendered inert (not a Link, no navigation) rather
-// than pointed at a route that would 404. See MIGRATION_ROADMAP.md.
-const NAV_GROUPS: { label: string; items: ModuleLink[] }[] = [
-  {
-    label: "Executive",
-    items: [
-      { label: "Dashboard", href: "dashboard", icon: IconGrid },
-      { label: "VYRON Intelligence", href: "intelligence", icon: IconSparkles },
-      { label: "Bank Accounts", href: "bank-accounts", icon: IconBank },
-      { label: "Import Centre", href: "import-centre", icon: IconImport },
-      { label: "Cashbook", href: "cashbook", icon: IconBanknote },
-      { label: "Transaction Explorer", href: "transactions", icon: IconListChecks },
-      { label: "Find & Recode", href: "transactions/find-and-recode", icon: IconSearch },
-      { label: "Automation Rules", href: "banking-rules", icon: IconSliders },
-      { label: "Banking Exceptions", href: "banking-exceptions", icon: IconAlertTriangle },
-      { label: "Matching", href: "matching", icon: IconReconcile },
-      { label: "Suppliers", href: "suppliers", icon: IconUsers },
-      { label: "Customers", href: "customers", icon: IconBuilding },
-      { label: "Sales", href: "sales", icon: IconBanknote },
-      { label: "Purchasing", href: "purchasing", icon: IconArchive },
-      { label: "Inventory", href: "inventory", icon: IconSliders },
-    ],
-  },
-  {
-    // The Reporting Centre — a first-class area with one entry per
-    // reporting domain, all sharing one report shell, filters, exports
-    // and drill-down (see src/server/report-centre). The original
-    // Reports page (budgets, forecasting, executive alerts, report
-    // designer) lives on here, unchanged, as "Budgets & Forecasts".
-    label: "Reporting",
-    items: [
-      { label: "Reporting Centre", href: "reporting", icon: IconBarChart, exact: true },
-      { label: "Management", href: "reporting/management", icon: IconSparkles },
-      { label: "Financial", href: "reporting/financial", icon: IconFileText },
-      { label: "Customers", href: "reporting/customers", icon: IconBuilding },
-      { label: "Suppliers", href: "reporting/suppliers", icon: IconUsers },
-      { label: "Sales", href: "reporting/sales", icon: IconBanknote },
-      { label: "Purchasing", href: "reporting/purchasing", icon: IconArchive },
-      { label: "Banking", href: "reporting/banking", icon: IconBank },
-      { label: "VAT & Tax", href: "reporting/vat", icon: IconReceipt },
-      { label: "General Ledger", href: "reporting/general-ledger", icon: IconBookOpen },
-      { label: "Inventory", href: "reporting/inventory", icon: IconSliders },
-      { label: "Audit & Compliance", href: "reporting/audit", icon: IconShieldCheck },
-      { label: "Document Centre", href: "reporting/documents", icon: IconArchive },
-      { label: "Budgets & Forecasts", href: "reports", icon: IconTarget },
-    ],
-  },
-  {
-    label: "Automation",
-    items: [
-      { label: "Automation Dashboard", href: "automation-dashboard", icon: IconGrid },
-      { label: "Recurring Templates", href: "recurring-templates", icon: IconRefresh },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
-      { label: "General Ledger", href: "general-ledger", icon: IconBookOpen },
-      { label: "Journals", href: "general-ledger?tab=journals", icon: IconFileText },
-      { label: "My Drafts", href: "drafts", icon: IconClock },
-      { label: "VAT", href: "vat", icon: IconReceipt },
-      { label: "Reconciliation", href: "supplier-reconciliation", icon: IconReconcile },
-      { label: "Auditor Workspace", href: "auditor", icon: IconShieldCheck },
-      { label: "Fixed Assets", href: "assets", icon: IconArchive },
-      { label: "AI Copilot", href: "copilot", icon: IconSparkles },
-      { label: "Financial Statements", href: "financial-statements", icon: IconFileText },
-      { label: "Communications", href: "communications", icon: IconBell },
-      { label: "Billing", href: "billing", icon: IconBanknote },
-      { label: "Opening Balances", href: "opening-balances", icon: IconClock },
-      { label: "Settings", href: "settings", icon: IconSettings },
-    ],
-  },
-];
+// Phase 5G — NAV_GROUPS, ModuleLink, isNavItemActive and activeNavGroup
+// now live in `workspace-nav.ts` so the desktop sidebar and the
+// tablet/mobile drawer render from one model. Nothing about the list
+// itself changed in the move.
 
 export function FinancialWorkspaceShell({
   children,
@@ -137,6 +37,55 @@ export function FinancialWorkspaceShell({
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
 
+  // Phase 5G — grouped navigation. The open section is DERIVED, not
+  // synced in an effect: the route decides it, and a user's click
+  // overrides it until the route moves to a different section.
+  //
+  // `override.base` records which section was active when the user last
+  // clicked. Once the route moves elsewhere that no longer matches, so
+  // the override is ignored and the new section opens on its own. This
+  // gets "the active route opens its parent" and "clicking toggles"
+  // without a setState-in-effect (which the React Compiler correctly
+  // flags, and which would render twice on every navigation).
+  const activeGroup = activeNavGroup(pathname, companyId);
+  const [override, setOverride] = useState<{ base: string | null; value: string | null } | null>(null);
+  const openGroup = override && override.base === activeGroup ? override.value : activeGroup;
+  // One value, so only one section can ever be open; `null` = all closed.
+  const toggleGroup = (label: string) => setOverride({ base: activeGroup, value: openGroup === label ? null : label });
+
+  // Phase 5G — the tablet/mobile drawer. Below `lg` the sidebar is
+  // hidden; until this existed there was no way to reach navigation at
+  // 768x1024 at all. Same nav model, same groups, same permissions —
+  // one navigation system rendered in two places.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileNavRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Following a link closes the drawer — handled by the `onNavigate`
+  // callback passed to the nav below, at the click, rather than by an
+  // effect watching `pathname` (which would be a setState-in-effect and
+  // an extra render on every navigation).
+
+  // Escape closes it, and focus returns to the button that opened it so
+  // keyboard users are not dropped at the top of the document.
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMobileNavOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileNavOpen]);
+
+  // Opening the drawer moves focus into it, so the next Tab is a nav
+  // item rather than something behind the overlay.
+  useEffect(() => {
+    if (mobileNavOpen) mobileNavRef.current?.focus();
+  }, [mobileNavOpen]);
+
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) setSwitcherOpen(false);
@@ -144,15 +93,7 @@ export function FinancialWorkspaceShell({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
-  const isActive = (href?: string, exact = false) => {
-    if (!href) return false;
-    // Strip any query string (e.g. "general-ledger?tab=journals") — a
-    // nav item that deep-links into a tab on a page should still
-    // highlight when that page is active, `usePathname()` never includes
-    // the query string to compare against.
-    const hrefPath = href.split("?")[0];
-    return pathname === `/company/${companyId}/${hrefPath}` || (!exact && pathname.startsWith(`/company/${companyId}/${hrefPath}/`));
-  };
+  const isActive = (href?: string, exact = false) => isNavItemActive(pathname, companyId, href, exact);
   const initials = getInitials(userEmail, companyName);
 
   // UI-005 — "the sidebar must never visually move... full-height blue
@@ -226,6 +167,55 @@ export function FinancialWorkspaceShell({
         </div>
       )}
 
+      {/* Phase 5G — the tablet/mobile navigation drawer. It renders the
+          SAME `WorkspaceNavSections` the sidebar does, from the same
+          model and the same open-section state, so the two can never
+          drift. `lg:hidden` keeps it out of the way entirely once the
+          real sidebar is back. */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div
+            className="absolute inset-0 bg-vf-ink/40"
+            onClick={() => setMobileNavOpen(false)}
+            aria-hidden
+          />
+          <div
+            id="workspace-mobile-nav"
+            ref={mobileNavRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-gradient-to-b from-vf-red-600 to-vf-red-900 px-3 py-5 shadow-vf-paper-xl outline-none"
+          >
+            <div className="mb-3 flex items-center justify-between px-1">
+              <span className="text-sm font-semibold text-vf-on-dark">{companyName}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  menuButtonRef.current?.focus();
+                }}
+                aria-label="Close navigation menu"
+                className="flex h-8 w-8 items-center justify-center rounded-vf-sm text-vf-on-dark-soft transition-colors duration-150 ease-vf-out hover:bg-white/10 hover:text-vf-on-dark"
+              >
+                <IconX className="h-4.5 w-4.5" />
+              </button>
+            </div>
+            <nav aria-label="Workspace" className="flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto">
+              <WorkspaceNavSections
+                companyId={companyId}
+                pathname={pathname}
+                openGroup={openGroup}
+                onToggleGroup={toggleGroup}
+                onNavigate={() => setMobileNavOpen(false)}
+                idPrefix="mobile-nav"
+              />
+            </nav>
+          </div>
+        </div>
+      )}
+
       <div className="flex min-h-0 flex-1">
         <aside
           onClick={expandSidebarIfProcessing}
@@ -264,61 +254,47 @@ export function FinancialWorkspaceShell({
           </Link>
           <div className={cn("mt-5 mb-2 h-px bg-white/10", collapsed && "mx-1")} />
 
-          <nav className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden pt-1">
-            {NAV_GROUPS.map((group, groupIndex) => (
-              <div key={group.label}>
-                {!collapsed && (
-                  <p
-                    className={cn(
-                      "px-3 pb-2 text-[0.65rem] font-semibold tracking-[0.14em] text-vf-on-dark-faint/80 uppercase",
-                      groupIndex > 0 && "border-t border-white/[0.06] pt-4",
-                    )}
+          {/* Phase 5G — grouped when the sidebar is at full width. In
+              icons-only mode (Transaction Explorer's focus mode) there is
+              no room for section headings, so that mode keeps the flat
+              icon list it always had — collapsing an icon strip into
+              accordions would hide navigation behind two clicks for no
+              gain. */}
+          <nav aria-label="Workspace" className="flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto pt-1">
+            {collapsed ? (
+              NAV_GROUPS.flatMap((group) => group.items).map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.href, item.exact);
+                const itemClass = cn(
+                  "flex items-center justify-center gap-2.5 rounded-vf-sm px-3 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-150 ease-vf-out",
+                  active
+                    ? "bg-white/16 text-vf-on-dark shadow-[inset_3px_0_0_var(--color-vf-red-300)]"
+                    : "text-vf-on-dark-soft hover:bg-white/8 hover:text-vf-on-dark hover:shadow-[inset_2px_0_0_rgba(255,255,255,0.2)]",
+                );
+                return item.href ? (
+                  <Link key={item.label} href={`/company/${companyId}/${item.href}`} className={itemClass} title={item.label} aria-current={active ? "page" : undefined}>
+                    <Icon className="h-4 w-4 shrink-0" />
+                  </Link>
+                ) : (
+                  <span
+                    key={item.label}
+                    className="flex cursor-not-allowed items-center justify-center gap-2.5 rounded-vf-sm px-3 py-2.5 text-sm font-medium text-vf-on-dark-faint/50"
+                    aria-disabled
+                    title={`${item.label} — not available yet`}
                   >
-                    {group.label}
-                  </p>
-                )}
-                <div className="flex flex-col gap-1">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    const active = isActive(item.href, item.exact);
-                    const content = (
-                      <>
-                        <Icon className="h-4 w-4 shrink-0" />
-                        {!collapsed && item.label}
-                      </>
-                    );
-                    const itemClass = cn(
-                      "flex items-center gap-2.5 rounded-vf-sm px-3 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-150 ease-vf-out",
-                      collapsed && "justify-center",
-                      active
-                        ? "bg-white/16 text-vf-on-dark shadow-[inset_3px_0_0_var(--color-vf-red-300)]"
-                        : "text-vf-on-dark-soft hover:bg-white/8 hover:text-vf-on-dark hover:shadow-[inset_2px_0_0_rgba(255,255,255,0.2)]",
-                    );
-                    return item.href ? (
-                      <Link key={item.label} href={`/company/${companyId}/${item.href}`} className={itemClass} title={collapsed ? item.label : undefined}>
-                        {content}
-                      </Link>
-                    ) : (
-                      // Finding #174 (RC-16/E12) — an inert item used to
-                      // share the exact same class as a real, clickable
-                      // (if inactive) nav link — only a hover tooltip
-                      // (and only when collapsed) told them apart. Now
-                      // visibly dimmed, with no hover state and a "Soon"
-                      // label so it reads as unavailable at a glance.
-                      <span
-                        key={item.label}
-                        className="flex cursor-not-allowed items-center gap-2.5 rounded-vf-sm px-3 py-2.5 text-sm font-medium text-vf-on-dark-faint/50"
-                        aria-disabled
-                        title={`${item.label} — not available yet`}
-                      >
-                        {content}
-                        {!collapsed && <span className="ml-auto text-[0.6rem] tracking-wide uppercase">Soon</span>}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+                    <Icon className="h-4 w-4 shrink-0" />
+                  </span>
+                );
+              })
+            ) : (
+              <WorkspaceNavSections
+                companyId={companyId}
+                pathname={pathname}
+                openGroup={openGroup}
+                onToggleGroup={toggleGroup}
+                idPrefix="sidebar-nav"
+              />
+            )}
           </nav>
 
           <button
@@ -352,6 +328,21 @@ export function FinancialWorkspaceShell({
             (UI-005) instead of the document scrolling. */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="z-10 flex shrink-0 items-center justify-between gap-4 border-b border-vf-paper-border bg-vf-paper px-6 py-3.5 shadow-vf-paper-sm">
+            {/* Phase 5G — below `lg` the sidebar is hidden, so this is
+                the only way into navigation at tablet and phone widths.
+                Hidden at `lg` and up, where the real sidebar is back. */}
+            <button
+              ref={menuButtonRef}
+              type="button"
+              onClick={() => setMobileNavOpen((v) => !v)}
+              aria-expanded={mobileNavOpen}
+              aria-controls="workspace-mobile-nav"
+              aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+              className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-vf-sm text-vf-ink-soft transition-colors duration-150 ease-vf-out hover:bg-vf-paper-alt hover:text-vf-ink lg:hidden"
+            >
+              {mobileNavOpen ? <IconX className="h-5 w-5" /> : <IconMenu className="h-5 w-5" />}
+            </button>
+
             {/* Finding #129 (RC-16/E12) — this used to be a plain Link
                 styled to look like a dropdown (a chevron-down icon, but
                 clicking it only ever navigated to Platform Overview).

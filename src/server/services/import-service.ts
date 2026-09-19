@@ -17,7 +17,7 @@ import * as importRepo from "@/server/repositories/import-repository";
 import * as supplierRepo from "@/server/repositories/supplier-reconciliation-repository";
 import * as bankAccountRepo from "@/server/repositories/bank-account-repository";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
-import { applyRulesToTransactions } from "@/server/services/rule-processing-service";
+import { applyRulesToTransactionsBounded, attachedRulePassBounds } from "@/server/services/rule-processing-service";
 import { classifyUnallocatedTransactionsWithAi } from "@/server/services/transaction-classification-service";
 import { getCompany } from "@/server/services/company-service";
 import type { ImportBatch } from "@/server/accounting/types";
@@ -33,7 +33,48 @@ export type ImportOutcome = {
    * all, so it stays implicitly `undefined` there rather than a
    * misleading always-0. */
   rulesAutoAllocated?: number;
+  /** Phase 5C — the rule pass's own reckoning for this import. Only set
+   * on the bank-statement paths, for the same reason as
+   * `rulesAutoAllocated`. */
+  rulePass?: ImportRulePassOutcome;
 };
+
+/** Phase 5C — what the Banking Rules pass attached to an import actually
+ * did, so an import can never report itself as fully processed when it
+ * was not. Every number here counts transactions that ARE imported and
+ * unchanged — nothing is lost, and each is still picked up by a later
+ * rule pass:
+ *   `notPermitted`  the importer does not hold `Banking:Post`, so the
+ *                   transactions a rule would have posted were left
+ *                   untouched (importing is `Banking:Create`; posting is
+ *                   not).
+ *   `notAttempted`  a bound was reached (`stopReason`) before these were
+ *                   started. */
+export type ImportRulePassOutcome = {
+  notPermitted: number;
+  notAttempted: number;
+  stopReason: "time-budget" | "posting-limit" | null;
+};
+
+/** Phase 5C — the one rule pass both import paths (CSV/XLSX/OFX/QIF and
+ * PDF confirm) run, so the permission separation and the bounds cannot
+ * drift between them. `mayPost` is the importer's `Banking:Post` answer;
+ * the bounds are the shared attached-pass bounds. */
+async function runImportRulePass(
+  companyId: string,
+  createdTransactionIds: number[],
+  importedBy: string,
+  mayPost: boolean,
+): Promise<{ rulesAutoAllocated: number; rulePass: ImportRulePassOutcome }> {
+  const outcome = await applyRulesToTransactionsBounded(companyId, createdTransactionIds, importedBy, [], {
+    mayPost,
+    bounds: attachedRulePassBounds(),
+  });
+  return {
+    rulesAutoAllocated: outcome.results.filter((r) => r.autoPosted).length,
+    rulePass: { notPermitted: outcome.notPermitted, notAttempted: outcome.notAttempted, stopReason: outcome.stopReason },
+  };
+}
 
 function generateBatchId(): string {
   const now = new Date();
@@ -194,7 +235,15 @@ async function commitBankTransactions(
  * deliberately NOT handled here — see `previewPdfBankStatement`/
  * `confirmPdfBankStatementImport` below for why PDF needs a review step
  * these single-shot formats don't. */
-export async function importBankStatement(companyId: string, file: File, importedBy = "System"): Promise<ImportOutcome> {
+/** Phase 5C — `options.mayPost` is the importer's `Banking:Post` answer.
+ * Importing transactions is `Banking:Create` and stays that way; causing
+ * the Banking Rules pass to POST them is not, so a caller without
+ * `Banking:Post` still imports every row and every rule-driven
+ * classification, and the transactions a rule would have posted are left
+ * untouched and reported in `rulePass.notPermitted`. Defaults to `true`,
+ * which is exactly the behaviour before this phase — the inbound-email
+ * statement pipeline (service_role, no user) is unaffected. */
+export async function importBankStatement(companyId: string, file: File, importedBy = "System", options: { mayPost?: boolean } = {}): Promise<ImportOutcome> {
   if (file.name.toLowerCase().endsWith(".pdf")) {
     throw new ValidationError("PDF bank statements go through the review screen (preview, then confirm) — use previewPdfBankStatement instead.");
   }
@@ -250,9 +299,9 @@ export async function importBankStatement(companyId: string, file: File, importe
   // confirm path — CSV/XLSX/OFX/QIF committed with zero rule matching,
   // silently leaving every newly imported transaction Unallocated.
   let rulesAutoAllocated = 0;
+  let rulePass: ImportRulePassOutcome = { notPermitted: 0, notAttempted: 0, stopReason: null };
   if (createdTransactionIds.length > 0) {
-    const results = await applyRulesToTransactions(companyId, createdTransactionIds, importedBy);
-    rulesAutoAllocated = results.filter((r) => r.autoPosted).length;
+    ({ rulesAutoAllocated, rulePass } = await runImportRulePass(companyId, createdTransactionIds, importedBy, options.mayPost !== false));
 
     // Phase 22A — AI Transaction Classification. Runs AFTER Banking
     // Rules, only on whatever Rules/Matching left completely untouched
@@ -264,7 +313,7 @@ export async function importBankStatement(companyId: string, file: File, importe
     await classifyUnallocatedTransactionsWithAi(companyId, createdTransactionIds, importedBy).catch(() => {});
   }
 
-  return { batch, exceptions: allExceptions, rulesAutoAllocated };
+  return { batch, exceptions: allExceptions, rulesAutoAllocated, rulePass };
 }
 
 
@@ -387,6 +436,8 @@ export type ConfirmPdfImportOutcome = {
    * with the existing Banking Rules engine so rules can be applied
    * immediately after extraction" requirement. */
   rulesAutoAllocated: number;
+  /** Phase 5C — see `ImportRulePassOutcome`. */
+  rulePass: ImportRulePassOutcome;
   /** Re-run at confirm time (not just at preview) so a user who edited
    * the transaction list before confirming still gets an accurate
    * result — never trusted from the client without re-checking. */
@@ -402,7 +453,7 @@ export type ConfirmPdfImportOutcome = {
  * Banking Rules pipeline Phase 5/6's scan-and-apply and the "Apply Rule"
  * bulk action already use (`applyRulesToTransactions`) — no separate
  * rule-matching code path for PDF-sourced transactions. */
-export async function confirmPdfBankStatementImport(companyId: string, input: ConfirmPdfImportInput, importedBy = "System"): Promise<ConfirmPdfImportOutcome> {
+export async function confirmPdfBankStatementImport(companyId: string, input: ConfirmPdfImportInput, importedBy = "System", options: { mayPost?: boolean } = {}): Promise<ConfirmPdfImportOutcome> {
   const { metadata, transactions } = input;
   const validation = validateStatement(metadata, transactions, input.expectedTransactionCount ?? null);
 
@@ -455,15 +506,17 @@ export async function confirmPdfBankStatementImport(companyId: string, input: Co
   await recordUsageEvent(companyId, "bank_imports").catch(() => {});
 
   let rulesAutoAllocated = 0;
+  let rulePass: ImportRulePassOutcome = { notPermitted: 0, notAttempted: 0, stopReason: null };
   if (createdTransactionIds.length > 0) {
-    const results = await applyRulesToTransactions(companyId, createdTransactionIds, importedBy);
-    rulesAutoAllocated = results.filter((r) => r.autoPosted).length;
+    // Phase 5C — the same pass, the same bounds and the same permission
+    // separation as the CSV path above.
+    ({ rulesAutoAllocated, rulePass } = await runImportRulePass(companyId, createdTransactionIds, importedBy, options.mayPost !== false));
 
     // Phase 22A — see the matching comment in importBankStatement above.
     await classifyUnallocatedTransactionsWithAi(companyId, createdTransactionIds, importedBy).catch(() => {});
   }
 
-  return { batch, importedCount, duplicateCount, rulesAutoAllocated, validation, exceptions: [...commitExceptions, ...statementExceptions] };
+  return { batch, importedCount, duplicateCount, rulesAutoAllocated, rulePass, validation, exceptions: [...commitExceptions, ...statementExceptions] };
 }
 
 export async function listRecentImports(companyId: string): Promise<ImportBatch[]> {

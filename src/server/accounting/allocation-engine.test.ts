@@ -14,7 +14,7 @@ function supplier(id: number, name: string, defaultGl: string | null = null, def
   return {
     id, companyId: COMPANY_ID, name, alternativeNames: [], defaultGlAccount: defaultGl, defaultVatCode: defaultVat, status: "Active",
     supplierCode: "", supplierCategory: "", supplierType: "Company", bankName: "", bankAccountNumber: "", bankBranchCode: "",
-    vatNumber: "", taxNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0,
+    vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0,
   };
 }
 

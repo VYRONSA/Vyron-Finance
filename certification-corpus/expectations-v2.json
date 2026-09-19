@@ -1,0 +1,36 @@
+{
+  "$comment": "Phase 5Q.7. A CHANGED-CASES-ONLY correction to the expected SYSTEM BEHAVIOUR recorded in the frozen answer keys. It does NOT correct any fact about any document: every ground-truth/*.json file is byte-identical to what was countersigned on 2026-09-19, the corpus SHA-256 is unchanged, and all 24 countersignatures remain valid. What is corrected here are specification errors and a policy decision — things that were never facts about a page. The original expectations stay visible in the frozen keys, because an audit trail records what was believed, not only what turned out to be right.",
+  "version": 2,
+  "authoredOn": "2026-09-20",
+  "authoredBy": "Claude (Opus 5) for VYRON, from the Phase 5Q.4 certification findings and the owner's confirmed decisions. Not independently countersigned.",
+  "appliesToCorpusSha256": "cce1e6168c1613554f79787abddec3885f47836cf739e96afb9884589beaa799",
+  "overrides": {
+    "arithmetic-mismatch": {
+      "validationFindings": ["line-vat-disagrees-with-rate"],
+      "supersedes": ["totals-mismatch"],
+      "classification": "answer-key-defect",
+      "reason": "The frozen key expected a finding code, 'totals-mismatch', that has never existed in the validator's vocabulary — it was wrong the moment it was written, and no run could ever have satisfied it. Certification run #47 then showed the deeper problem: the document is internally consistent (1000 + 165 = 1165, and the line VAT equals the header VAT), so every check that compared printed figures to other printed figures passed it. Nothing re-derived VAT from the stated rate. Phase 5Q.6 added that check as 'line-vat-disagrees-with-rate' (severity review, R0.05 absolute tolerance), which is what this document must now raise. The DOCUMENT is unchanged and still deliberately wrong: it prints VAT 165.00 where 15% of 1000.00 is 150.00."
+    },
+    "missing-vat-number": {
+      "validationFindings": [],
+      "supersedes": ["missing-required-field"],
+      "classification": "policy-decision",
+      "reason": "The frozen key expected a finding because the document is headed TAX INVOICE, charges VAT, and omits the supplier's VAT number. The owner has confirmed the policy: supplier VAT number is OPTIONAL. REQUIRED_HEADER_FIELDS remains ['supplierName','invoiceNumber','invoiceDate','total'] and was not changed. The absence is therefore not a validation finding. The ground truth still records fieldStatus.supplierVatNumber = 'missing' — that remains a true statement about the page, and is deliberately left alone; only the expected system behaviour changes."
+    },
+    "credit-note": {
+      "validationFindings": ["not-an-invoice", "multiple-invoices"],
+      "supersedes": ["not-an-invoice"],
+      "classification": "legitimate-model-output",
+      "reason": "Run #47 produced 'multiple-invoices' in addition to 'not-an-invoice', which the frozen key did not anticipate. Investigated rather than assumed to be an AI error: the rendered document genuinely prints TWO invoice-number strings — its own KW-CN-0007 and KW-10041, the invoice it credits (verified by extracting the PDF text). The extraction prompt asks for 'every DISTINCT invoice number appearing anywhere in the file', so reporting both is CORRECT. 'multiple-invoices' is a validator limitation: it cannot distinguish a file containing several invoices from one document that references another. The outcome is unaffected and safe — the document is Incomplete and cannot become a Bill either way. Recorded as a known limitation rather than treated as a defect on either side."
+    },
+    "debit-note": {
+      "validationFindings": ["not-an-invoice", "multiple-invoices"],
+      "supersedes": ["not-an-invoice"],
+      "classification": "legitimate-model-output",
+      "reason": "Identical to credit-note. The page prints KW-DN-0002 and KW-10041, the invoice it debits (verified by extracting the PDF text). Reporting both invoice numbers is correct extraction; 'multiple-invoices' is the same validator limitation; the outcome is unchanged and safe."
+    }
+  },
+  "knownLimitations": [
+    "The 'multiple-invoices' validator rule fires on any document that references another invoice number, not only on files containing several invoices. Correct and safe for the credit/debit-note cases (both are refused anyway), but it would also fire on an ordinary invoice that quotes a prior invoice number. Worth narrowing; deliberately NOT changed in Phase 5Q, which was scoped to VAT-rate validation and evidence persistence."
+  ]
+}

@@ -6,14 +6,19 @@ import { requirePermission } from "@/server/services/permission-service";
 /** Runs the Rule Engine -> Posting Engine pipeline over every unprocessed
  * transaction — the manual "Run Rule Engine" trigger, until a real
  * scheduler exists (Recurring Transactions & Automation, the next
- * roadmap module). */
+ * roadmap module).
+ *
+ * Phase 5A — this run writes journals, posting batches and GL rows, so it
+ * needs the same permission as Bank Posting (`Banking:Post`,
+ * `transactions/post/route.ts`), not only `Banking:Edit` (which edits
+ * rules). */
 export async function POST(_request: Request, { params }: { params: Promise<{ companyId: string }> }) {
   const session = await requireSession();
   if (!session.ok) return session.response;
 
   const { companyId } = await params;
 
-  const check = await requirePermission(companyId, "Banking:Edit");
+  const check = await requirePermission(companyId, "Banking:Post");
   if (!check.ok) return check.response;
 
   const performedBy = await getPerformedByLabel();

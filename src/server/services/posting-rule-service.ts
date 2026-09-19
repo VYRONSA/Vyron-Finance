@@ -37,6 +37,22 @@ export type PostingEventContext = {
    * specific bill's own expense account) — keyed by the rule line's
    * `role`. */
   accountsByRole?: Record<string, string>;
+  /** Phase 5J — the caller's own authoritative net/VAT split, used
+   * verbatim instead of being re-derived from `grossAmount` +
+   * `vatRatePercent`.
+   *
+   * `splitGrossAmount` can only express ONE blended rate for a whole
+   * event. That was true of a Sales Invoice right up until per-line VAT
+   * started affecting its totals: an invoice carrying a standard-rated
+   * line and a zero-rated line has no single rate that reproduces its
+   * real VAT, so re-deriving the split here would post a journal that
+   * disagreed with the document the customer was sent. A caller that has
+   * already computed the split — and stored it — passes it here, so the
+   * journal IS the stored figure rather than a second opinion about it.
+   *
+   * Callers that don't supply it are completely unaffected: the split is
+   * derived exactly as before. */
+  amounts?: AmountSplit;
 };
 
 /** Re-exported from `amount-split.ts` unchanged — see that file's own
@@ -53,7 +69,19 @@ export function buildJournalLinesFromRule(rule: PostingRule, context: PostingEve
   if (!rule.isActive) return { ok: false, reason: `Posting rule "${rule.eventType}" is inactive.` };
   if (rule.lines.length === 0) return { ok: false, reason: `Posting rule "${rule.eventType}" has no lines configured.` };
 
-  const amounts = splitGrossAmount(context.grossAmount, context.vatRatePercent);
+  const amounts = context.amounts ?? splitGrossAmount(context.grossAmount, context.vatRatePercent);
+  // A supplied split is trusted for the ACCOUNTS the rule chooses, not
+  // for arithmetic: if net + vat doesn't make gross, the journal below
+  // cannot balance, and a one-cent imbalance would slip past the 0.01
+  // tolerance at the bottom of this function and reach `gl_transactions`.
+  // Checked exactly, and only for a supplied split — `splitGrossAmount`
+  // derives `vat` as the residual, so it satisfies this by construction.
+  if (context.amounts && round2(amounts.net + amounts.vat) !== round2(amounts.gross)) {
+    return {
+      ok: false,
+      reason: `Posting rule "${rule.eventType}" was given a split that does not add up (net ${amounts.net} + VAT ${amounts.vat} != gross ${amounts.gross}).`,
+    };
+  }
   const lines: NewJournalLine[] = [];
 
   for (const ruleLine of rule.lines) {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BackLink } from "@/components/ui/back-link";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,11 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
   return (
     <div className="flex w-full flex-col gap-6">
+      {/* Phase 5G — a real link to the parent page; it upgrades to a
+          history step only when the previous page was inside this same
+          company, so a pasted URL or a cross-company referrer still
+          lands somewhere correct. */}
+      <BackLink href={`/company/${companyId}/customers`} label="Back to Customers" />
       <Card tone="hero" className="relative overflow-hidden">
         <div
           aria-hidden

@@ -32,11 +32,16 @@ import { createAlert, linkAlertNotification, raiseDeduplicatedAlert, resolveDedu
 import { runSubscriptionLifecycleSweep } from "@/server/billing-platform/engine/lifecycle-sweep-engine";
 import { syncAllConnectedAccounts } from "@/server/bank-connectivity/bank-sync-service";
 import { runAutomaticAiClassificationSweep, type AutomaticClassificationSweepOutcome } from "@/server/services/transaction-classification-service";
+import {
+  runSupplierInvoiceExtractionSweep,
+  type ExtractionSweepOutcome as SupplierInvoiceExtractionOutcome,
+} from "@/server/services/supplier-invoice-capture-service";
+import { downloadDocumentFile, getDocument as getDocumentRecord } from "@/server/repositories/document-repository";
 import { hasFeature } from "@/server/billing-platform/engine/feature-flag-engine";
 import { checkUsageLimit } from "@/server/billing-platform/engine/licensing-engine";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
 import { sanitizeProviderMessage } from "@/server/ai/transaction-classification/safety-policy";
-import type { AutomationTask, AutomationTaskStatus } from "@/server/automation/types";
+import type { AutomationTask, AutomationTaskStatus, AutomationTaskType } from "@/server/automation/types";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -130,6 +135,21 @@ export async function syncAiClassificationSweepTask(companyId: string, nowIso: s
   const tasks = await taskRepo.listAutomationTasks(companyId);
   if (tasks.some((t) => t.taskType === "AiClassificationSweep")) return;
   await taskRepo.createAutomationTask(companyId, { taskType: "AiClassificationSweep", name: "AI Classification sweep", nextRunAt: nowIso });
+}
+
+/** Phase 5L — one standing `SupplierInvoiceExtraction` task per company,
+ * created the same way and for the same reason as the sweep above: the
+ * work must belong to the server, so closing the browser cannot abandon a
+ * document mid-capture. It does nothing at all when no document is queued,
+ * so a company that never uses the feature pays nothing for it. */
+export async function syncSupplierInvoiceExtractionTask(companyId: string, nowIso: string): Promise<void> {
+  const tasks = await taskRepo.listAutomationTasks(companyId);
+  if (tasks.some((t) => t.taskType === "SupplierInvoiceExtraction")) return;
+  await taskRepo.createAutomationTask(companyId, {
+    taskType: "SupplierInvoiceExtraction",
+    name: "AI Supplier Invoice Capture",
+    nextRunAt: nowIso,
+  });
 }
 
 /** Phase 18C — the QA audit found that `runDueTasks` called
@@ -268,6 +288,8 @@ async function runTask(
         stoppedEarly: outcome.stoppedEarly,
         stopReason: outcome.stopReason,
         intelligenceSkipped: outcome.intelligenceSkipped,
+        // Phase 5A — per-outcome counts only (no transaction data).
+        outcomes: outcome.outcomes,
       },
     };
   }
@@ -303,7 +325,16 @@ async function runTask(
     // Throwing here — the same pattern `RecurringTemplate` already uses —
     // routes a genuine whole-task failure through the real
     // failed/retry/exhaustion-alert machinery every other task type gets.
-    const outcome = await syncAllConnectedAccounts(companyId, nowIso, performedBy);
+    //
+    // Phase 5C — the rule pass attached to a scheduled sync now honours
+    // the request's own deadline, as the RuleEngineRun branch above
+    // already did. Before this it was the one unbounded posting path in
+    // the scheduler: a large first sync could run past the cron's
+    // 200-second work budget and be killed by the 300-second platform
+    // limit mid-pass. `mayPost` is deliberately NOT passed — this is the
+    // service_role path, authenticated by the cron secret, and it keeps
+    // posting exactly as it does today.
+    const outcome = await syncAllConnectedAccounts(companyId, nowIso, performedBy, { deadlineAtMs });
     if (outcome.failed > 0 && outcome.succeeded === 0 && outcome.attempted > 0) {
       throw new Error(`BankSync failed for all ${outcome.attempted} connected account(s).`);
     }
@@ -335,7 +366,52 @@ async function runTask(
     return { status: "Success", summary: { ...outcome } };
   }
 
+  if (task.taskType === "SupplierInvoiceExtraction") {
+    // Phase 5L — VYRON AI Supplier Invoice Capture.
+    //
+    // Extraction runs HERE, not in the browser. VYRON COST orchestrated it
+    // from the client — /upload then /extract per file — so closing the tab
+    // left documents stranded at "uploaded" with nothing on the server to
+    // pick them up. On this runner the work survives the browser and gets
+    // task claiming, time limits, retries, suspension and audit for free.
+    //
+    // The same three-way split the AI Classification sweep uses applies:
+    //  * provider failures are the circuit breaker's business — the batch
+    //    stops and the task still did its job;
+    //  * per-document outcomes (unreadable, needs review) are the capture's
+    //    own state, not a task failure;
+    //  * only an infrastructure failure fails the task.
+    let extraction: SupplierInvoiceExtractionOutcome;
+    try {
+      extraction = await runSupplierInvoiceExtractionSweep(companyId, performedBy, {
+        taskRunId,
+        readDocument: (documentId) => readCaptureDocumentBytes(companyId, documentId),
+      });
+    } catch (err) {
+      throw new Error(
+        `Supplier invoice extraction could not run: ${sanitizeProviderMessage(err instanceof Error ? err.message : String(err)) || "unknown error"}`,
+      );
+    }
+    return { status: "Success", summary: { ...extraction } };
+  }
+
   return { status: "Success", summary: {} };
+}
+
+/** Phase 5L — reads a captured document's bytes for extraction.
+ *
+ * Goes through the ONE Document Platform storage path
+ * (`document-repository.ts`), so tenant scoping, the bucket and the
+ * storage conventions are the existing ones — never a per-feature upload
+ * or download path.
+ *
+ * The bytes are handed straight to the provider boundary and are never
+ * logged, previewed or persisted anywhere by this feature (Decision 2). */
+async function readCaptureDocumentBytes(companyId: string, documentId: number): Promise<{ bytes: Uint8Array; mimeType: string }> {
+  const document = await getDocumentRecord(companyId, documentId);
+  if (!document) throw new Error(`No document with id ${documentId}.`);
+  const buffer = await downloadDocumentFile(document.storagePath);
+  return { bytes: new Uint8Array(buffer), mimeType: document.mimeType };
 }
 
 /** Alerts are raised once per condition and updated on repeats; a
@@ -470,12 +546,39 @@ export type SchedulerRunOutcome = {
    * had passed; still due, so the next scheduler pass runs them. Present
    * only when non-zero. */
   postponed?: number;
+  /** Phase 5E — due tasks this caller was not permitted to run (a posting
+   * task without `Banking:Post`). Present only when non-zero, so the
+   * cron path's outcome shape is unchanged. */
+  refused?: number;
+  refusedTasks?: RefusedSchedulerTask[];
 };
 
 export type SchedulerRunOptions = {
   /** Epoch ms after which no further task is started, and running work
    * (the Banking Rules sweep) stops starting new transactions. */
   deadlineAtMs?: number;
+  /** Phase 5E — whether this caller may cause accounting journals to be
+   * posted (`Banking:Post`). Only the manual "Run Scheduler Now" passes
+   * it; the cron/service-role path omits it entirely and is therefore
+   * completely unaffected.
+   *
+   * `false` does NOT fail the run: the queue is a loop of independently
+   * claimed tasks, not one atomic operation, so the non-posting tasks
+   * still run and each posting task is left UNCLAIMED, UNSTARTED and
+   * still due — reported in `refusedTasks`. Nothing is silently omitted,
+   * and nothing is marked as having run. */
+  mayPost?: boolean;
+};
+
+/** Phase 5E — a due task this pass deliberately did not run, and why.
+ * The task is untouched: not claimed, no run row, `next_run_at`
+ * unchanged, so it is still due and the scheduled cron pass (which runs
+ * under service_role and has no such restriction) still executes it. */
+export type RefusedSchedulerTask = {
+  taskId: number;
+  taskType: AutomationTaskType;
+  name: string;
+  reason: string;
 };
 
 // Phase 25I — deliberately conservative: long enough that even a slow
@@ -584,12 +687,28 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
   let succeeded = 0;
   let failed = 0;
   let postponed = 0;
+  const refusedTasks: RefusedSchedulerTask[] = [];
 
   for (const task of due) {
     // Migration 0100 — never start a task the request no longer has time
     // for. It is left unclaimed and still due, so the next pass takes it.
     if (options.deadlineAtMs !== undefined && Date.now() >= options.deadlineAtMs) {
       postponed++;
+      continue;
+    }
+    // Phase 5E — a manual "Run Scheduler Now" by someone without
+    // `Banking:Post` runs the queue's non-posting tasks and leaves every
+    // posting task alone. Checked BEFORE the claim, so the task keeps its
+    // `next_run_at`, gains no run row and records no outcome: it is
+    // simply still due, and the scheduled cron pass (service_role, no
+    // such restriction) runs it as normal. Reported, never silent.
+    if (options.mayPost === false && taskPostsAccounting(task.taskType)) {
+      refusedTasks.push({
+        taskId: task.id,
+        taskType: task.taskType,
+        name: task.name,
+        reason: `Running this task posts accounting journals, which needs the "Banking:Post" permission. It was left due and unchanged.`,
+      });
       continue;
     }
     // Atomic claim — guards against an overlapping scheduler pass (or a
@@ -661,7 +780,16 @@ export async function runDueTasks(companyId: string, nowIso: string, performedBy
     }
   }
 
-  return postponed > 0 ? { processed, succeeded, failed, deferred, postponed } : { processed, succeeded, failed, deferred };
+  // The base shape is unchanged, so the cron path's outcome — and every
+  // existing assertion about it — stays exactly as it was; the two
+  // optional fields appear only when they actually happened.
+  const outcome: SchedulerRunOutcome = { processed, succeeded, failed, deferred };
+  if (postponed > 0) outcome.postponed = postponed;
+  if (refusedTasks.length > 0) {
+    outcome.refused = refusedTasks.length;
+    outcome.refusedTasks = refusedTasks;
+  }
+  return outcome;
 }
 
 /** Phase 26I — investigation found every AiClassificationSweep run
@@ -750,11 +878,109 @@ export async function disableTask(companyId: string, taskId: number): Promise<vo
   await taskRepo.setTaskStatus(companyId, taskId, "Disabled", false);
 }
 
+/** Phase 5D/5E — the ONE classification of which task types can cause an
+ * accounting journal to be posted. Every caller (manual "Run task now",
+ * manual "Run Scheduler Now") asks this rather than comparing task-type
+ * strings itself, so the answer cannot drift between them.
+ *
+ * Every task type in `AutomationTaskType` is listed explicitly and was
+ * traced to what it actually calls — nothing is classified by assumption:
+ *
+ * | Task type                  | Posts? | What it reaches |
+ * |----------------------------|--------|-----------------|
+ * | RuleEngineRun              | YES    | `runRuleEngine` -> `fn_post_rule_engine_journal` |
+ * | BankSync                   | YES    | `syncAllConnectedAccounts` -> the attached rule pass -> the same atomic posting |
+ * | RecurringTemplate          | YES    | `generateFromTemplate`: a Journal template writes an Approved journal then `postApprovedJournals`; CustomerInvoice/SupplierBill templates call `approveAndPostInvoice`/`approveAndPostBill`; InventoryAdjustment carries a journal |
+ * | AiClassificationSweep      | no     | writes `suggested_gl_account` only — the same field a manual GL assignment writes |
+ * | CommunicationQueue         | no     | `processCommunicationQueue` — sends queued messages |
+ * | SubscriptionLifecycleSweep | no     | `runSubscriptionLifecycleSweep` — billing lifecycle, no ledger write |
+ * | ReportRefresh              | no     | no branch in `runTask` — a no-op today |
+ * | Custom                     | no     | no branch in `runTask` — a no-op today |
+ *
+ * Phase 5E corrected `RecurringTemplate`, which Phase 5D had classified
+ * as non-posting. It posts through the sales / purchasing / GL modules
+ * rather than the banking ones, which is exactly why a string comparison
+ * written from memory got it wrong and a traced, central predicate is
+ * worth having.
+ *
+ * `AiClassificationSweep` stays out deliberately: sharing the scheduler
+ * framework is not a reason to demand a posting permission. */
+export function taskPostsAccounting(taskType: AutomationTaskType): boolean {
+  switch (taskType) {
+    case "RuleEngineRun":
+    case "BankSync":
+    case "RecurringTemplate":
+      return true;
+    case "AiClassificationSweep":
+    // Phase 5L — VYRON AI Supplier Invoice Capture extracts documents and
+    // writes only to its own capture tables. It creates no bill, no journal
+    // and no ledger entry: conversion to a DRAFT bill is a separate,
+    // explicit human action behind `Purchasing:Create`, and posting that
+    // bill is the existing `approveAndPostBill` behind `Purchasing:Approve`.
+    // So this task demands no posting permission — for the same reason
+    // `AiClassificationSweep` does not.
+    case "SupplierInvoiceExtraction":
+    case "CommunicationQueue":
+    case "SubscriptionLifecycleSweep":
+    case "ReportRefresh":
+    case "Custom":
+      return false;
+  }
+}
+
+/** Phase 5D — task states a manual run must REFUSE, and why.
+ *
+ * `Suspended` is a safety state: the scheduler sets it after exhausting
+ * a task's retries (migration 0099), and so does the stale-claim
+ * reclaim. Letting "Run now" execute it anyway would make the suspension
+ * decorative — the point of it is that a person has to look at the task
+ * and resume it. `Disabled` is a deliberate operator decision, treated
+ * the same way.
+ *
+ * `Paused` is deliberately NOT here: pausing is a normal operational
+ * control, and running a paused task by hand during controlled testing
+ * is a real and useful thing to do. Either way a manual run never makes
+ * a stopped task scheduled again (`keepStoppedStatus` below). */
+const RUN_NOW_REFUSED_STATUSES: Partial<Record<AutomationTaskStatus, string>> = {
+  Suspended: "This task is suspended and must be resumed before it can be run.",
+  Disabled: "This task is disabled and must be resumed before it can be run.",
+};
+
+export type RunTaskNowOptions = {
+  /** Phase 5D — whether the caller holds `Banking:Post`. Consulted only
+   * for task types that post (`taskPostsAccounting`). The route is the
+   * permission authority — it answers with `hasPermission` and returns a
+   * real 403 that is recorded as a `PermissionDenied` event — and this is
+   * the server-side backstop, so no caller reaches a posting run without
+   * having answered the question. Omitted = permitted, which is what the
+   * service-role/internal callers need. */
+  mayPost?: boolean;
+};
+
 /** Runs exactly one task right now, regardless of its `next_run_at` —
- * the "Manual run" requirement. */
-export async function runTaskNow(companyId: string, taskId: number, nowIso: string, performedBy: string): Promise<void> {
+ * the "Manual run" requirement.
+ *
+ * Phase 5D — the state and permission gates below are enforced HERE, not
+ * only in the UI or the route, so no path reaches `runTask` around them.
+ * They are checked BEFORE the task is claimed, so a refused run leaves
+ * the task exactly as it was: no claim, no task-run row, no status
+ * change, no retry-count change and — the point of the exercise — no
+ * accounting write.
+ *
+ * This function is NOT on the scheduled path: cron calls `runDueTasks`,
+ * whose `listDueTasks` already excludes Paused and Suspended tasks, so
+ * none of this affects service-role execution. */
+export async function runTaskNow(companyId: string, taskId: number, nowIso: string, performedBy: string, options: RunTaskNowOptions = {}): Promise<void> {
   const task = await taskRepo.getAutomationTask(companyId, taskId);
   if (!task) throw new NotFoundError(`No automation task with id ${taskId}.`);
+
+  const refusal = RUN_NOW_REFUSED_STATUSES[task.status];
+  if (refusal) throw new ValidationError(refusal);
+
+  if (taskPostsAccounting(task.taskType) && options.mayPost === false) {
+    throw new ValidationError(`Running this task posts accounting journals, which needs the "Banking:Post" permission.`);
+  }
+
   const todayIso = nowIso.slice(0, 10);
   // Atomic claim — same guard as `runDueTasks`, so a "Run Now" click
   // racing an already-in-progress scheduler pass (or a second click)

@@ -1,0 +1,64 @@
+{
+  "caseId": "debit-note",
+  "documentId": "debit-note.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Debit Note",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-DN-0002",
+  "invoiceDate": "2026-07-10",
+  "dueDate": null,
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Undercharge correction — maize meal 10kg",
+      "supplierSku": "MM10",
+      "quantity": 1,
+      "uom": "bag",
+      "unitPrice": 200,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 30,
+      "lineTotal": 200
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 200,
+    "vatAmount": 30,
+    "total": 230
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      200
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 200,
+    "vat": 30,
+    "total": 230
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "correctly-absent",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [
+      "not-an-invoice"
+    ],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "not-supported-debit-note"
+  },
+  "notes": "Visibly headed DEBIT NOTE. A debit note moves the balance the SAME way a bill does, which makes it the more tempting one to convert — and still wrong, because it is not an invoice and would double-count against KW-10041. Refused for the same reason as the credit note."
+}

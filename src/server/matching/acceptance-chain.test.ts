@@ -90,7 +90,7 @@ function supplier(overrides: Partial<Supplier> = {}): Supplier {
     id: 1, companyId: COMPANY_ID, name: "Acme Office Supplies", alternativeNames: [],
     defaultGlAccount: "6100", defaultVatCode: "STD", status: "Active", supplierCode: "SUP-001",
     supplierCategory: "Office", supplierType: "Company", bankName: "", bankAccountNumber: "",
-    bankBranchCode: "", vatNumber: "", taxNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0,
+    bankBranchCode: "", vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0,
     ...overrides,
   };
 }
@@ -124,7 +124,7 @@ function invoice(overrides: Partial<SalesInvoice> = {}): SalesInvoice {
     status: "Posted", journalId: 20, subtotal: 4347.83, vatAmount: 652.17, total: 5000, outstanding: 5000,
     isRecurringTemplate: false, recurrencePattern: "", reference: "", notes: "", createdAt: "2026-05-28",
     submittedBy: null, submittedAt: null, approvedBy: null, approvedAt: null, postedAt: "2026-05-28",
-    cancelledBy: null, cancelledAt: null, originalInvoiceId: null, lines: [],
+    cancelledBy: null, cancelledAt: null, originalInvoiceId: null, reason: "", paymentTermsDays: null, lines: [],
     ...overrides,
   };
 }

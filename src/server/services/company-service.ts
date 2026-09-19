@@ -232,6 +232,9 @@ export type EditCompanyRequest = Partial<{
   email: string;
   website: string;
   postalAddress: string;
+  /** Phase 5I (migration 0104) — printed on documents. */
+  invoiceFooter: string;
+  paymentInstructions: string;
   city: string;
   province: string;
   postalCode: string;
@@ -283,6 +286,8 @@ export async function updateCompany(companyId: string, input: EditCompanyRequest
     ...(input.email !== undefined && { email: input.email.trim() }),
     ...(input.website !== undefined && { website: input.website.trim() }),
     ...(input.postalAddress !== undefined && { postal_address: input.postalAddress.trim() }),
+    ...(input.invoiceFooter !== undefined && { invoice_footer: input.invoiceFooter.trim() }),
+    ...(input.paymentInstructions !== undefined && { payment_instructions: input.paymentInstructions.trim() }),
     ...(input.city !== undefined && { city: input.city.trim() }),
     ...(input.province !== undefined && { province: input.province.trim() }),
     ...(input.postalCode !== undefined && { postal_code: input.postalCode.trim() }),

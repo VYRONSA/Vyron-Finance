@@ -32,6 +32,12 @@ export type CompanyRow = {
   email: string;
   website: string;
   postal_address: string;
+  invoice_footer?: string | null;
+  payment_instructions?: string | null;
+  /** Phase 5J (0106) — optional so a row selected before the migration
+   * is applied still maps, to the same 30 days the customer-level
+   * default has used since 0008. */
+  default_payment_terms_days?: number | null;
   city: string;
   province: string;
   postal_code: string;
@@ -56,6 +62,9 @@ export function companyFromRow(row: CompanyRow): Company {
     email: row.email,
     website: row.website,
     postalAddress: row.postal_address,
+    invoiceFooter: row.invoice_footer ?? "",
+    paymentInstructions: row.payment_instructions ?? "",
+    defaultPaymentTermsDays: row.default_payment_terms_days ?? 30,
     city: row.city,
     province: row.province,
     postalCode: row.postal_code,

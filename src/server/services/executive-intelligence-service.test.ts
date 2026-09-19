@@ -80,7 +80,7 @@ function supplier(id: number, name: string): Supplier {
   return {
     id, companyId: COMPANY_ID, name, alternativeNames: [], defaultGlAccount: null, defaultVatCode: null,
     status: "Active", supplierCode: "", supplierCategory: "", supplierType: "Company", bankName: "",
-    bankAccountNumber: "", bankBranchCode: "", vatNumber: "", taxNumber: "", riskRating: "Low",
+    bankAccountNumber: "", bankBranchCode: "", vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low",
     paymentTermsDays: 30, spendingLimit: 0,
   };
 }

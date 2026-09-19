@@ -42,7 +42,7 @@ vi.mock("@/server/billing-platform/engine/feature-flag-engine", () => ({ hasFeat
 vi.mock("@/server/billing-platform/engine/licensing-engine", () => ({ checkUsageLimit: vi.fn() }));
 vi.mock("@/server/billing-platform/engine/usage-metering-engine", () => ({ recordUsageEvent: vi.fn() }));
 
-import { nextTaskRunAt, resumeTask, RULE_ENGINE_TASK_BUDGET_MS, runDueTasks, runTaskNow, ValidationError } from "./scheduler-service";
+import { nextTaskRunAt, resumeTask, RULE_ENGINE_TASK_BUDGET_MS, runDueTasks, runTaskNow, taskPostsAccounting, ValidationError } from "./scheduler-service";
 import * as taskRepo from "@/server/repositories/automation-task-repository";
 import * as templateRepo from "@/server/repositories/recurring-template-repository";
 import { runRuleEngine, type RuleEngineRunOutcome } from "@/server/services/rule-processing-service";
@@ -54,7 +54,8 @@ import { checkUsageLimit } from "@/server/billing-platform/engine/licensing-engi
 import { syncAllConnectedAccounts } from "@/server/bank-connectivity/bank-sync-service";
 import { runAutomaticAiClassificationSweep } from "@/server/services/transaction-classification-service";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
-import type { AutomationTask, AutomationTaskRun } from "@/server/automation/types";
+import type { AutomationTask, AutomationTaskRun, AutomationTaskType } from "@/server/automation/types";
+import { generateFromTemplate } from "@/server/services/recurring-template-service";
 
 const NOW = "2026-08-12T10:00:00.000Z";
 
@@ -72,6 +73,7 @@ function ruleEngineOutcome(overrides: Partial<RuleEngineRunOutcome> = {}): RuleE
     stoppedEarly: false,
     stopReason: null,
     intelligenceSkipped: false,
+    outcomes: { posted: 0, recovered: 0, classified: 0, skipped: 0, refused: 0, failed: 0, "needs-review": 0, "not-permitted": 0 },
     results: [],
     ...overrides,
   };
@@ -270,7 +272,7 @@ describe("runDueTasks — existing per-task failure handling remains unchanged",
 
   it("a total BankSync failure (all connected accounts failed) is recorded as a real Failed run, not a silent Success (Phase 25K)", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "BankSync", retryCount: 0, maxRetries: 3 })]);
-    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 3, succeeded: 0, failed: 3 });
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 3, succeeded: 0, failed: 3, notPermitted: 0, notAttempted: 0, stopReason: null });
 
     const outcome = await runDueTasks("co_1", NOW);
 
@@ -281,7 +283,7 @@ describe("runDueTasks — existing per-task failure handling remains unchanged",
 
   it("a total BankSync failure that exhausts its retries SUSPENDS the task and raises ONE deduplicated critical alert (migration 0099)", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "BankSync", retryCount: 2, maxRetries: 3, name: "Direct bank feed sync" })]);
-    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 1, succeeded: 0, failed: 1 });
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 1, succeeded: 0, failed: 1, notPermitted: 0, notAttempted: 0, stopReason: null });
 
     await runDueTasks("co_1", NOW);
 
@@ -293,9 +295,43 @@ describe("runDueTasks — existing per-task failure handling remains unchanged",
     expect(createAlert).not.toHaveBeenCalled();
   });
 
+  it("Phase 5C — a scheduled BankSync passes the request's deadline down, so its rule pass is bounded", async () => {
+    // Before this it was the one unbounded posting path in the scheduler:
+    // a large first sync could run past the cron's work budget and be
+    // killed by the platform limit part-way through a rule pass.
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "BankSync" })]);
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 1, succeeded: 1, failed: 0, notPermitted: 0, notAttempted: 0, stopReason: null });
+
+    const deadlineAtMs = Date.now() + 200_000;
+    await runDueTasks("co_1", NOW, "Scheduler (cron)", { deadlineAtMs });
+
+    expect(syncAllConnectedAccounts).toHaveBeenCalledWith("co_1", NOW, "Scheduler (cron)", { deadlineAtMs });
+  });
+
+  it("Phase 5C — the scheduler never restricts its own posting: it passes no mayPost, so the service path keeps posting", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "BankSync" })]);
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 1, succeeded: 1, failed: 0, notPermitted: 0, notAttempted: 0, stopReason: null });
+
+    await runDueTasks("co_1", NOW);
+
+    expect(vi.mocked(syncAllConnectedAccounts).mock.calls[0]![3]).not.toHaveProperty("mayPost");
+  });
+
+  it("Phase 5C — a scheduled BankSync reports exactly what its rule pass left, and why", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "BankSync" })]);
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 2, succeeded: 2, failed: 0, notPermitted: 0, notAttempted: 9, stopReason: "time-budget" });
+
+    await runDueTasks("co_1", NOW);
+
+    expect(taskRepo.finishTaskRun).toHaveBeenCalledWith(
+      "co_1", expect.anything(), "Success", null,
+      expect.objectContaining({ notAttempted: 9, stopReason: "time-budget", notPermitted: 0 }),
+    );
+  });
+
   it("a PARTIAL BankSync failure (at least one account succeeded) still reports overall Success (regression — unchanged behavior)", async () => {
     vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "BankSync" })]);
-    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 3, succeeded: 2, failed: 1 });
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 3, succeeded: 2, failed: 1, notPermitted: 0, notAttempted: 0, stopReason: null });
 
     const outcome = await runDueTasks("co_1", NOW);
 
@@ -809,24 +845,27 @@ describe("AI sweep alerts (migration 0099)", () => {
 // Pre-deployment review — Run Now and stopped tasks; sanitized sweep errors.
 // -----------------------------------------------------------------------
 
-describe("Review — Run Now never re-activates a paused, disabled or suspended task", () => {
-  it.each(["Paused", "Disabled", "Suspended"] as const)("a successful manual run of a %s task keeps its status and retry count, and sends no 'recovered' notice", async (status) => {
-    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType: "AiClassificationSweep", status, retryCount: 3, isActive: false }));
+describe("Review — Run Now never re-activates a paused task", () => {
+  // Phase 5D — Disabled and Suspended are no longer runnable at all (the
+  // Run Now state-machine suite below covers them), so only Paused, which
+  // remains deliberately runnable, reaches this behaviour.
+  it("a successful manual run of a Paused task keeps its status and retry count, and sends no 'recovered' notice", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType: "AiClassificationSweep", status: "Paused", retryCount: 3, isActive: false }));
 
     await runTaskNow("co_1", 6, NOW, "user@vyron");
 
-    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 6, expect.objectContaining({ status, retryCount: 3 }));
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 6, expect.objectContaining({ status: "Paused", retryCount: 3 }));
     expect(resolveDeduplicatedAlert).not.toHaveBeenCalled();
     expect(createNotification).not.toHaveBeenCalled();
   });
 
-  it.each(["Paused", "Disabled", "Suspended"] as const)("a failed manual run of a %s task keeps its status", async (status) => {
-    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType: "AiClassificationSweep", status, retryCount: 3, isActive: false }));
+  it("a failed manual run of a Paused task keeps its status", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType: "AiClassificationSweep", status: "Paused", retryCount: 3, isActive: false }));
     vi.mocked(runAutomaticAiClassificationSweep).mockRejectedValue(new Error("database unreachable"));
 
     await expect(runTaskNow("co_1", 6, NOW, "user@vyron")).rejects.toThrow(ValidationError);
 
-    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 6, expect.objectContaining({ status }));
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 6, expect.objectContaining({ status: "Paused" }));
   });
 
   it("a manual run of the AI sweep goes through the same sweep (and therefore the same gate, circuit and fuse)", async () => {
@@ -844,6 +883,191 @@ describe("Review — Run Now never re-activates a paused, disabled or suspended 
     await runTaskNow("co_1", 5, NOW, "user@vyron");
 
     expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 5, expect.objectContaining({ status: "Success", retryCount: 0 }));
+  });
+});
+
+// -----------------------------------------------------------------------
+// Phase 5D — the Run Now state machine and its posting-permission gate.
+// -----------------------------------------------------------------------
+
+describe("Phase 5D — Run Now task-state machine", () => {
+  /** Nothing about the task changed, and nothing ran. This is the real
+   * assertion behind every refusal: a refused Run Now must leave no
+   * claim, no run row, no status change — and no accounting write. */
+  function expectNothingHappened() {
+    expect(taskRepo.claimTaskForRunning).not.toHaveBeenCalled();
+    expect(taskRepo.startTaskRun).not.toHaveBeenCalled();
+    expect(taskRepo.recordTaskOutcome).not.toHaveBeenCalled();
+    expect(taskRepo.finishTaskRun).not.toHaveBeenCalled();
+    expect(runRuleEngine).not.toHaveBeenCalled();
+    expect(syncAllConnectedAccounts).not.toHaveBeenCalled();
+    expect(runAutomaticAiClassificationSweep).not.toHaveBeenCalled();
+  }
+
+  it.each(["RuleEngineRun", "BankSync", "AiClassificationSweep", "CommunicationQueue"] as const)(
+    "REFUSES a Suspended %s task, whatever its type, with the exact message",
+    async (taskType) => {
+      vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 7, taskType, status: "Suspended" }));
+
+      await expect(runTaskNow("co_1", 7, NOW, "user@vyron", { mayPost: true })).rejects.toThrow(
+        "This task is suspended and must be resumed before it can be run.",
+      );
+      expectNothingHappened();
+    },
+  );
+
+  it("REFUSES a Suspended Rule Engine task even with Banking:Post — the posting permission is not an override", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 7, taskType: "RuleEngineRun", status: "Suspended" }));
+
+    await expect(runTaskNow("co_1", 7, NOW, "user@vyron", { mayPost: true })).rejects.toThrow(/suspended and must be resumed/);
+    expectNothingHappened();
+  });
+
+  it.each(["RuleEngineRun", "BankSync", "AiClassificationSweep"] as const)("REFUSES a Disabled %s task with the exact message", async (taskType) => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 8, taskType, status: "Disabled" }));
+
+    await expect(runTaskNow("co_1", 8, NOW, "user@vyron", { mayPost: true })).rejects.toThrow(
+      "This task is disabled and must be resumed before it can be run.",
+    );
+    expectNothingHappened();
+  });
+
+  it("ALLOWS a Paused Rule Engine task with Banking:Post — controlled manual testing is preserved", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 5, taskType: "RuleEngineRun", status: "Paused", isActive: false }));
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+
+    await runTaskNow("co_1", 5, NOW, "user@vyron", { mayPost: true });
+
+    expect(runRuleEngine).toHaveBeenCalled();
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 5, expect.objectContaining({ status: "Paused" }));
+  });
+
+  it("ALLOWS an Active (Queued) Rule Engine task with Banking:Post", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 5, taskType: "RuleEngineRun" }));
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+
+    await runTaskNow("co_1", 5, NOW, "user@vyron", { mayPost: true });
+
+    expect(runRuleEngine).toHaveBeenCalled();
+  });
+
+  it("refuses before the claim, so a refused run cannot even lose a race to a real one", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 7, taskType: "RuleEngineRun", status: "Suspended" }));
+
+    await expect(runTaskNow("co_1", 7, NOW, "user@vyron")).rejects.toThrow(ValidationError);
+
+    expect(taskRepo.claimTaskForRunning).not.toHaveBeenCalled();
+  });
+
+  it("tenant isolation: it reads, and refuses, strictly within the company it was given", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 7, taskType: "RuleEngineRun", status: "Suspended", companyId: "co_2" }));
+
+    await expect(runTaskNow("co_2", 7, NOW, "user@vyron")).rejects.toThrow(ValidationError);
+
+    expect(taskRepo.getAutomationTask).toHaveBeenCalledWith("co_2", 7);
+    expectNothingHappened();
+  });
+});
+
+describe("Phase 5D — Run Now posting-permission gate", () => {
+  it.each(["RuleEngineRun", "BankSync"] as const)("%s posts, so it is refused without Banking:Post and nothing runs", async (taskType) => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 5, taskType }));
+
+    await expect(runTaskNow("co_1", 5, NOW, "user@vyron", { mayPost: false })).rejects.toThrow(/"Banking:Post" permission/);
+
+    expect(runRuleEngine).not.toHaveBeenCalled();
+    expect(syncAllConnectedAccounts).not.toHaveBeenCalled();
+    expect(taskRepo.claimTaskForRunning).not.toHaveBeenCalled();
+  });
+
+  it.each(["RuleEngineRun", "BankSync"] as const)("%s runs with Banking:Post", async (taskType) => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 5, taskType }));
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 1, succeeded: 1, failed: 0, notPermitted: 0, notAttempted: 0, stopReason: null });
+
+    await runTaskNow("co_1", 5, NOW, "user@vyron", { mayPost: true });
+
+    expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 5, expect.objectContaining({ status: "Success" }));
+  });
+
+  it.each(["AiClassificationSweep", "CommunicationQueue", "SubscriptionLifecycleSweep"] as const)(
+    "%s posts nothing, so it does NOT require Banking:Post",
+    async (taskType) => {
+      vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 6, taskType }));
+
+      await runTaskNow("co_1", 6, NOW, "user@vyron", { mayPost: false });
+
+      expect(taskRepo.recordTaskOutcome).toHaveBeenCalledWith("co_1", 6, expect.objectContaining({ status: "Success" }));
+    },
+  );
+
+  it("taskPostsAccounting classifies every task type in the registry, explicitly", () => {
+    // Phase 5E — RecurringTemplate was corrected to `true`: a Journal
+    // template writes an Approved journal then calls postApprovedJournals,
+    // and CustomerInvoice/SupplierBill templates approve-and-post. It
+    // posts through the sales/purchasing/GL modules rather than the
+    // banking ones, which is why a from-memory list missed it in 5D.
+    expect(taskPostsAccounting("RuleEngineRun")).toBe(true);
+    expect(taskPostsAccounting("BankSync")).toBe(true);
+    expect(taskPostsAccounting("RecurringTemplate")).toBe(true);
+
+    for (const t of ["AiClassificationSweep", "CommunicationQueue", "SubscriptionLifecycleSweep", "ReportRefresh", "Custom"] as const) {
+      expect(taskPostsAccounting(t)).toBe(false);
+    }
+  });
+
+  it("every task type in the registry is classified — none falls through", () => {
+    // `taskPostsAccounting` is an exhaustive switch, so adding a task type
+    // stops it compiling; this pins the runtime answer for the registry
+    // as it stands, and names the complete posting set in one place.
+    const allTaskTypes: AutomationTaskType[] = [
+      "RecurringTemplate", "RuleEngineRun", "ReportRefresh", "CommunicationQueue",
+      "Custom", "SubscriptionLifecycleSweep", "BankSync", "AiClassificationSweep",
+    ];
+    for (const t of allTaskTypes) expect(typeof taskPostsAccounting(t)).toBe("boolean");
+    expect(allTaskTypes.filter(taskPostsAccounting).sort()).toEqual(["BankSync", "RecurringTemplate", "RuleEngineRun"]);
+  });
+
+  it("omitting mayPost permits posting — internal/service callers are unaffected", async () => {
+    vi.mocked(taskRepo.getAutomationTask).mockResolvedValue(task({ id: 5, taskType: "RuleEngineRun" }));
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+
+    await runTaskNow("co_1", 5, NOW, "user@vyron");
+
+    expect(runRuleEngine).toHaveBeenCalled();
+  });
+});
+
+describe("Phase 5D — the scheduled (service-role) path is untouched by the Run Now gates", () => {
+  it("a due Rule Engine task still runs through runDueTasks with no permission answer at all", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "RuleEngineRun" })]);
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+
+    const outcome = await runDueTasks("co_1", NOW, "Scheduler (cron)");
+
+    expect(outcome).toMatchObject({ processed: 1, succeeded: 1, failed: 0 });
+    expect(runRuleEngine).toHaveBeenCalled();
+  });
+
+  it("a due BankSync task still runs through runDueTasks", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType: "BankSync" })]);
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 1, succeeded: 1, failed: 0, notPermitted: 0, notAttempted: 0, stopReason: null });
+
+    const outcome = await runDueTasks("co_1", NOW, "Scheduler (cron)");
+
+    expect(outcome).toMatchObject({ processed: 1, succeeded: 1, failed: 0 });
+    expect(syncAllConnectedAccounts).toHaveBeenCalled();
+  });
+
+  it("the scheduler still cannot reach a Suspended or Paused task — listDueTasks is what excludes them, unchanged", async () => {
+    // `listDueTasks` is the repository's own WHERE clause; the Run Now
+    // state machine is a separate gate and must not have altered this.
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([]);
+
+    const outcome = await runDueTasks("co_1", NOW, "Scheduler (cron)");
+
+    expect(outcome).toMatchObject({ processed: 0, succeeded: 0, failed: 0 });
+    expect(runRuleEngine).not.toHaveBeenCalled();
   });
 });
 
@@ -956,5 +1180,124 @@ describe("Migration 0100 — nextTaskRunAt for the Banking Rules sweep", () => {
     expect(minutesAfter(nextTaskRunAt(RULE_TASK, NOW, { stoppedEarly: false, autoPosted: 5 }))).toBe(60);
     expect(minutesAfter(nextTaskRunAt(RULE_TASK, NOW, { stoppedEarly: true, autoPosted: 0, recovered: 0 }))).toBe(60);
     expect(minutesAfter(nextTaskRunAt(RULE_TASK, NOW))).toBe(60);
+  });
+});
+
+// -----------------------------------------------------------------------
+// Phase 5E — "Run Scheduler Now": the queue runs, posting tasks are
+// refused for a caller without Banking:Post, and nothing is silent.
+// -----------------------------------------------------------------------
+
+describe("Phase 5E — Run Scheduler Now posting-permission gate", () => {
+  it.each(["RuleEngineRun", "BankSync", "RecurringTemplate"] as const)(
+    "a due %s task is NOT run without Banking:Post, and is left untouched and still due",
+    async (taskType) => {
+      vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType, name: `${taskType} task` })]);
+
+      const outcome = await runDueTasks("co_1", NOW, "user@vyron", { mayPost: false });
+
+      expect(outcome).toMatchObject({ processed: 0, succeeded: 0, failed: 0, refused: 1 });
+      expect(outcome.refusedTasks).toEqual([
+        expect.objectContaining({ taskId: 1, taskType, reason: expect.stringContaining("Banking:Post") }),
+      ]);
+      // Untouched: never claimed, never started, no outcome recorded, so
+      // next_run_at is unchanged and it is still due for the cron pass.
+      expect(taskRepo.claimTaskForRunning).not.toHaveBeenCalled();
+      expect(taskRepo.startTaskRun).not.toHaveBeenCalled();
+      expect(taskRepo.recordTaskOutcome).not.toHaveBeenCalled();
+      expect(taskRepo.deferTask).not.toHaveBeenCalled();
+      // And no accounting side effect of any kind.
+      expect(runRuleEngine).not.toHaveBeenCalled();
+      expect(syncAllConnectedAccounts).not.toHaveBeenCalled();
+      expect(generateFromTemplate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["RuleEngineRun", "BankSync"] as const)("a due %s task IS run with Banking:Post", async (taskType) => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType })]);
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+    vi.mocked(syncAllConnectedAccounts).mockResolvedValue({ attempted: 1, succeeded: 1, failed: 0, notPermitted: 0, notAttempted: 0, stopReason: null });
+
+    const outcome = await runDueTasks("co_1", NOW, "user@vyron", { mayPost: true });
+
+    expect(outcome).toMatchObject({ processed: 1, succeeded: 1, failed: 0 });
+    expect(outcome.refused).toBeUndefined();
+    expect(outcome.refusedTasks).toBeUndefined();
+  });
+
+  it.each(["AiClassificationSweep", "CommunicationQueue", "SubscriptionLifecycleSweep"] as const)(
+    "a due non-posting %s task runs even without Banking:Post",
+    async (taskType) => {
+      vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 1, taskType })]);
+
+      const outcome = await runDueTasks("co_1", NOW, "user@vyron", { mayPost: false });
+
+      expect(outcome).toMatchObject({ processed: 1, succeeded: 1, failed: 0 });
+      expect(outcome.refused).toBeUndefined();
+    },
+  );
+
+  it("MIXED QUEUE: the non-posting task runs, the posting task does not, and the result says which", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([
+      task({ id: 1, taskType: "CommunicationQueue", name: "Comms queue" }),
+      task({ id: 2, taskType: "RuleEngineRun", name: "Banking Rules recovery sweep" }),
+      task({ id: 3, taskType: "AiClassificationSweep", name: "AI sweep" }),
+    ]);
+
+    const outcome = await runDueTasks("co_1", NOW, "user@vyron", { mayPost: false });
+
+    // Two non-posting tasks ran; the Rule Engine task did not.
+    expect(outcome).toMatchObject({ processed: 2, succeeded: 2, failed: 0, refused: 1 });
+    expect(outcome.refusedTasks).toEqual([
+      expect.objectContaining({ taskId: 2, taskType: "RuleEngineRun", name: "Banking Rules recovery sweep" }),
+    ]);
+    expect(runRuleEngine).not.toHaveBeenCalled();
+    // The tasks that DID run were claimed; the refused one never was.
+    expect(vi.mocked(taskRepo.claimTaskForRunning).mock.calls.map((c) => c[1])).toEqual([1, 3]);
+  });
+
+  it("a refused task produces no journal, no ledger row, no posting batch and no success claim", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 2, taskType: "RuleEngineRun" })]);
+
+    const outcome = await runDueTasks("co_1", NOW, "user@vyron", { mayPost: false });
+
+    expect(runRuleEngine).not.toHaveBeenCalled();
+    expect(taskRepo.finishTaskRun).not.toHaveBeenCalled();
+    expect(recordUsageEvent).not.toHaveBeenCalled();
+    expect(outcome.succeeded).toBe(0);
+  });
+
+  it("omitting mayPost runs everything — the cron path's behaviour is byte-for-byte unchanged", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([
+      task({ id: 1, taskType: "RuleEngineRun" }),
+      task({ id: 2, taskType: "CommunicationQueue" }),
+    ]);
+    vi.mocked(runRuleEngine).mockResolvedValue(ruleEngineOutcome());
+
+    const outcome = await runDueTasks("co_1", NOW, "Scheduler (cron)");
+
+    expect(outcome).toEqual({ processed: 2, succeeded: 2, failed: 0, deferred: 0 });
+    expect(runRuleEngine).toHaveBeenCalled();
+  });
+
+  it("tenant isolation: the refusal is scoped to the company asked about", async () => {
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue([task({ id: 2, taskType: "RuleEngineRun", companyId: "co_2" })]);
+
+    const outcome = await runDueTasks("co_2", NOW, "user@vyron", { mayPost: false });
+
+    expect(taskRepo.listDueTasks).toHaveBeenCalledWith("co_2", NOW);
+    expect(outcome.refused).toBe(1);
+    expect(runRuleEngine).not.toHaveBeenCalled();
+  });
+
+  it("the refusal is decided by the central predicate, not a local string list", async () => {
+    // Every posting task type the predicate names must be refused here.
+    const posting = (["RecurringTemplate", "RuleEngineRun", "ReportRefresh", "CommunicationQueue", "Custom", "SubscriptionLifecycleSweep", "BankSync", "AiClassificationSweep"] as AutomationTaskType[]).filter(taskPostsAccounting);
+    vi.mocked(taskRepo.listDueTasks).mockResolvedValue(posting.map((taskType, i) => task({ id: i + 1, taskType })));
+
+    const outcome = await runDueTasks("co_1", NOW, "user@vyron", { mayPost: false });
+
+    expect(outcome.refused).toBe(posting.length);
+    expect(outcome.refusedTasks?.map((t) => t.taskType).sort()).toEqual([...posting].sort());
   });
 });

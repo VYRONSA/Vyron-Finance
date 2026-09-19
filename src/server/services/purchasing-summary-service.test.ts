@@ -4,8 +4,8 @@ import type { ImportedBill, Supplier } from "@/server/accounting/types";
 import type { PurchaseOrder, SupplierPayment } from "@/server/purchasing/types";
 
 const SUPPLIERS: Supplier[] = [
-  { id: 1, companyId: "co_1", name: "Fenwick Office Supplies", alternativeNames: [], defaultGlAccount: null, defaultVatCode: null, status: "Active", supplierCode: "SUPP-1", supplierCategory: "", supplierType: "Company", bankName: "", bankAccountNumber: "", bankBranchCode: "", vatNumber: "", taxNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0 },
-  { id: 2, companyId: "co_1", name: "Netherfield Freight Ltd", alternativeNames: [], defaultGlAccount: null, defaultVatCode: null, status: "Active", supplierCode: "SUPP-2", supplierCategory: "", supplierType: "Company", bankName: "", bankAccountNumber: "", bankBranchCode: "", vatNumber: "", taxNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0 },
+  { id: 1, companyId: "co_1", name: "Fenwick Office Supplies", alternativeNames: [], defaultGlAccount: null, defaultVatCode: null, status: "Active", supplierCode: "SUPP-1", supplierCategory: "", supplierType: "Company", bankName: "", bankAccountNumber: "", bankBranchCode: "", vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0 },
+  { id: 2, companyId: "co_1", name: "Netherfield Freight Ltd", alternativeNames: [], defaultGlAccount: null, defaultVatCode: null, status: "Active", supplierCode: "SUPP-2", supplierCategory: "", supplierType: "Company", bankName: "", bankAccountNumber: "", bankBranchCode: "", vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0 },
 ];
 
 function bill(overrides: Partial<ImportedBill> & Pick<ImportedBill, "id" | "supplierId">): ImportedBill {

@@ -36,6 +36,7 @@ export function BankAccountForm({
     bankName: account?.bankName ?? "",
     accountType: account?.accountType ?? "",
     branch: account?.branch ?? "",
+    showOnDocuments: account?.showOnDocuments ?? false,
     currency: account?.currency ?? "ZAR",
     openingBalance: account ? String(account.openingBalance) : "0",
     openingBalanceDate: account?.openingBalanceDate ?? "",
@@ -83,6 +84,7 @@ export function BankAccountForm({
           ? {
               accountNumber: values.accountNumber.trim(),
               accountName: values.accountName.trim(),
+              showOnDocuments: values.showOnDocuments,
               bankName: values.bankName.trim(),
               accountType: values.accountType.trim(),
               branch: values.branch.trim(),
@@ -94,6 +96,7 @@ export function BankAccountForm({
             }
           : {
               accountName: values.accountName.trim(),
+              showOnDocuments: values.showOnDocuments,
               bankName: values.bankName.trim(),
               accountType: values.accountType.trim(),
               branch: values.branch.trim(),
@@ -193,6 +196,26 @@ export function BankAccountForm({
           <Input id="branch" inputMode="numeric" pattern="[0-9]*" value={values.branch} onChange={(e) => set("branch", e.target.value.replace(/[^0-9]/g, ""))} placeholder="250655" />
         </Field>
       </div>
+
+      {/* Phase 5I — explicit opt-in. A company has several bank accounts
+          and most must never reach a customer-facing document, so an
+          account is printed only when it is ticked here. Nothing is
+          printed by default. */}
+      <label htmlFor="showOnDocuments" className="flex items-start gap-2.5 rounded-vf-sm bg-vf-paper-alt/60 p-3">
+        <input
+          id="showOnDocuments"
+          type="checkbox"
+          checked={values.showOnDocuments}
+          onChange={(e) => set("showOnDocuments", e.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-vf-red-600"
+        />
+        <span className="text-sm">
+          <span className="font-medium text-vf-ink">Show these banking details on invoices and statements</span>
+          <span className="block text-xs text-vf-ink-faint">
+            Customers will see the bank, account name, account number and branch code so they can pay you.
+          </span>
+        </span>
+      </label>
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="Currency" htmlFor="currency">

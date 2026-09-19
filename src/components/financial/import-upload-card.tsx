@@ -15,7 +15,13 @@ import { ImportOutcomeSummary } from "@/components/financial/import-centre/impor
 import { STANDARD_HEADERS } from "@/server/import-centre/bank-statement-parser";
 import { BILLS_IMPORT_TEMPLATE_HEADERS } from "@/server/import-centre/xero-bills-parser";
 
-type UploadResult = { batch: ImportBatch; exceptions: ImportExceptionRecord[]; rulesAutoAllocated?: number };
+type UploadResult = {
+  batch: ImportBatch;
+  exceptions: ImportExceptionRecord[];
+  rulesAutoAllocated?: number;
+  /** Phase 5C — what the attached Banking Rules pass deliberately did not do. */
+  rulePass?: { notPermitted: number; notAttempted: number; stopReason: "time-budget" | "posting-limit" | null };
+};
 
 /** Phase 8 — Intelligent Bank Statement Processing. Reports this
  * component's real, already-existing state transitions to an optional
@@ -322,6 +328,7 @@ export function ImportUploadCard({
                   importedCount={result.batch.importedCount}
                   duplicateCount={result.batch.duplicateCount}
                   rulesAllocatedCount={result.rulesAutoAllocated ?? 0}
+                  rulePass={result.rulePass ?? null}
                   exceptionCount={result.exceptions.length}
                   onImportAnother={() => {
                     setResult(null);

@@ -15,7 +15,7 @@ function company(overrides: Partial<Company> = {}): Company {
     id: "co_1", organisationId: "org_1", name: "Fenwick & Rowe Ltd", industry: "Professional Services",
     status: "active", registrationNumber: "2019/123456/07", address: "12 Fenwick Street, Cape Town",
     financialYearStartMonth: 3, baseCurrencyCode: "ZAR", createdAt: "2025-02-10T09:00:00Z",
-    tradingName: "", vatNumber: "", telephone: "", email: "", website: "", postalAddress: "",
+    tradingName: "", vatNumber: "", telephone: "", email: "", website: "", postalAddress: "", invoiceFooter: "", paymentInstructions: "", defaultPaymentTermsDays: 30,
     city: "", province: "", postalCode: "", country: "",
     ...overrides,
   };
@@ -75,7 +75,7 @@ describe("CompanyDetailsTab — Phase 20D profile fields save correctly", () => 
     const body = JSON.parse(init.body);
     expect(body).toMatchObject({
       tradingName: "Acme", vatNumber: "4123456789", telephone: "011 000 0000",
-      email: "info@acme.co.za", website: "acme.co.za", postalAddress: "PO Box 1",
+      email: "info@acme.co.za", website: "acme.co.za", postalAddress: "PO Box 1", invoiceFooter: "", paymentInstructions: "",
     });
     await waitFor(() => expect(screen.getByText("Saved.")).toBeInTheDocument());
   });

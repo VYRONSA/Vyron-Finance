@@ -29,15 +29,23 @@ vi.mock("@/server/services/posting-engine-service", () => ({ postApprovedJournal
 
 import {
   applyRulesToTransactions,
+  applyRulesToTransactionsBounded,
+  attachedRulePassBounds,
+  ATTACHED_RULE_PASS_BUDGET_MS,
+  ATTACHED_RULE_PASS_MAX_POSTINGS,
+  countOutcomes,
+  DEFAULT_RULE_ENGINE_BUDGET_MS,
   DEFAULT_RULE_ENGINE_MAX_POSTINGS,
+  DEFAULT_RULE_ENGINE_POSTING_POLICY,
   isClaimableByRule,
   isRuleOwnedAwaitingReview,
   processTransaction,
   runRuleEngine,
   toEvaluable,
   type RuleEnginePostingContext,
+  type RuleEnginePostingPolicy,
 } from "./rule-processing-service";
-import { matchesCondition } from "@/server/banking-rules/rule-engine";
+import { evaluateTransactionAgainstRules, matchesCondition } from "@/server/banking-rules/rule-engine";
 import * as explorerRepo from "@/server/repositories/transaction-explorer-repository";
 import * as ruleRepo from "@/server/repositories/banking-rule-repository";
 import * as exceptionRepo from "@/server/repositories/banking-exception-repository";
@@ -424,7 +432,7 @@ describe("processTransaction — A. claim and post are one atomic call", () => {
   it("posts ONLY this transaction's journal through fn_post_rule_engine_journal, with the same lines, date and period as before, and the claim inside it", async () => {
     const result = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "Scheduler (cron)", { ruleEngineJournal: null, postingContext: postingContext() });
 
-    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [153], autoPosted: true, journalId: 900, exceptionsRaised: [], postingAttempted: true });
+    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [153], autoPosted: true, journalId: 900, exceptionsRaised: [], postingAttempted: true, outcome: "posted" });
     expect(postingRepo.postRuleEngineJournalAtomic).toHaveBeenCalledTimes(1);
     expect(postingRepo.postRuleEngineJournalAtomic).toHaveBeenCalledWith(
       "co_1",
@@ -488,7 +496,7 @@ describe("processTransaction — A. claim and post are one atomic call", () => {
 describe("processTransaction — classification only (unchanged behaviour, one database call)", () => {
   it("a flag-for-review rule claims the transaction (with every matched rule) and raises the review exception, but never posts", async () => {
     const result = await processTransaction("co_1", freshSalary(), [SALARIES_RULE, FLAG_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
-    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [153, 154], autoPosted: false, journalId: null, exceptionsRaised: ["UnbalancedAllocation"] });
+    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [153, 154], autoPosted: false, journalId: null, exceptionsRaised: ["UnbalancedAllocation"], outcome: "classified" });
     expect(explorerRepo.applyRuleActions).toHaveBeenCalledWith("co_1", 2151, expect.objectContaining({ ruleId: 153, suggestedGlAccount: "6940" }), "Auto: Salaries → GL", "System", [153, 154]);
     expect(exceptionRepo.raiseExceptionIdempotent).toHaveBeenCalledWith("co_1", expect.objectContaining({ exceptionType: "UnbalancedAllocation", reason: "Check payroll first" }));
     expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
@@ -496,7 +504,7 @@ describe("processTransaction — classification only (unchanged behaviour, one d
 
   it("a rule without a GL account claims the transaction and stops", async () => {
     const result = await processTransaction("co_1", freshSalary(), [SUPPLIER_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
-    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [155], autoPosted: false, journalId: null, exceptionsRaised: [] });
+    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [155], autoPosted: false, journalId: null, exceptionsRaised: [], outcome: "classified" });
     expect(explorerRepo.applyRuleActions).toHaveBeenCalledWith("co_1", 2151, expect.objectContaining({ ruleId: 155, matchedSupplierId: 77, allocationStatus: "Allocated" }), "Salaries bureau", "System", [155]);
     expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
   });
@@ -512,7 +520,7 @@ describe("processTransaction — classification only (unchanged behaviour, one d
     vi.mocked(explorerRepo.applyRuleActions).mockResolvedValue(false);
     const result = await processTransaction("co_1", freshSalary(), [FLAG_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
     expect(exceptionRepo.raiseExceptionIdempotent).not.toHaveBeenCalled();
-    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [] });
+    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [], outcome: "skipped" });
   });
 
   it("still raises UnknownMerchant for an unmatched transaction", async () => {
@@ -530,7 +538,7 @@ describe("processTransaction — classification only (unchanged behaviour, one d
 
   it("with mayClaim: false a matched claimable transaction is left untouched", async () => {
     const result = await processTransaction("co_1", freshSalary(), [SALARIES_RULE, FLAG_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext(), mayClaim: false });
-    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [] });
+    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [], outcome: "skipped" });
     expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
     expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
   });
@@ -540,7 +548,7 @@ describe("processTransaction — H2. Manual Cashbook entries are never a rule's"
   it("does not claim or post a Manual entry a rule matches", async () => {
     const manual = freshSalary({ entrySource: "Manual", captureStatus: "Submitted" });
     const result = await processTransaction("co_1", manual, [SALARIES_RULE, FLAG_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
-    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [] });
+    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [], outcome: "skipped" });
     expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
     expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
     expect(exceptionRepo.raiseExceptionIdempotent).not.toHaveBeenCalled();
@@ -671,7 +679,7 @@ describe("M1 semantics — only the NEW atomic claim + post is retried; LEGACY r
   it("B: a legacy row is not posted by an explicit Apply Rule selection either", async () => {
     vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([legacyRuleOwned(7)]);
     const [result] = await applyRulesToTransactions("co_1", [7], "user@example.com");
-    expect(result).toEqual({ transactionId: 7, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [], awaitingReview: true });
+    expect(result).toEqual({ transactionId: 7, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [], awaitingReview: true, outcome: "needs-review" });
     expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
     expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
   });
@@ -707,7 +715,7 @@ describe("processTransaction — D/E. existing Posted journal is recovered BEFOR
   it("links 2151 to JR000264 even though the claim would refuse it (rule_id already set) — no journal, no batch, no GL", async () => {
     const result = await processTransaction("co_1", interruptedSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "Scheduler (cron)", { ruleEngineJournal: postedJournal(), postingContext: postingContext() });
 
-    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: 278, exceptionsRaised: [], recovered: true, postingAttempted: true });
+    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: 278, exceptionsRaised: [], recovered: true, postingAttempted: true, outcome: "recovered" });
     expect(postingRepo.recoverRuleEngineJournalLink).toHaveBeenCalledWith("co_1", 2151, "Scheduler (cron)");
     expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
     expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
@@ -754,7 +762,7 @@ describe("processTransaction — D/E. existing Posted journal is recovered BEFOR
 
   it("does nothing (and makes no write) for a rule-owned transaction with NO journal — a person posts those", async () => {
     const result = await processTransaction("co_1", interruptedSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null });
-    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [], awaitingReview: true });
+    expect(result).toEqual({ transactionId: 2151, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [], awaitingReview: true, outcome: "needs-review" });
     expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
     expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
   });
@@ -957,8 +965,494 @@ describe("applyRulesToTransactions — shares the same prepared context", () => 
   it("never posts a Manual Cashbook entry from an explicit selection either", async () => {
     vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1, entrySource: "Manual", captureStatus: "Draft" })]);
     const results = await applyRulesToTransactions("co_1", [1], "user@example.com");
-    expect(results).toEqual([{ transactionId: 1, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [] }]);
+    expect(results).toEqual([{ transactionId: 1, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised: [], outcome: "skipped" }]);
     expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
     expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------
+// Phase 5A — decision gates, outcome categories and starvation.
+// ---------------------------------------------------------------------
+
+/** An imported row carrying only an unconfirmed AI suggestion — the shape of
+ * the 21 Metanoia / 2 Northwood rows a Supplier/Customer rule matches. */
+function aiSuggested(overrides: Partial<BankTransactionRecord> = {}): BankTransactionRecord {
+  return freshSalary({ allocationStatus: "Suggested", allocationMethod: "Future AI", suggestedGlAccount: "6940", suggestedVatCode: null, ...overrides });
+}
+const CUSTOMER_RULE: BankingRule = {
+  ...SALARIES_RULE,
+  id: 156,
+  name: "Salaries customer",
+  ruleType: "Customer",
+  actions: [{ id: 5, actionType: "set_customer", targetId: 88, targetText: null }],
+};
+const policy = (overrides: Partial<RuleEnginePostingPolicy> = {}): RuleEnginePostingPolicy => ({ ...DEFAULT_RULE_ENGINE_POSTING_POLICY, ...overrides });
+
+describe("Phase 5A — decision gates default to today's production behaviour", () => {
+  it("the defaults are: run-date journals, no blocking exceptions (decisions 2 and 3)", () => {
+    expect(DEFAULT_RULE_ENGINE_POSTING_POLICY).toEqual({ journalDate: "run-date", blockingExceptionTypes: [] });
+    expect(Object.isFrozen(DEFAULT_RULE_ENGINE_POSTING_POLICY)).toBe(true);
+  });
+
+  it("with the default policy no exception lookup is made at all", async () => {
+    await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
+    expect(exceptionRepo.listTransactionIdsWithOpenException).not.toHaveBeenCalled();
+  });
+});
+
+describe("Phase 5B decision 1 — Supplier/Customer-only rules keep today's behaviour (no gate)", () => {
+  it("TODAY (suggested-gl): a Supplier rule on an AI-suggested row posts to the AI's account, allocated to the supplier", async () => {
+    const result = await processTransaction("co_1", aiSuggested(), [SUPPLIER_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
+    expect(result).toMatchObject({ outcome: "posted", autoPosted: true });
+    const call = vi.mocked(postingRepo.postRuleEngineJournalAtomic).mock.calls[0]!;
+    expect(call[2].lines.map((l) => l.accountCode)).toEqual(["6940", "1020"]);
+    expect(call[5]).toMatchObject({ ruleId: 155, matchedSupplierId: 77, suggestedGlAccount: "6940", allocationStatus: "Allocated" });
+  });
+
+  it("TODAY (suggested-gl): a Customer rule on an AI-suggested row posts to the AI's account too", async () => {
+    const result = await processTransaction("co_1", aiSuggested({ debit: 0, credit: 500 }), [CUSTOMER_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
+    expect(result.outcome).toBe("posted");
+    expect(vi.mocked(postingRepo.postRuleEngineJournalAtomic).mock.calls[0]![5]).toMatchObject({ matchedCustomerId: 88, suggestedGlAccount: "6940" });
+  });
+
+});
+
+describe("Phase 5A — journal date policy", () => {
+  it("run-date (today): journal, period and posting batch all use the run date", async () => {
+    await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext(), today: () => "2026-09-16" });
+    const call = vi.mocked(postingRepo.postRuleEngineJournalAtomic).mock.calls[0]!;
+    expect(call[2]).toMatchObject({ journalDate: "2026-09-16", financialYearLabel: "FY2027", financialPeriod: 7 });
+    expect(call[4]).toBe("2026-09-16");
+  });
+
+  it("transaction-date: journal and period use the bank transaction's date; the batch keeps the run date", async () => {
+    await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", {
+      ruleEngineJournal: null, postingContext: postingContext(), today: () => "2026-09-16", policy: policy({ journalDate: "transaction-date" }),
+    });
+    const call = vi.mocked(postingRepo.postRuleEngineJournalAtomic).mock.calls[0]!;
+    expect(call[2]).toMatchObject({ journalDate: "2026-03-27", financialYearLabel: "FY2027", financialPeriod: 1 });
+    expect(call[4]).toBe("2026-09-16");
+  });
+
+  it("transaction-date: a CLOSED year covering the transaction date stops the posting (no claim, no call), although the run date is open", async () => {
+    const closedPrior = { ...OPEN_YEAR, id: 2, yearLabel: "FY2026", startDate: "2025-03-01", endDate: "2026-02-28", status: "Closed" as const };
+    const open = { ...OPEN_YEAR, startDate: "2026-03-01", endDate: "2027-02-28" };
+    const ctx = postingContext({ financialYears: [closedPrior, open] });
+    const early = freshSalary({ transactionDate: "2026-02-20" });
+
+    const underRunDate = await processTransaction("co_1", early, [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: ctx, today: () => "2026-09-16" });
+    expect(underRunDate.outcome).toBe("posted");
+
+    vi.mocked(postingRepo.postRuleEngineJournalAtomic).mockClear();
+    const underTxnDate = await processTransaction("co_1", early, [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", {
+      ruleEngineJournal: null, postingContext: ctx, today: () => "2026-09-16", policy: policy({ journalDate: "transaction-date" }),
+    });
+    expect(underTxnDate).toMatchObject({ outcome: "needs-review", notPostedReason: expect.stringContaining("FY2026 is closed") });
+    expect(underTxnDate.postingAttempted).toBeUndefined();
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+    expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
+  });
+
+  it("transaction-date: a lock date after the transaction date stops the posting", async () => {
+    const locked = { ...OPEN_YEAR, lockDate: "2026-06-30" };
+    const result = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", {
+      ruleEngineJournal: null, postingContext: postingContext({ financialYears: [locked] }), today: () => "2026-09-16", policy: policy({ journalDate: "transaction-date" }),
+    });
+    expect(result).toMatchObject({ outcome: "needs-review", notPostedReason: expect.stringContaining("lock date") });
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+  });
+
+  it("transaction-date: a row with no transaction date is left for a person", async () => {
+    const result = await processTransaction("co_1", freshSalary({ transactionDate: null }), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", {
+      ruleEngineJournal: null, postingContext: postingContext(), policy: policy({ journalDate: "transaction-date" }),
+    });
+    expect(result).toMatchObject({ outcome: "needs-review", notPostedReason: expect.stringContaining("No transaction date") });
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+  });
+});
+
+describe("Phase 5A — blocking exceptions (decision gate)", () => {
+  it("an open exception of a blocking type stops the posting: no claim, no posting call, needs review", async () => {
+    vi.mocked(exceptionRepo.listTransactionIdsWithOpenException).mockImplementation(async (_co, type, ids) => new Set(type === "PossibleDuplicate" ? ids : []));
+    const result = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", {
+      ruleEngineJournal: null, postingContext: postingContext(), policy: policy({ blockingExceptionTypes: ["PossibleDuplicate", "LargeUnusualPayment"] }),
+    });
+    expect(result).toMatchObject({ outcome: "needs-review", notPostedReason: expect.stringContaining("PossibleDuplicate") });
+    expect(result.postingAttempted).toBeUndefined();
+    expect(exceptionRepo.listTransactionIdsWithOpenException).toHaveBeenCalledWith("co_1", "PossibleDuplicate", [2151]);
+    expect(exceptionRepo.listTransactionIdsWithOpenException).toHaveBeenCalledWith("co_1", "LargeUnusualPayment", [2151]);
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+    expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
+  });
+
+  it("an exception of a type NOT named by the policy does not block", async () => {
+    vi.mocked(exceptionRepo.listTransactionIdsWithOpenException).mockImplementation(async (_co, type, ids) => new Set(type === "UnknownMerchant" ? ids : []));
+    const result = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", {
+      ruleEngineJournal: null, postingContext: postingContext(), policy: policy({ blockingExceptionTypes: ["PossibleDuplicate"] }),
+    });
+    expect(result.outcome).toBe("posted");
+  });
+
+  it("uses the caller's pre-loaded answer instead of a lookup", async () => {
+    const result = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", {
+      ruleEngineJournal: null, postingContext: postingContext(), policy: policy({ blockingExceptionTypes: ["PossibleDuplicate"] }), hasBlockingException: true,
+    });
+    expect(result.outcome).toBe("needs-review");
+    expect(exceptionRepo.listTransactionIdsWithOpenException).not.toHaveBeenCalled();
+  });
+
+  it("a failed exception lookup is a temporary failure, never a posting", async () => {
+    vi.mocked(exceptionRepo.listTransactionIdsWithOpenException).mockRejectedValue(new Error("db down"));
+    const result = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", {
+      ruleEngineJournal: null, postingContext: postingContext(), policy: policy({ blockingExceptionTypes: ["PossibleDuplicate"] }),
+    });
+    expect(result).toMatchObject({ outcome: "failed", postingError: "db down" });
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+  });
+
+  it("runRuleEngine looks blocking exceptions up once per page and applies them", async () => {
+    const company = installCompany([freshSalary({ id: 1 }), freshSalary({ id: 2, transactionDate: "2026-03-26" })]);
+    const base = vi.mocked(exceptionRepo.listTransactionIdsWithOpenException).getMockImplementation()!;
+    vi.mocked(exceptionRepo.listTransactionIdsWithOpenException).mockImplementation(async (co, type, ids) =>
+      type === "PossibleDuplicate" ? new Set(ids.filter((id) => id === 1)) : base(co, type, ids),
+    );
+    const outcome = await runRuleEngine("co_1", "System", { policy: policy({ blockingExceptionTypes: ["PossibleDuplicate"] }) });
+    expect(company.postingCalls).toEqual([2]);
+    expect(outcome.outcomes).toMatchObject({ posted: 1, "needs-review": 1 });
+    expect(vi.mocked(exceptionRepo.listTransactionIdsWithOpenException).mock.calls.filter((c) => c[1] === "PossibleDuplicate")).toHaveLength(1);
+  });
+
+  it("applyRulesToTransactions with the default policy still posts (unchanged behaviour)", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([aiSuggested({ id: 1 })]);
+    vi.mocked(ruleRepo.listActiveBankingRules).mockResolvedValue([SUPPLIER_RULE]);
+    const results = await applyRulesToTransactions("co_1", [1], "import");
+    expect(results.map((r) => r.outcome)).toEqual(["posted"]);
+  });
+});
+
+describe("Phase 5A — outcome categories and attempt starvation", () => {
+  it("a claimable row flagged posted without a link is answered without a posting call (needs review)", async () => {
+    const result = await processTransaction("co_1", freshSalary({ postedFlag: true }), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
+    expect(result).toMatchObject({ outcome: "needs-review", autoPosted: false });
+    expect(result.postingAttempted).toBeUndefined();
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+    expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
+  });
+
+  it("a reconciled, unposted claimable row is answered without a posting call (needs review)", async () => {
+    const result = await processTransaction("co_1", freshSalary({ reconciliationId: 12 }), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
+    expect(result).toMatchObject({ outcome: "needs-review" });
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+  });
+
+  it("refused (validation) and failed (temporary) are told apart", async () => {
+    vi.mocked(postingRepo.postRuleEngineJournalAtomic).mockRejectedValueOnce({ message: "VYRON_RULE_POST_AMOUNT_MISMATCH: 1 <> 2" }).mockRejectedValueOnce(new Error("connection reset"));
+    const refused = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
+    const failed = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() });
+    expect(refused).toMatchObject({ outcome: "refused", postingAttempted: true });
+    expect(failed).toMatchObject({ outcome: "failed", postingAttempted: true });
+    const missing = await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext({ accountCodes: new Set(["1020"]) }) });
+    expect(missing).toMatchObject({ outcome: "refused" });
+    expect(missing.postingAttempted).toBeUndefined();
+  });
+
+  it("not_eligible / already_posted from the database are skips, blocked is a review", async () => {
+    vi.mocked(postingRepo.postRuleEngineJournalAtomic)
+      .mockResolvedValueOnce(rpcOutcome({ outcome: "not_eligible", journalId: null, reason: "taken" }))
+      .mockResolvedValueOnce(rpcOutcome({ outcome: "already_posted", journalId: null, reason: "posted" }))
+      .mockResolvedValueOnce(rpcOutcome({ outcome: "blocked", journalId: null, reason: "incomplete ledger" }));
+    const kinds: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      kinds.push((await processTransaction("co_1", freshSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: null, postingContext: postingContext() })).outcome);
+    }
+    expect(kinds).toEqual(["skipped", "skipped", "needs-review"]);
+  });
+
+  it("recovery outcomes: recovered / already linked / unsafe journal", async () => {
+    const recovered = await processTransaction("co_1", interruptedSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: postedJournal() });
+    vi.mocked(postingRepo.recoverRuleEngineJournalLink).mockResolvedValueOnce(rpcOutcome({ outcome: "already_linked", journalId: 278 }));
+    const linked = await processTransaction("co_1", interruptedSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: postedJournal() });
+    const reversed = await processTransaction("co_1", interruptedSalary(), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { ruleEngineJournal: postedJournal({ isReversed: true }) });
+    expect([recovered.outcome, linked.outcome, reversed.outcome]).toEqual(["recovered", "skipped", "needs-review"]);
+  });
+
+  it("STARVATION: rows the database would always refuse no longer use up the posting limit", async () => {
+    // Five newer claimable rows flagged posted without a link (corrupt state)
+    // ahead of one ordinary, older row — with a posting limit of 3.
+    const corrupt = [11, 12, 13, 14, 15].map((id) => freshSalary({ id, transactionDate: "2026-07-01", postedFlag: true }));
+    const good = freshSalary({ id: 1, transactionDate: "2026-03-01" });
+    const company = installCompany([...corrupt, good]);
+    const outcome = await runRuleEngine("co_1", "System", { maxPostings: 3 });
+    expect(company.postingCalls).toEqual([1]);
+    expect(outcome).toMatchObject({ autoPosted: 1, postingAttempts: 1, stoppedEarly: false });
+    expect(outcome.outcomes).toMatchObject({ posted: 1, "needs-review": 5 });
+    // And again on the next run: still no posting call for them.
+    const again = await runRuleEngine("co_1", "System", { maxPostings: 3 });
+    expect(company.postingCalls).toEqual([1]);
+    expect(again.postingAttempts).toBe(0);
+  });
+
+  it("every run reports per-outcome counts that add up to what it processed", async () => {
+    installCompany([freshSalary({ id: 1 }), unmatched(2), legacyRuleOwned(3)]);
+    const outcome = await runRuleEngine("co_1", "System");
+    const total = Object.values(outcome.outcomes).reduce((a, b) => a + b, 0);
+    expect(total).toBe(outcome.processed);
+    expect(outcome.outcomes).toMatchObject({ posted: 1, skipped: 1, "needs-review": 1 });
+    expect(countOutcomes([])).toEqual({ posted: 0, recovered: 0, classified: 0, skipped: 0, refused: 0, failed: 0, "needs-review": 0, "not-permitted": 0 });
+  });
+
+  it("runRuleEngine passes its run-date seam and policy to every transaction", async () => {
+    const company = installCompany([freshSalary({ id: 1 })]);
+    await runRuleEngine("co_1", "System", { today: () => "2026-09-16", policy: policy({ journalDate: "transaction-date" }) });
+    expect(company.postedDates).toEqual([{ journalDate: "2026-03-27", postingDate: "2026-09-16" }]);
+  });
+});
+
+describe("Phase 5A — import and bank sync reach the ledger only through the rule pipeline", () => {
+  it.each([
+    ["src/server/services/import-service.ts"],
+    ["src/server/bank-connectivity/bank-sync-service.ts"],
+  ])("%s posts no journal itself and runs rules only through the shared rule pass", (file) => {
+    const source = readFileSync(join(process.cwd(), file), "utf8");
+    // Phase 5C — both now call the BOUNDED entry point (same pipeline,
+    // plus explicit limits and the posting-permission gate). What matters
+    // here is unchanged: neither file reaches the ledger by any other route.
+    expect(source).toMatch(/applyRulesToTransactions(Bounded)?\(/);
+    expect(source).not.toMatch(/postRuleEngineJournalAtomic|fn_post_rule_engine_journal|postApprovedJournals|createJournal\(|markTransactionPosted/);
+  });
+});
+
+describe("Phase 5B — bounded rule processing for a fixed selection (import / bank sync / Apply Rule)", () => {
+  it("without bounds every selected transaction is processed, exactly like applyRulesToTransactions", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 }), freshSalary({ id: 2 }), unmatched(3)]);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1, 2, 3], "import");
+    expect(outcome).toMatchObject({ stopReason: null, notAttempted: 0, notAttemptedTransactionIds: [], postingAttempts: 2 });
+    expect(outcome.outcomes).toMatchObject({ posted: 2, skipped: 1 });
+    expect(outcome.results.map((r) => r.transactionId)).toEqual([1, 2, 3]);
+  });
+
+  it("the posting limit stops starting new transactions and reports every one it left", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 }), freshSalary({ id: 2 }), freshSalary({ id: 3 }), unmatched(4)]);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1, 2, 3, 4], "import", [], { bounds: { maxPostings: 2 } });
+    expect(outcome).toMatchObject({ stopReason: "posting-limit", postingAttempts: 2, notAttempted: 2, notAttemptedTransactionIds: [3, 4] });
+    expect(vi.mocked(postingRepo.postRuleEngineJournalAtomic).mock.calls.map((c) => c[1])).toEqual([1, 2]);
+    expect(outcome.outcomes).toMatchObject({ posted: 2 });
+    // Nothing at all was written for the transactions it did not start.
+    expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
+    expect(exceptionRepo.raiseExceptionIdempotent).not.toHaveBeenCalled();
+  });
+
+  it("the time limit is checked only between transactions — a posting call already running is never cut short", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 }), freshSalary({ id: 2 })]);
+    let t = 0;
+    const now = () => t;
+    vi.mocked(postingRepo.postRuleEngineJournalAtomic).mockImplementation(async (_co, id) => {
+      t = 10_000; // the deadline passes WHILE this atomic call runs
+      return rpcOutcome({ transactionId: id, journalId: 900 + id });
+    });
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1, 2], "sync", [], { bounds: { deadlineAtMs: 5_000, now } });
+    expect(outcome.results).toHaveLength(1);
+    expect(outcome.results[0]).toMatchObject({ transactionId: 1, outcome: "posted", journalId: 901 });
+    expect(outcome).toMatchObject({ stopReason: "time-budget", notAttempted: 1, notAttemptedTransactionIds: [2] });
+  });
+
+  it("an already expired deadline starts nothing", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 })]);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1], "sync", [], { bounds: { deadlineAtMs: 0, now: () => 1 } });
+    expect(outcome).toMatchObject({ stopReason: "time-budget", notAttempted: 1, results: [] });
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+  });
+
+  it("refusals and failures made posting calls, so they count towards the limit", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 }), freshSalary({ id: 2 }), freshSalary({ id: 3 })]);
+    vi.mocked(postingRepo.postRuleEngineJournalAtomic)
+      .mockRejectedValueOnce({ message: "VYRON_RULE_POST_UNBALANCED: 1 <> 2" })
+      .mockRejectedValueOnce(new Error("connection reset"));
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1, 2, 3], "import", [], { bounds: { maxPostings: 2 } });
+    expect(outcome.outcomes).toMatchObject({ refused: 1, failed: 1 });
+    expect(outcome).toMatchObject({ stopReason: "posting-limit", notAttemptedTransactionIds: [3] });
+  });
+
+  it("applyRulesToTransactions keeps its unbounded contract (the import and bank-sync callers are unchanged)", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue(Array.from({ length: 5 }, (_, i) => freshSalary({ id: i + 1 })));
+    const results = await applyRulesToTransactions("co_1", [1, 2, 3, 4, 5], "import");
+    expect(results.map((r) => r.outcome)).toEqual(["posted", "posted", "posted", "posted", "posted"]);
+  });
+});
+
+describe("Phase 5C — a caller without Banking:Post may classify but never post", () => {
+  it("Banking:Edit only: a transaction a rule would POST is left COMPLETELY untouched", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 })]);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1], "editor", [], { mayPost: false });
+
+    expect(outcome.results[0]).toMatchObject({ transactionId: 1, outcome: "not-permitted", autoPosted: false, journalId: null });
+    expect(outcome.results[0]!.notPostedReason).toContain("Banking:Post");
+    expect(outcome).toMatchObject({ notPermitted: 1, notPermittedTransactionIds: [1], notAttempted: 0, stopReason: null, postingAttempts: 0 });
+    // The whole point: NOTHING was written. No journal, and — critically —
+    // no claim either, so the row is still exactly as it was.
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+    expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
+  });
+
+  it("the untouched transaction is still CLAIMABLE, so a later run by someone who may post still posts it", async () => {
+    // This is the regression that matters most. Downgrading a would-be
+    // posting to a classification would set rule_id with no journal, which
+    // `isRuleOwnedAwaitingReview` treats as "needs a person" forever —
+    // the transaction would silently leave automatic processing for good.
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 })]);
+    await applyRulesToTransactionsBounded("co_1", [1], "editor", [], { mayPost: false });
+
+    const untouched = freshSalary({ id: 1 });
+    expect(isClaimableByRule(untouched)).toBe(true);
+    expect(isRuleOwnedAwaitingReview(untouched)).toBe(false);
+
+    // Same selection, same rules, this time by a caller who may post.
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([untouched]);
+    const second = await applyRulesToTransactionsBounded("co_1", [1], "poster");
+    expect(second.results[0]).toMatchObject({ outcome: "posted", autoPosted: true });
+    expect(second.notPermitted).toBe(0);
+  });
+
+  it("Banking:Edit only: classification a rule would do WITHOUT posting still happens", async () => {
+    // A flag-for-review rule posts nothing by design, so Edit remains
+    // sufficient — refusing it would remove function the user is entitled to.
+    vi.mocked(ruleRepo.listActiveBankingRules).mockResolvedValue([FLAG_RULE]);
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 })]);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1], "editor", [], { mayPost: false });
+
+    expect(outcome.results[0]).toMatchObject({ outcome: "classified" });
+    expect(outcome.notPermitted).toBe(0);
+    expect(explorerRepo.applyRuleActions).toHaveBeenCalledTimes(1);
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+  });
+
+  it("Banking:Edit only: a rule that resolves no GL account still classifies", async () => {
+    vi.mocked(ruleRepo.listActiveBankingRules).mockResolvedValue([SUPPLIER_RULE]);
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1, suggestedGlAccount: null })]);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1], "editor", [], { mayPost: false });
+
+    expect(outcome.results[0]).toMatchObject({ outcome: "classified" });
+    expect(outcome.notPermitted).toBe(0);
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+  });
+
+  it("Banking:Post: posting works exactly as before (the default is unchanged)", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 }), freshSalary({ id: 2 })]);
+    const explicit = await applyRulesToTransactionsBounded("co_1", [1, 2], "poster", [], { mayPost: true });
+    expect(explicit.outcomes).toMatchObject({ posted: 2, "not-permitted": 0 });
+
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 3 })]);
+    const byDefault = await applyRulesToTransactionsBounded("co_1", [3], "service");
+    expect(byDefault.outcomes).toMatchObject({ posted: 1, "not-permitted": 0 });
+    expect(byDefault.notPermitted).toBe(0);
+  });
+
+  it("a mixed selection separates posted, classified and not-permitted exactly, and every transaction is accounted for", async () => {
+    vi.mocked(ruleRepo.listActiveBankingRules).mockResolvedValue([SALARIES_RULE, FLAG_RULE]);
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([
+      freshSalary({ id: 1 }), // a rule resolves a GL account -> would post
+      freshSalary({ id: 2, beneficiary: "Salaries", description: "flagged" }),
+      unmatched(3), // no rule matches -> skipped
+    ]);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1, 2, 3], "editor", [], { mayPost: false });
+
+    const total = Object.values(outcome.outcomes).reduce((a, b) => a + b, 0);
+    expect(total).toBe(outcome.results.length);
+    expect(total + outcome.notAttempted).toBe(3);
+    expect(outcome.outcomes["not-permitted"]).toBe(outcome.notPermitted);
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+  });
+
+  it("mayPost is per call — one caller's refusal never leaks into the next", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 })]);
+    expect((await applyRulesToTransactionsBounded("co_1", [1], "a", [], { mayPost: false })).notPermitted).toBe(1);
+    expect((await applyRulesToTransactionsBounded("co_1", [1], "b", [], { mayPost: false })).notPermitted).toBe(1);
+    expect((await applyRulesToTransactionsBounded("co_1", [1], "c")).outcomes.posted).toBe(1);
+  });
+
+  it("tenant isolation: the pass only ever reads and writes the company it was given", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 })]);
+    await applyRulesToTransactionsBounded("co_1", [1], "poster");
+
+    expect(explorerRepo.getTransactionsByIds).toHaveBeenCalledWith("co_1", [1]);
+    expect(ruleRepo.listActiveBankingRules).toHaveBeenCalledWith("co_1", "Banking");
+    for (const call of vi.mocked(postingRepo.postRuleEngineJournalAtomic).mock.calls) expect(call[0]).toBe("co_1");
+    for (const call of vi.mocked(explorerRepo.applyRuleActions).mock.calls) expect(call[0]).toBe("co_1");
+  });
+
+  it("tenant isolation holds on the refused path too — nothing is written for any company", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 })]);
+    await applyRulesToTransactionsBounded("co_2", [1], "editor", [], { mayPost: false });
+
+    expect(explorerRepo.getTransactionsByIds).toHaveBeenCalledWith("co_2", [1]);
+    expect(postingRepo.postRuleEngineJournalAtomic).not.toHaveBeenCalled();
+    expect(explorerRepo.applyRuleActions).not.toHaveBeenCalled();
+  });
+
+  it("processTransaction's gate defaults to allowing posting, so no existing caller changes", async () => {
+    const withoutOption = await processTransaction("co_1", freshSalary({ id: 1 }), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { postingContext: postingContext() });
+    expect(withoutOption).toMatchObject({ outcome: "posted" });
+
+    const refused = await processTransaction("co_1", freshSalary({ id: 2 }), [SALARIES_RULE], BANK_ACCOUNTS_BY_ID, "System", { postingContext: postingContext(), mayPost: false });
+    expect(refused).toMatchObject({ outcome: "not-permitted" });
+  });
+
+  it("the gate is checked before the posting call, so a refusal never counts as a posting attempt", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue([freshSalary({ id: 1 }), freshSalary({ id: 2 })]);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1, 2], "editor", [], { mayPost: false, bounds: { maxPostings: 1 } });
+    // No posting call was made, so the posting limit is never reached and
+    // every selected transaction is still examined and reported.
+    expect(outcome).toMatchObject({ postingAttempts: 0, stopReason: null, notAttempted: 0, notPermitted: 2 });
+  });
+});
+
+describe("Phase 5C — bounds for a rule pass attached to an import or a bank sync", () => {
+  it("the attached bounds are the sweep's own documented defaults, not new numbers", () => {
+    expect(ATTACHED_RULE_PASS_BUDGET_MS).toBe(DEFAULT_RULE_ENGINE_BUDGET_MS);
+    expect(ATTACHED_RULE_PASS_MAX_POSTINGS).toBe(DEFAULT_RULE_ENGINE_MAX_POSTINGS);
+  });
+
+  it("attachedRulePassBounds sets a deadline relative to now and the shared posting cap", () => {
+    const bounds = attachedRulePassBounds(() => 1_000);
+    expect(bounds).toMatchObject({ deadlineAtMs: 1_000 + ATTACHED_RULE_PASS_BUDGET_MS, maxPostings: ATTACHED_RULE_PASS_MAX_POSTINGS });
+  });
+
+  it("a bounded attached pass leaves the remainder unprocessed and OPEN, never marked processed", async () => {
+    const rows = [freshSalary({ id: 1 }), freshSalary({ id: 2 }), freshSalary({ id: 3 })];
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue(rows);
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1, 2, 3], "import", [], { bounds: { maxPostings: 1 } });
+
+    expect(outcome).toMatchObject({ stopReason: "posting-limit", notAttempted: 2, notAttemptedTransactionIds: [2, 3] });
+    // The ones it did not start were not claimed, so they stay claimable.
+    expect(vi.mocked(explorerRepo.applyRuleActions).mock.calls.map((c) => c[1])).not.toContain(2);
+    expect(isClaimableByRule(freshSalary({ id: 2 }))).toBe(true);
+  });
+
+  it("every selected transaction is either in results or in notAttempted — none can vanish", async () => {
+    vi.mocked(explorerRepo.getTransactionsByIds).mockResolvedValue(Array.from({ length: 6 }, (_, i) => freshSalary({ id: i + 1 })));
+    const outcome = await applyRulesToTransactionsBounded("co_1", [1, 2, 3, 4, 5, 6], "import", [], { bounds: { maxPostings: 2 } });
+
+    const seen = [...outcome.results.map((r) => r.transactionId), ...outcome.notAttemptedTransactionIds].sort((a, b) => a - b);
+    expect(seen).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(outcome.results.length + outcome.notAttempted).toBe(6);
+  });
+});
+
+describe("Phase 5B — equal-priority rule ordering is unchanged (documented, not fixed)", () => {
+  it("among matching rules of one type with the same priority, the first in the listed order wins", () => {
+    const first = { ...SALARIES_RULE, id: 900, priority: 100, actions: [{ id: 9, actionType: "set_gl_account" as const, targetId: null, targetText: "6940" }] };
+    const second = { ...SALARIES_RULE, id: 800, priority: 100, actions: [{ id: 8, actionType: "set_gl_account" as const, targetId: null, targetText: "3030" }] };
+    const record = toEvaluable(freshSalary());
+    expect(evaluateTransactionAgainstRules(record, [first, second]).matchedRules.map((r) => r.id)).toEqual([900]);
+    expect(evaluateTransactionAgainstRules(record, [second, first]).matchedRules.map((r) => r.id)).toEqual([800]);
+  });
+
+  it("the repository orders active rules by rule_type and priority only (no id tiebreak)", () => {
+    const source = readFileSync(join(process.cwd(), "src/server/repositories/banking-rule-repository.ts"), "utf8");
+    const body = /export async function listActiveBankingRules[\s\S]*?\r?\n}\r?\n/.exec(source)?.[0] ?? "";
+    expect(body).toContain('.order("rule_type")');
+    expect(body).toContain('.order("priority")');
+    expect(body).not.toContain('.order("id")');
   });
 });

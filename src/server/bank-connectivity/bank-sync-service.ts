@@ -19,7 +19,7 @@ import * as connectivityRepo from "@/server/repositories/bank-connectivity-repos
 import * as importRepo from "@/server/repositories/import-repository";
 import { assignSourceOccurrences } from "@/server/import-centre/import-source-occurrence";
 import { getBankAccount } from "@/server/repositories/bank-account-repository";
-import { applyRulesToTransactions } from "@/server/services/rule-processing-service";
+import { applyRulesToTransactionsBounded, attachedRulePassBounds, type BoundedRuleProcessingOutcome } from "@/server/services/rule-processing-service";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
 import { classifyUnallocatedTransactionsWithAi } from "@/server/services/transaction-classification-service";
 import { getAuthorizedSession } from "./bank-connectivity-service";
@@ -59,6 +59,33 @@ export type SyncOutcome = {
   transactionsFetched: number;
   transactionsImported: number;
   transactionsDuplicate: number;
+  /** Phase 5C — what the attached Banking Rules pass did. `notPermitted`:
+   * transactions a rule would have posted, left untouched because this
+   * caller has no `Banking:Post`. `notAttempted`/`stopReason`: a bound was
+   * reached. In every case the transactions ARE synced and unchanged, so a
+   * later pass still processes them — a sync must never report itself as
+   * fully processed when it was not. */
+  rulePass: BankSyncRulePassOutcome;
+};
+
+export type BankSyncRulePassOutcome = {
+  notPermitted: number;
+  notAttempted: number;
+  stopReason: "time-budget" | "posting-limit" | null;
+};
+
+const NO_RULE_PASS: BankSyncRulePassOutcome = { notPermitted: 0, notAttempted: 0, stopReason: null };
+
+/** Phase 5C — options both sync entry points thread through. Both default
+ * to today's behaviour: `mayPost` unset = may post (the scheduler and
+ * every existing caller), `deadlineAtMs` unset = the attached pass's own
+ * budget. */
+export type BankSyncOptions = {
+  /** `false` when the caller holds `Banking:Edit` but not `Banking:Post`. */
+  mayPost?: boolean;
+  /** The caller's own deadline (the cron work budget, for a scheduled
+   * sync) — only ever shortens the attached rule pass. */
+  deadlineAtMs?: number;
 };
 
 /**
@@ -73,7 +100,8 @@ export type SyncOutcome = {
  * a wholly `Failed` run leaves it untouched (brief, Part 7 #10 / Part
  * 13's own required "failed sync does not move the cursor" test).
  */
-export async function syncBankConnectionAccount(companyId: string, linkedAccount: BankConnectionAccount, connection: BankConnection, nowIso: string, performedBy = "System"): Promise<SyncOutcome> {
+export async function syncBankConnectionAccount(companyId: string, linkedAccount: BankConnectionAccount, connection: BankConnection, nowIso: string, performedBy = "System", options: BankSyncOptions = {}): Promise<SyncOutcome> {
+  let rulePass: BoundedRuleProcessingOutcome | null = null;
   const todayIso = nowIso.slice(0, 10);
   const isInitial = linkedAccount.lastSyncedThrough === null;
   // Incremental syncs re-request FROM the last cursor date (inclusive,
@@ -175,7 +203,22 @@ export async function syncBankConnectionAccount(companyId: string, linkedAccount
     }
 
     if (createdTransactionIds.length > 0) {
-      await applyRulesToTransactions(companyId, createdTransactionIds, performedBy);
+      // Phase 5C — the rule pass attached to a sync, now with the
+      // caller's posting capability and explicit bounds. SYNCING is a
+      // `Banking:Edit` operation and stays one; POSTING what was synced
+      // needs `Banking:Post`, so a caller without it syncs and classifies
+      // in full while the transactions a rule would have posted are left
+      // untouched (and counted). The bounds stop the pass starting new
+      // transactions at the caller's deadline (the cron budget, for the
+      // scheduled sync) or the shared posting cap — never interrupting a
+      // posting call already in flight.
+      const bounds = attachedRulePassBounds();
+      rulePass = await applyRulesToTransactionsBounded(companyId, createdTransactionIds, performedBy, [], {
+        mayPost: options.mayPost !== false,
+        // Whichever runs out first — a caller's deadline never EXTENDS the
+        // attached pass's own budget, it only shortens it.
+        bounds: options.deadlineAtMs === undefined ? bounds : { ...bounds, deadlineAtMs: Math.min(bounds.deadlineAtMs!, options.deadlineAtMs) },
+      });
       // Phase 25I — this used to be unguarded, sitting between two steps
       // that had already genuinely succeeded (ingest, Rules) and one
       // still to come (AI classification below). A transient usage-
@@ -206,7 +249,13 @@ export async function syncBankConnectionAccount(companyId: string, linkedAccount
     // Cursor only advances here, on the success path.
     await connectivityRepo.recordSuccessfulSyncCursor(companyId, linkedAccount.id, rangeEnd, "Success", nowIso, mostRecentTransactionIso ? `${mostRecentTransactionIso}T00:00:00.000Z` : null);
 
-    return { run: { ...run, status: "Success", transactionsFetched: feedItems.length, transactionsImported: imported, transactionsDuplicate: duplicate, finishedAt: nowIso }, transactionsFetched: feedItems.length, transactionsImported: imported, transactionsDuplicate: duplicate };
+    return {
+      run: { ...run, status: "Success", transactionsFetched: feedItems.length, transactionsImported: imported, transactionsDuplicate: duplicate, finishedAt: nowIso },
+      transactionsFetched: feedItems.length,
+      transactionsImported: imported,
+      transactionsDuplicate: duplicate,
+      rulePass: rulePass === null ? NO_RULE_PASS : { notPermitted: rulePass.notPermitted, notAttempted: rulePass.notAttempted, stopReason: rulePass.stopReason },
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown sync error.";
     // Phase 25K — report whatever actually landed before the failure
@@ -222,7 +271,20 @@ export async function syncBankConnectionAccount(companyId: string, linkedAccount
   }
 }
 
-export type CompanySyncSummary = { attempted: number; succeeded: number; failed: number };
+export type CompanySyncSummary = {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  /** Phase 5C — the attached rule passes' totals across every account
+   * synced, so the scheduler's task summary (and the manual sync's
+   * response) reports exactly what was left unposted or unstarted, and
+   * why. `stopReason` is the first non-null reason any account's pass
+   * reported — enough to tell a bound was hit; the per-account detail is
+   * on each `SyncOutcome`. */
+  notPermitted: number;
+  notAttempted: number;
+  stopReason: "time-budget" | "posting-limit" | null;
+};
 
 /**
  * The Scheduler's own entry point (brief, Part 8's pseudocode) — "for
@@ -234,18 +296,24 @@ export type CompanySyncSummary = { attempted: number; succeeded: number; failed:
  * several linked accounts is recorded per-account, not as one
  * all-or-nothing batch.
  */
-export async function syncAllConnectedAccounts(companyId: string, nowIso: string, performedBy = "System"): Promise<CompanySyncSummary> {
+export async function syncAllConnectedAccounts(companyId: string, nowIso: string, performedBy = "System", options: BankSyncOptions = {}): Promise<CompanySyncSummary> {
   const connections = await connectivityRepo.listConnectedBankConnections(companyId);
   let attempted = 0;
   let succeeded = 0;
   let failed = 0;
+  let notPermitted = 0;
+  let notAttempted = 0;
+  let stopReason: CompanySyncSummary["stopReason"] = null;
 
   for (const connection of connections) {
     const linkedAccounts = await connectivityRepo.listBankConnectionAccounts(companyId, connection.id);
     for (const linkedAccount of linkedAccounts.filter((a) => a.status === "Active")) {
       attempted++;
       try {
-        await syncBankConnectionAccount(companyId, linkedAccount, connection, nowIso, performedBy);
+        const outcome = await syncBankConnectionAccount(companyId, linkedAccount, connection, nowIso, performedBy, options);
+        notPermitted += outcome.rulePass.notPermitted;
+        notAttempted += outcome.rulePass.notAttempted;
+        stopReason ??= outcome.rulePass.stopReason;
         succeeded++;
       } catch {
         // Already recorded on the bank_sync_runs row/bank_connection_accounts
@@ -256,5 +324,5 @@ export async function syncAllConnectedAccounts(companyId: string, nowIso: string
     }
   }
 
-  return { attempted, succeeded, failed };
+  return { attempted, succeeded, failed, notPermitted, notAttempted, stopReason };
 }

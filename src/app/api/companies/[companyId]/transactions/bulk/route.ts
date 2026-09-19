@@ -17,12 +17,20 @@ import {
   generateJournal,
   ValidationError,
 } from "@/server/services/transaction-explorer-service";
-import { requirePermission } from "@/server/services/permission-service";
+import { hasPermission, requirePermission } from "@/server/services/permission-service";
+import type { TransactionProcessingResult } from "@/server/services/rule-processing-service";
 import { getTransactionsByIds } from "@/server/repositories/transaction-explorer-repository";
 import { isEligibleForAiClassification } from "@/server/ai/transaction-classification/types";
 import { classifyTransactionsWithAiManual, MAX_AI_CLASSIFICATIONS_PER_RUN } from "@/server/services/transaction-classification-service";
 import { hasFeature } from "@/server/billing-platform/engine/feature-flag-engine";
 import { checkUsageLimit } from "@/server/billing-platform/engine/licensing-engine";
+
+/** Phase 5C — how many of the selected transactions the rules would have
+ * posted but this caller may not. Nothing was written for them; they are
+ * unchanged and still postable by someone with `Banking:Post`. */
+function countNotPermitted(results: TransactionProcessingResult[]): number {
+  return results.filter((r) => r.outcome === "not-permitted").length;
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ companyId: string }> }) {
   const session = await requireSession();
@@ -100,13 +108,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
         }
         return NextResponse.json({ ok: true, updatedIds: result.updatedIds, blockedIds: result.blockedIds });
       }
+      // Phase 5C — these two run the real Rule Engine pipeline, which can
+      // POST an accounting journal. `Banking:Edit` (checked above) stays
+      // the gate for the CLASSIFICATION they do, but the posting needs
+      // `Banking:Post` — the same permission Bank Posting and "Run Rule
+      // Engine Now" require. A caller without it keeps the classification
+      // and the transactions a rule would have posted are left untouched
+      // and reported in `notPermitted`, still open for someone who can
+      // post them. Asking here (not inside the service) keeps the
+      // permission model at the route layer, as every other check is.
       case "apply-rule": {
-        const results = await applyRule(companyId, body.transactionIds ?? [], performedBy);
-        return NextResponse.json({ results });
+        const mayPost = await hasPermission(companyId, "Banking:Post");
+        const results = await applyRule(companyId, body.transactionIds ?? [], performedBy, mayPost);
+        return NextResponse.json({ results, notPermitted: countNotPermitted(results) });
       }
       case "apply-rule-to-batch": {
-        const results = await applyRulesToRemainingBatchTransactions(companyId, body.importBatch ?? "", body.excludeTransactionId ?? null, performedBy, body.newRuleId ?? null);
-        return NextResponse.json({ results });
+        const mayPost = await hasPermission(companyId, "Banking:Post");
+        const results = await applyRulesToRemainingBatchTransactions(companyId, body.importBatch ?? "", body.excludeTransactionId ?? null, performedBy, body.newRuleId ?? null, mayPost);
+        return NextResponse.json({ results, notPermitted: countNotPermitted(results) });
       }
       case "apply-rule-company-wide": {
         if (typeof body.ruleId !== "number") return NextResponse.json({ error: "ruleId is required." }, { status: 400 });

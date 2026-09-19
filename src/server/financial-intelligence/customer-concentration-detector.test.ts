@@ -20,7 +20,7 @@ function invoice(overrides: Partial<SalesInvoice> = {}): SalesInvoice {
     status: "Posted", journalId: null, subtotal: 100, vatAmount: 0, total: 100, outstanding: 100,
     isRecurringTemplate: false, recurrencePattern: "", reference: "", notes: "", createdAt: "2026-06-01T00:00:00Z",
     submittedBy: null, submittedAt: null, approvedBy: null, approvedAt: null, postedAt: null,
-    cancelledBy: null, cancelledAt: null, originalInvoiceId: null, lines: [],
+    cancelledBy: null, cancelledAt: null, originalInvoiceId: null, reason: "", paymentTermsDays: null, lines: [],
     ...overrides,
   };
 }

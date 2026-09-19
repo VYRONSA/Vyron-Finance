@@ -32,6 +32,13 @@ export type Company = {
   email: string;
   website: string;
   postalAddress: string;
+  /** Phase 5I (migration 0104) — printed on documents. */
+  invoiceFooter: string;
+  paymentInstructions: string;
+  /** Phase 5J (migration 0106) — the fallback used to derive an invoice's
+   * due date when the customer has no payment terms of their own. Days,
+   * never negative; 30 unless changed. */
+  defaultPaymentTermsDays: number;
   // Xero Client Import — migration 0091. Structured address detail
   // alongside the free-text `address`/`postalAddress` lines above
   // (matching the line1/city/region/postalCode/country shape

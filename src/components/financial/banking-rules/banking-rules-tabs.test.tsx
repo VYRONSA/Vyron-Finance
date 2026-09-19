@@ -11,10 +11,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("BankingRulesTabs", () => {
+  // Phase 5G — rules are rows in one scrollable list now, so they are
+  // located by their visible name rather than by an always-mounted
+  // editable input.
   it("shows Rules as the default active tab, listing every rule", () => {
     render(<BankingRulesTabs companyId="co_1" rules={MOCK_BANKING_RULES} previewMode={false} />);
-    expect(screen.getByDisplayValue("Fenwick -> Supplier")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Freight -> Distribution")).toBeInTheDocument();
+    for (const r of MOCK_BANKING_RULES) {
+      expect(screen.getByText(r.name)).toBeInTheDocument();
+    }
   });
 
   it("switches to the Analytics tab", () => {
@@ -33,10 +37,18 @@ describe("BankingRulesTabs", () => {
     expect(screen.getByRole("button", { name: /add rule/i })).toBeDisabled();
   });
 
-  it("shows a Test button (ad-hoc single-record testing) alongside Simulate for every rule", () => {
+  // Phase 5G — Test and Simulate belong to the rule's editor, which now
+  // opens on demand instead of every rule mounting one. The capability
+  // is unchanged; what changed is that it no longer costs 100+ open
+  // forms to have it. Opening one rule must expose exactly one of each.
+  it("opening a rule exposes its Test and Simulate controls (one editor at a time)", () => {
     render(<BankingRulesTabs companyId="co_1" rules={MOCK_BANKING_RULES} previewMode={false} />);
-    expect(screen.getAllByRole("button", { name: "Test" }).length).toBe(MOCK_BANKING_RULES.length);
-    expect(screen.getAllByRole("button", { name: "Simulate" }).length).toBe(MOCK_BANKING_RULES.length);
+    expect(screen.queryByRole("button", { name: "Test" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(MOCK_BANKING_RULES[0]!.name) }));
+
+    expect(screen.getAllByRole("button", { name: "Test" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Simulate" })).toHaveLength(1);
   });
 
   it("has no obvious accessibility violations", async () => {

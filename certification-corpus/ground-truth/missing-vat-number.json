@@ -1,0 +1,64 @@
+{
+  "caseId": "missing-vat-number",
+  "documentId": "missing-vat-number.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Drakensberg Cold Chain",
+    "vatNumber": null,
+    "registrationNumber": "2011/998877/07"
+  },
+  "invoiceNumber": "DC-4570",
+  "invoiceDate": "2026-07-06",
+  "dueDate": "2026-08-05",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Refrigerated transport Durban to Gauteng",
+      "supplierSku": "RT-DBN-JHB",
+      "quantity": 1,
+      "uom": "trip",
+      "unitPrice": 4300,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 645,
+      "lineTotal": 4300
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 4300,
+    "vatAmount": 645,
+    "total": 4945
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      4300
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 4300,
+    "vat": 645,
+    "total": 4945
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "missing",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [
+      "missing-required-field"
+    ],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "The contrast case for no-vat. Here VAT IS charged and the heading IS 'TAX INVOICE', so the absent VAT number is genuinely MISSING — a defective tax invoice. Scoring this as correctly-absent would hide a real compliance problem."
+}

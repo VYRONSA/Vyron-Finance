@@ -243,3 +243,72 @@ describe("POSTING_RULES_IMPORT_TEMPLATE_HEADERS (Phase 32)", () => {
     expect(rows[0]).toMatchObject({ eventType: "Sales Invoice", side: "Debit", role: "debtors", fixedAccountCode: "1100", amountSource: "gross" });
   });
 });
+
+describe("buildJournalLinesFromRule — caller-supplied split (Phase 5J)", () => {
+  it("uses the supplied net/VAT verbatim instead of re-deriving them from gross + rate", () => {
+    // A document with one standard-rated line (1000 + 150) and one
+    // zero-rated line (500 + 0): total 1650, real VAT 150. No single
+    // blended rate reproduces that, so re-deriving would be wrong.
+    const result = buildJournalLinesFromRule(rule(), {
+      grossAmount: 1650,
+      vatRatePercent: 15,
+      amounts: { gross: 1650, net: 1500, vat: 150 },
+      description: "Invoice INV000001",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.lines).toEqual([
+      { accountCode: "1100", debit: 1650, credit: 0, description: "Invoice INV000001" },
+      { accountCode: "4000", debit: 0, credit: 1500, description: "Invoice INV000001" },
+      { accountCode: "2200", debit: 0, credit: 150, description: "Invoice INV000001" },
+    ]);
+    // What re-deriving would have produced instead, and why it is wrong:
+    expect(splitGrossAmount(1650, 15)).toEqual({ gross: 1650, net: 1434.78, vat: 215.22 });
+  });
+
+  it("still derives the split when the caller supplies none — every existing caller is unaffected", () => {
+    const without = buildJournalLinesFromRule(rule(), { grossAmount: 1150, vatRatePercent: 15, description: "x" });
+    const explicit = buildJournalLinesFromRule(rule(), {
+      grossAmount: 1150,
+      vatRatePercent: 15,
+      amounts: splitGrossAmount(1150, 15),
+      description: "x",
+    });
+    expect(without).toEqual(explicit);
+  });
+
+  it("refuses a supplied split that does not add up, rather than posting an unbalanced journal", () => {
+    const result = buildJournalLinesFromRule(rule(), {
+      grossAmount: 1150,
+      vatRatePercent: 15,
+      amounts: { gross: 1150, net: 1000, vat: 149 }, // one cent short
+      description: "x",
+    });
+    expect(result).toEqual({ ok: false, reason: expect.stringMatching(/does not add up/i) });
+  });
+
+  it("omits the VAT line when a supplied split carries no VAT (a wholly zero-rated document)", () => {
+    const result = buildJournalLinesFromRule(rule(), {
+      grossAmount: 500,
+      vatRatePercent: 0,
+      amounts: { gross: 500, net: 500, vat: 0 },
+      description: "x",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.lines.map((l) => l.accountCode)).toEqual(["1100", "4000"]);
+  });
+
+  it("balances a supplied split: debits equal credits", () => {
+    const result = buildJournalLinesFromRule(rule(), {
+      grossAmount: 201.25,
+      vatRatePercent: 15,
+      amounts: { gross: 201.25, net: 175, vat: 26.25 },
+      description: "x",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const debit = result.lines.reduce((s, l) => s + l.debit, 0);
+    const credit = result.lines.reduce((s, l) => s + l.credit, 0);
+    expect(Math.round(debit * 100) / 100).toBe(Math.round(credit * 100) / 100);
+  });
+});

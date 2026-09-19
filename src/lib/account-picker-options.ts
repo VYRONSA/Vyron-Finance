@@ -47,8 +47,16 @@ export function customerOptions(customers: Customer[]): ComboboxOption<number>[]
   return customers.map((c) => ({
     value: c.id,
     label: c.name,
-    sublabel: c.customerCode,
-    searchText: `${c.customerCode} ${c.name}`,
+    // Phase 5I — the sublabel is what tells two similarly-named customers
+    // apart in the results, so it carries the identifiers a person would
+    // actually use to confirm they have the right one. Empty fields are
+    // dropped rather than leaving stray separators.
+    sublabel: [c.customerCode, c.vatNumber && `VAT ${c.vatNumber}`, c.registrationNumber].filter(Boolean).join(" · "),
+    // Searchable on everything the row shows, plus the registration
+    // number. `Combobox` lowercases and fuzzy-matches this, so it stays
+    // case-insensitive, and it is still built from the caller's already
+    // tenant-scoped list — no new query and no cross-company reach.
+    searchText: `${c.customerCode} ${c.name} ${c.vatNumber} ${c.registrationNumber}`.replace(/\s+/g, " ").trim(),
   }));
 }
 

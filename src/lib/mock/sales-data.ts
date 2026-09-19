@@ -47,46 +47,61 @@ export const MOCK_DELIVERIES: Delivery[] = [
   },
 ];
 
+/* Phase 5J — these documents now reconcile the way real ones do: each
+ * line's own net + VAT adds up to that line's total, and the lines add up
+ * to the header. They previously carried `vatAmount: 0` on every line
+ * alongside a non-zero header VAT, which is exactly the inconsistency
+ * this phase removed — Preview Mode would have shown the defect as if it
+ * were the design. INV000003 carries a discount and a zero-rated line so
+ * Preview Mode exercises both new document columns, and the credit and
+ * debit notes carry the s21(3) particulars. */
 export const MOCK_SALES_INVOICES: SalesInvoice[] = [
   {
     id: 1, companyId: COMPANY_ID, customerId: 1, orderId: null, deliveryId: null, invoiceNumber: "INV000001", documentType: "Invoice",
     invoiceDate: "2026-06-01", dueDate: "2026-06-30", vatTreatmentCode: "Standard Rated", status: "Posted", journalId: null,
     subtotal: 10000, vatAmount: 1500, total: 11500, outstanding: 11500, isRecurringTemplate: false, recurrencePattern: "",
     reference: "", notes: "", createdAt: "2026-06-01T09:00:00Z", submittedBy: "finance@fenwickrowe.co.za", submittedAt: "2026-06-01T09:05:00Z",
-    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-06-01T10:00:00Z", postedAt: "2026-06-01T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: null,
-    lines: [{ id: 1, invoiceId: 1, lineOrder: 0, description: "Q2 consulting retainer", quantity: 1, unitPrice: 10000, lineTotal: 10000, stockItemId: null, glAccount: null, vatCode: null, discount: 0, netAmount: 10000, vatAmount: 0 }],
+    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-06-01T10:00:00Z", postedAt: "2026-06-01T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: null, reason: "", paymentTermsDays: 30,
+    lines: [{ id: 1, invoiceId: 1, lineOrder: 0, description: "Q2 consulting retainer", quantity: 1, unitPrice: 10000, lineTotal: 11500, stockItemId: null, glAccount: null, vatCode: "Standard Rated", discount: 0, netAmount: 10000, vatAmount: 1500 }],
   },
   {
     id: 2, companyId: COMPANY_ID, customerId: 1, orderId: null, deliveryId: null, invoiceNumber: "INV000002", documentType: "Invoice",
     invoiceDate: "2026-05-01", dueDate: "2026-05-31", vatTreatmentCode: "Standard Rated", status: "Posted", journalId: null,
     subtotal: 5000, vatAmount: 750, total: 5750, outstanding: 0, isRecurringTemplate: false, recurrencePattern: "",
     reference: "", notes: "", createdAt: "2026-05-01T09:00:00Z", submittedBy: "finance@fenwickrowe.co.za", submittedAt: "2026-05-01T09:05:00Z",
-    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-05-01T10:00:00Z", postedAt: "2026-05-01T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: null,
-    lines: [{ id: 2, invoiceId: 2, lineOrder: 0, description: "Q1 consulting retainer", quantity: 1, unitPrice: 5000, lineTotal: 5000, stockItemId: null, glAccount: null, vatCode: null, discount: 0, netAmount: 5000, vatAmount: 0 }],
+    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-05-01T10:00:00Z", postedAt: "2026-05-01T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: null, reason: "", paymentTermsDays: 30,
+    lines: [{ id: 2, invoiceId: 2, lineOrder: 0, description: "Q1 consulting retainer", quantity: 1, unitPrice: 5000, lineTotal: 5750, stockItemId: null, glAccount: null, vatCode: "Standard Rated", discount: 0, netAmount: 5000, vatAmount: 750 }],
   },
   {
+    // A discounted, mixed-rate document: 2 x 1,200 less 400 = 2,000 at
+    // 15% (300), plus a zero-rated 500 delivery. 2,500 + 300 = 2,800.
     id: 3, companyId: COMPANY_ID, customerId: 2, orderId: null, deliveryId: null, invoiceNumber: "INV000003", documentType: "Invoice",
-    invoiceDate: "2026-07-25", dueDate: "2026-08-08", vatTreatmentCode: "Standard Rated", status: "Posted", journalId: null,
-    subtotal: 2000, vatAmount: 300, total: 2300, outstanding: 2300, isRecurringTemplate: false, recurrencePattern: "",
-    reference: "", notes: "", createdAt: "2026-07-25T09:00:00Z", submittedBy: "finance@fenwickrowe.co.za", submittedAt: "2026-07-25T09:05:00Z",
-    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-07-25T10:00:00Z", postedAt: "2026-07-25T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: null,
-    lines: [{ id: 3, invoiceId: 3, lineOrder: 0, description: "Dental supplies", quantity: 1, unitPrice: 2000, lineTotal: 2000, stockItemId: null, glAccount: null, vatCode: null, discount: 0, netAmount: 2000, vatAmount: 0 }],
+    invoiceDate: "2026-07-25", dueDate: "2026-08-24", vatTreatmentCode: "Standard Rated", status: "Posted", journalId: null,
+    subtotal: 2500, vatAmount: 300, total: 2800, outstanding: 2800, isRecurringTemplate: false, recurrencePattern: "",
+    reference: "", notes: "Thank you for your business.", createdAt: "2026-07-25T09:00:00Z", submittedBy: "finance@fenwickrowe.co.za", submittedAt: "2026-07-25T09:05:00Z",
+    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-07-25T10:00:00Z", postedAt: "2026-07-25T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: null, reason: "", paymentTermsDays: 30,
+    lines: [
+      { id: 3, invoiceId: 3, lineOrder: 0, description: "Dental supplies", quantity: 2, unitPrice: 1200, lineTotal: 2300, stockItemId: null, glAccount: null, vatCode: "Standard Rated", discount: 400, netAmount: 2000, vatAmount: 300 },
+      { id: 6, invoiceId: 3, lineOrder: 1, description: "Export delivery — zero rated", quantity: 1, unitPrice: 500, lineTotal: 500, stockItemId: null, glAccount: null, vatCode: "Zero Rated", discount: 0, netAmount: 500, vatAmount: 0 },
+    ],
   },
   {
     id: 4, companyId: COMPANY_ID, customerId: 1, orderId: null, deliveryId: null, invoiceNumber: "CN000001", documentType: "Credit Note",
     invoiceDate: "2026-06-15", dueDate: null, vatTreatmentCode: "Standard Rated", status: "Posted", journalId: null,
     subtotal: 1000, vatAmount: 150, total: 1150, outstanding: 0, isRecurringTemplate: false, recurrencePattern: "",
     reference: "Goods returned", notes: "", createdAt: "2026-06-15T09:00:00Z", submittedBy: "finance@fenwickrowe.co.za", submittedAt: "2026-06-15T09:05:00Z",
-    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-06-15T10:00:00Z", postedAt: "2026-06-15T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: null,
-    lines: [{ id: 4, invoiceId: 4, lineOrder: 0, description: "Return — damaged goods", quantity: 1, unitPrice: 1000, lineTotal: 1000, stockItemId: null, glAccount: null, vatCode: null, discount: 0, netAmount: 1000, vatAmount: 0 }],
+    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-06-15T10:00:00Z", postedAt: "2026-06-15T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: 1, reason: "Two units returned damaged on delivery",
+    paymentTermsDays: null,
+    lines: [{ id: 4, invoiceId: 4, lineOrder: 0, description: "Return — damaged goods", quantity: 1, unitPrice: 1000, lineTotal: 1150, stockItemId: null, glAccount: null, vatCode: "Standard Rated", discount: 0, netAmount: 1000, vatAmount: 150 }],
   },
   {
     id: 5, companyId: COMPANY_ID, customerId: 2, orderId: null, deliveryId: null, invoiceNumber: "DN000001", documentType: "Debit Note",
     invoiceDate: "2026-07-28", dueDate: "2026-08-27", vatTreatmentCode: "Standard Rated", status: "Posted", journalId: null,
     subtotal: 200, vatAmount: 30, total: 230, outstanding: 230, isRecurringTemplate: false, recurrencePattern: "",
     reference: "Freight adjustment", notes: "", createdAt: "2026-07-28T09:00:00Z", submittedBy: "finance@fenwickrowe.co.za", submittedAt: "2026-07-28T09:05:00Z",
-    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-07-28T10:00:00Z", postedAt: "2026-07-28T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: null,
-    lines: [{ id: 5, invoiceId: 5, lineOrder: 0, description: "Freight surcharge adjustment", quantity: 1, unitPrice: 200, lineTotal: 200, stockItemId: null, glAccount: null, vatCode: null, discount: 0, netAmount: 200, vatAmount: 0 }],
+    approvedBy: "controller@fenwickrowe.co.za", approvedAt: "2026-07-28T10:00:00Z", postedAt: "2026-07-28T10:00:05Z", cancelledBy: null, cancelledAt: null, originalInvoiceId: 3, reason: "Freight surcharge omitted from the original invoice",
+    paymentTermsDays: 30,
+    lines: [{ id: 5, invoiceId: 5, lineOrder: 0, description: "Freight surcharge adjustment", quantity: 1, unitPrice: 200, lineTotal: 230, stockItemId: null, glAccount: null, vatCode: "Standard Rated", discount: 0, netAmount: 200, vatAmount: 30 }],
   },
 ];
 

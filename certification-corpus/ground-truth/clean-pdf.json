@@ -1,0 +1,62 @@
+{
+  "caseId": "clean-pdf",
+  "documentId": "clean-pdf.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-10041",
+  "invoiceDate": "2026-06-11",
+  "dueDate": "2026-07-11",
+  "orderReference": "PO-4471",
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Maize meal 10kg",
+      "supplierSku": "MM10",
+      "quantity": 10,
+      "uom": "bag",
+      "unitPrice": 100,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 150,
+      "lineTotal": 1000
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1000,
+    "vatAmount": 150,
+    "total": 1150
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1000
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1000,
+    "vat": 150,
+    "total": 1150
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "present"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "The baseline. Every particular present, arithmetic agrees, one line."
+}

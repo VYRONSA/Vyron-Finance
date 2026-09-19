@@ -1,0 +1,86 @@
+{
+  "caseId": "small-text",
+  "documentId": "small-text.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-10133",
+  "invoiceDate": "2026-06-22",
+  "dueDate": "2026-07-22",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Long grain rice 10kg",
+      "supplierSku": "LR10",
+      "quantity": 4,
+      "uom": "bag",
+      "unitPrice": 118,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 70.8,
+      "lineTotal": 472
+    },
+    {
+      "description": "White sugar 2.5kg",
+      "supplierSku": "WS25",
+      "quantity": 12,
+      "uom": "pack",
+      "unitPrice": 42.75,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 76.95,
+      "lineTotal": 513
+    },
+    {
+      "description": "Table salt 1kg",
+      "supplierSku": "TS1",
+      "quantity": 20,
+      "uom": "pack",
+      "unitPrice": 11.6,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 34.8,
+      "lineTotal": 232
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1217,
+    "vatAmount": 182.55,
+    "total": 1399.55
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      472,
+      513,
+      232
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1217,
+    "vat": 182.55,
+    "total": 1399.55
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "Body text at roughly 6pt. Descriptions contain quantities (10kg, 2.5kg, 1kg) that are part of the product name, not the invoice quantity."
+}

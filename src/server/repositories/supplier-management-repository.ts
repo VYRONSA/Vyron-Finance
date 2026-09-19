@@ -33,6 +33,8 @@ export type UpdatableSupplierFields = Partial<{
   bank_branch_code: string;
   vat_number: string;
   tax_number: string;
+  /** Phase 5I — migration 0103. */
+  registration_number: string;
   risk_rating: SupplierRiskRating;
   payment_terms_days: number;
   spending_limit: number;

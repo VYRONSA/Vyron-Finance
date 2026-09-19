@@ -79,6 +79,8 @@ export async function createBankAccount(companyId: string, input: CreateBankAcco
 
 export type EditBankAccountRequest = Partial<{
   accountName: string;
+  /** Phase 5I — opt in to printing on customer-facing documents. */
+  showOnDocuments: boolean;
   bankName: string;
   accountType: string;
   branch: string;
@@ -170,6 +172,7 @@ export async function editBankAccount(companyId: string, accountId: number, inpu
 
   const updated = await repo.updateBankAccount(companyId, accountId, {
     ...(input.accountName !== undefined && { account_name: input.accountName.trim() }),
+    ...(input.showOnDocuments !== undefined && { show_on_documents: input.showOnDocuments }),
     ...(input.bankName !== undefined && { bank_name: input.bankName.trim() }),
     ...(input.accountType !== undefined && { account_type: input.accountType.trim() }),
     ...(input.branch !== undefined && { branch: input.branch.trim() }),

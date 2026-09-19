@@ -19,15 +19,19 @@ vi.mock("@/server/repositories/import-repository", () => ({
 }));
 vi.mock("@/server/repositories/bank-account-repository", () => ({ getOrCreateBankAccountByNumber: vi.fn() }));
 vi.mock("@/server/billing-platform/engine/usage-metering-engine", () => ({ recordUsageEvent: vi.fn() }));
-vi.mock("@/server/services/rule-processing-service", () => ({ applyRulesToTransactions: vi.fn() }));
+vi.mock("@/server/services/rule-processing-service", () => ({
+  // Phase 5C — the import now runs the BOUNDED rule pass.
+  applyRulesToTransactionsBounded: vi.fn(),
+  attachedRulePassBounds: vi.fn(() => ({ deadlineAtMs: 9_999_999_999_999, maxPostings: 150, now: Date.now })),
+}));
 vi.mock("@/server/services/transaction-classification-service", () => ({ classifyUnallocatedTransactionsWithAi: vi.fn() }));
 vi.mock("@/server/services/company-service", () => ({ getCompany: vi.fn() }));
 
-import { importBankStatement } from "./import-service";
+import { confirmPdfBankStatementImport, importBankStatement } from "./import-service";
 import { resolveBankStatementAdapter } from "@/server/import-centre/bank-statement-adapter-registry";
 import * as importRepo from "@/server/repositories/import-repository";
 import * as bankAccountRepo from "@/server/repositories/bank-account-repository";
-import { applyRulesToTransactions } from "@/server/services/rule-processing-service";
+import { applyRulesToTransactionsBounded } from "@/server/services/rule-processing-service";
 import { classifyUnallocatedTransactionsWithAi } from "@/server/services/transaction-classification-service";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
 
@@ -44,7 +48,7 @@ beforeEach(() => {
   vi.mocked(bankAccountRepo.getOrCreateBankAccountByNumber).mockReset().mockResolvedValue({ account: { id: 1 } as never, created: false });
   vi.mocked(importRepo.ingestBankTransactionIdempotent).mockReset().mockResolvedValue({ transaction: { id: 501 } as never, created: true });
   vi.mocked(importRepo.insertImportBatch).mockReset().mockResolvedValue({ id: 1 } as never);
-  vi.mocked(applyRulesToTransactions).mockReset().mockResolvedValue([{ autoPosted: false }] as never);
+  vi.mocked(applyRulesToTransactionsBounded).mockReset().mockResolvedValue({ results: [{ autoPosted: false }], outcomes: {}, postingAttempts: 0, notAttempted: 0, notAttemptedTransactionIds: [], stopReason: null, notPermitted: 0, notPermittedTransactionIds: [] } as never);
   vi.mocked(classifyUnallocatedTransactionsWithAi).mockReset().mockResolvedValue({ attempted: 1, classified: 1, autoAllocated: 0, noConfidentSuggestion: 0, failed: 0, rateLimited: 0 } as never);
   vi.mocked(recordUsageEvent).mockReset().mockResolvedValue(undefined as never);
 });
@@ -53,10 +57,10 @@ describe("importBankStatement — AI classification wiring", () => {
   it("calls AI classification with the newly created transaction ids, after Banking Rules", async () => {
     await importBankStatement("company-a", fakeFile(), "tester");
 
-    expect(applyRulesToTransactions).toHaveBeenCalledWith("company-a", [501], "tester");
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("company-a", [501], "tester", [], expect.objectContaining({ mayPost: true }));
     expect(classifyUnallocatedTransactionsWithAi).toHaveBeenCalledWith("company-a", [501], "tester");
 
-    const rulesCallOrder = vi.mocked(applyRulesToTransactions).mock.invocationCallOrder[0]!;
+    const rulesCallOrder = vi.mocked(applyRulesToTransactionsBounded).mock.invocationCallOrder[0]!;
     const aiCallOrder = vi.mocked(classifyUnallocatedTransactionsWithAi).mock.invocationCallOrder[0]!;
     expect(rulesCallOrder).toBeLessThan(aiCallOrder);
   });
@@ -82,7 +86,7 @@ describe("importBankStatement — AI classification wiring", () => {
 
     await importBankStatement("company-a", fakeFile(), "tester");
 
-    expect(applyRulesToTransactions).toHaveBeenCalledTimes(1);
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledTimes(1);
   });
 
   it("a transient usage-metering failure does not fail the import or skip Banking Rules/AI classification (Phase 25I)", async () => {
@@ -91,7 +95,63 @@ describe("importBankStatement — AI classification wiring", () => {
     const outcome = await importBankStatement("company-a", fakeFile(), "tester");
 
     expect(outcome.batch).toEqual({ id: 1 });
-    expect(applyRulesToTransactions).toHaveBeenCalledWith("company-a", [501], "tester");
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("company-a", [501], "tester", [], expect.objectContaining({ mayPost: true }));
     expect(classifyUnallocatedTransactionsWithAi).toHaveBeenCalledWith("company-a", [501], "tester");
+  });
+});
+
+describe("Phase 5C — import creates transactions with Banking:Create; posting them needs Banking:Post", () => {
+  it("mayPost false reaches the rule pass, and the import still completes in full", async () => {
+    const outcome = await importBankStatement("company-a", fakeFile(), "tester", { mayPost: false });
+
+    expect(outcome.batch).toEqual({ id: 1 });
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("company-a", [501], "tester", [], expect.objectContaining({ mayPost: false }));
+    // The transactions themselves were still created.
+    expect(importRepo.ingestBankTransactionIdempotent).toHaveBeenCalled();
+  });
+
+  it("omitting the option means may-post — the inbound-email/service path is unchanged", async () => {
+    await importBankStatement("company-a", fakeFile(), "tester");
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("company-a", [501], "tester", [], expect.objectContaining({ mayPost: true }));
+  });
+
+  it("the import surfaces what the rule pass left unposted or unstarted, and why", async () => {
+    vi.mocked(applyRulesToTransactionsBounded).mockResolvedValue({
+      results: [], outcomes: {}, postingAttempts: 0, notAttempted: 4, notAttemptedTransactionIds: [1, 2, 3, 4],
+      stopReason: "time-budget", notPermitted: 7, notPermittedTransactionIds: [],
+    } as never);
+
+    const outcome = await importBankStatement("company-a", fakeFile(), "tester", { mayPost: false });
+    expect(outcome.rulePass).toEqual({ notPermitted: 7, notAttempted: 4, stopReason: "time-budget" });
+  });
+
+  it("the rule pass an import runs is BOUNDED", async () => {
+    await importBankStatement("company-a", fakeFile(), "tester");
+    const options = vi.mocked(applyRulesToTransactionsBounded).mock.calls[0]![4]!;
+    expect(options.bounds).toMatchObject({ maxPostings: 150 });
+    expect(options.bounds!.deadlineAtMs).toBeGreaterThan(0);
+  });
+
+  it("an import with no newly created transactions reports a clean rule pass and runs none", async () => {
+    vi.mocked(importRepo.ingestBankTransactionIdempotent).mockResolvedValue({ transaction: { id: 501 } as never, created: false });
+    const outcome = await importBankStatement("company-a", fakeFile(), "tester", { mayPost: false });
+    expect(outcome.rulePass).toEqual({ notPermitted: 0, notAttempted: 0, stopReason: null });
+    expect(applyRulesToTransactionsBounded).not.toHaveBeenCalled();
+  });
+
+  it("the PDF confirm path separates the two permissions identically", async () => {
+    const input = { batchId: "B1", sourceFilename: "s.pdf", metadata: {}, transactions: [{ transactionDate: "2026-01-01", description: "x", beneficiary: "x", debit: 1, credit: 0, reference: "", balance: null, bankAccount: "Cheque", vat: null, glAccount: "", notes: "" }] } as never;
+
+    await confirmPdfBankStatementImport("company-a", input, "tester", { mayPost: false });
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("company-a", [501], "tester", [], expect.objectContaining({ mayPost: false }));
+
+    vi.mocked(applyRulesToTransactionsBounded).mockClear();
+    await confirmPdfBankStatementImport("company-a", input, "tester");
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("company-a", [501], "tester", [], expect.objectContaining({ mayPost: true }));
+  });
+
+  it("tenant isolation: the rule pass is scoped to the company being imported into", async () => {
+    await importBankStatement("company-b", fakeFile(), "tester", { mayPost: false });
+    expect(vi.mocked(applyRulesToTransactionsBounded).mock.calls[0]![0]).toBe("company-b");
   });
 });

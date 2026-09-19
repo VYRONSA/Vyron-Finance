@@ -33,6 +33,11 @@ export type UploadDocumentInput = {
   mimeType: string;
   file: Blob;
   retentionUntil: string | null;
+  /** Phase 5L — SHA-256 of the bytes, computed by the caller that already
+   * has them. Optional: only paths that need deterministic file identity
+   * (supplier invoice capture) supply it, and a document without one is
+   * simply a document whose identity was never computed. */
+  contentSha256?: string | null;
   uploadedBy: string;
 };
 
@@ -92,6 +97,7 @@ export async function uploadDocument(
     documentGroupId,
     versionNumber,
     category: input.category,
+    contentSha256: input.contentSha256 ?? null,
     filename: input.filename,
     storagePath,
     mimeType: input.mimeType,

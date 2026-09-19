@@ -118,6 +118,8 @@ export function SupplierMergeDialog({
           <dd className="text-right">{candidate.vatNumber || "—"}</dd>
           <dt className="text-vf-ink-faint">Tax Number</dt>
           <dd className="text-right">{candidate.taxNumber || "—"}</dd>
+          <dt className="text-vf-ink-faint">Registration No.</dt>
+          <dd className="text-right">{candidate.registrationNumber || "—"}</dd>
           <dt className="text-vf-ink-faint">Payment Terms</dt>
           <dd className="text-right">{candidate.paymentTermsDays} days</dd>
           <dt className="text-vf-ink-faint">Linked Records</dt>

@@ -37,7 +37,7 @@ function company(overrides: Partial<Company> = {}): Company {
     id: "company-a", organisationId: "org_1", name: "Acme Ltd", industry: "Retail",
     status: "active", registrationNumber: "", address: "", financialYearStartMonth: 3,
     baseCurrencyCode: "ZAR", createdAt: "2025-01-01T00:00:00.000Z",
-    tradingName: "", vatNumber: "", telephone: "", email: "", website: "", postalAddress: "",
+    tradingName: "", vatNumber: "", telephone: "", email: "", website: "", postalAddress: "", invoiceFooter: "", paymentInstructions: "", defaultPaymentTermsDays: 30,
     city: "", province: "", postalCode: "", country: "",
     ...overrides,
   };

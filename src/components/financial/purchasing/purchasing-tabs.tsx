@@ -8,13 +8,17 @@ import { PurchaseOrdersTab } from "./purchase-orders-tab";
 import { GrnsTab } from "./grns-tab";
 import { BillsTab } from "./bills-tab";
 import { PaymentsTab } from "./payments-tab";
+import { AiInvoiceCaptureTab } from "./ai-invoice-capture-tab";
 import type { BankAccount, ImportedBill, Supplier } from "@/server/accounting/types";
 import type { CostCentre, Department, Project, VatTreatment } from "@/server/company-management/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
 import type { GoodsReceivedNote, PurchaseOrder, PurchaseRequisition, SupplierPayment } from "@/server/purchasing/types";
 import type { StockItem } from "@/server/inventory/types";
 
-const TABS = ["Requisitions", "Purchase Orders", "GRNs", "Bills", "Payments"] as const;
+// Phase 5L — "AI Invoice Capture" sits beside Bills because what it
+// produces IS a draft bill. It is deliberately not a separate AI
+// application bolted onto the side of the product.
+const TABS = ["Requisitions", "Purchase Orders", "GRNs", "Bills", "AI Invoice Capture", "Payments"] as const;
 type Tab = (typeof TABS)[number];
 
 function slugFromTab(tab: Tab): string {
@@ -110,6 +114,15 @@ export function PurchasingTabs({
             projects={projects}
             departments={departments}
             previewMode={previewMode}
+          />
+        )}
+        {activeTab === "AI Invoice Capture" && (
+          <AiInvoiceCaptureTab
+            companyId={companyId}
+            previewMode={previewMode}
+            suppliers={suppliers}
+            vatTreatments={vatTreatments}
+            chartOfAccounts={chartOfAccounts}
           />
         )}
         {activeTab === "Payments" && <PaymentsTab companyId={companyId} payments={payments} suppliers={suppliers} bills={bills} bankAccounts={bankAccounts} previewMode={previewMode} />}

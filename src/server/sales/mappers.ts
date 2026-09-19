@@ -262,6 +262,11 @@ export type SalesInvoiceRow = {
   cancelled_by: string | null;
   cancelled_at: string | null;
   original_invoice_id: number | null;
+  /** Phase 5J (0106). Optional on the row type so a fixture or a query
+   * written before 0106 still maps — the fallbacks below produce exactly
+   * what such a row already means: no reason recorded, no derived terms. */
+  reason?: string | null;
+  payment_terms_days?: number | null;
   sales_invoice_lines?: SalesInvoiceLineRow[];
 };
 
@@ -296,6 +301,8 @@ export function salesInvoiceFromRow(row: SalesInvoiceRow): SalesInvoice {
     cancelledBy: row.cancelled_by,
     cancelledAt: row.cancelled_at,
     originalInvoiceId: row.original_invoice_id,
+    reason: row.reason ?? "",
+    paymentTermsDays: row.payment_terms_days ?? null,
     lines: (row.sales_invoice_lines ?? []).slice().sort((a, b) => a.line_order - b.line_order).map(salesInvoiceLineFromRow),
   };
 }

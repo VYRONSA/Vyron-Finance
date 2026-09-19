@@ -1,0 +1,457 @@
+/**
+ * Repository layer for VYRON AI Supplier Invoice Capture (migration 0108).
+ *
+ * Every query is scoped by `company_id` in addition to the RLS policy —
+ * belt and braces, the convention every other repository here follows. The
+ * feature's own tables carry a real tenant predicate with `WITH CHECK`, not
+ * VYRON COST's `using (true)`.
+ *
+ * This file never touches `ae_imported_bills`, `ae_journals` or
+ * `gl_transactions`. Conversion goes through `purchase-bill-service`, and
+ * `accounting-reconciliation.test.ts` asserts that no module in this
+ * feature writes to an accounting table.
+ */
+
+import { createClient } from "@/lib/supabase/server";
+import type {
+  CaptureStatus,
+  DuplicateStatus,
+  GlAccountSource,
+  SupplierMatchTier,
+  ValidationStatus,
+  VatCodeSource,
+} from "@/server/supplier-invoice-capture/types";
+
+const LIST_CAP = 500;
+
+export type CaptureRow = {
+  id: number;
+  company_id: string;
+  document_id: number;
+  status: CaptureStatus;
+  /** Phase 5N — what the document's own heading said it is. Informational
+   * at review; a structural refusal at conversion for anything that is not
+   * an Invoice. Null on every capture taken before 0109, and null is not
+   * treated as suspicious. */
+  document_type: string | null;
+  supplier_name_extracted: string | null;
+  supplier_vat_number_extracted: string | null;
+  supplier_registration_number_extracted: string | null;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  order_reference: string | null;
+  currency_code: string | null;
+  subtotal: number | null;
+  discount_total: number | null;
+  vat_amount: number | null;
+  total: number | null;
+  supplier_id: number | null;
+  supplier_match_tier: SupplierMatchTier | null;
+  supplier_candidates: unknown;
+  validation_status: ValidationStatus;
+  validation_findings: unknown;
+  model_confidence: number | null;
+  duplicate_status: DuplicateStatus;
+  duplicate_of_capture_id: number | null;
+  duplicate_of_bill_id: number | null;
+  duplicate_reason: string;
+  extraction_attempts: number;
+  last_error_category: string | null;
+  last_error_message: string | null;
+  bill_id: number | null;
+  converted_at: string | null;
+  converted_by: string | null;
+  uploaded_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CaptureLineRow = {
+  id: number;
+  capture_id: number;
+  line_order: number;
+  description: string;
+  supplier_sku: string | null;
+  quantity: number | null;
+  uom: string | null;
+  pack_description: string | null;
+  pack_quantity: number | null;
+  unit_price: number | null;
+  discount: number | null;
+  vat_rate_percent: number | null;
+  vat_amount: number | null;
+  line_total: number | null;
+  gl_account_suggested: string | null;
+  gl_account_source: GlAccountSource | null;
+  vat_code_suggested: string | null;
+  vat_code_source: VatCodeSource | null;
+  gl_account_confirmed: string | null;
+  vat_code_confirmed: string | null;
+  is_excluded: boolean;
+  line_confidence: number | null;
+};
+
+export async function createCapture(companyId: string, documentId: number, uploadedBy: string): Promise<CaptureRow> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_captures")
+    .insert({ company_id: companyId, document_id: documentId, uploaded_by: uploadedBy, status: "Uploaded" })
+    .select("*")
+    .single<CaptureRow>();
+  if (error) throw error;
+  return data;
+}
+
+export async function getCapture(companyId: string, captureId: number): Promise<CaptureRow | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_captures")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("id", captureId)
+    .maybeSingle<CaptureRow>();
+  if (error) throw error;
+  return data;
+}
+
+export async function getCaptureByDocument(companyId: string, documentId: number): Promise<CaptureRow | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_captures")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("document_id", documentId)
+    .maybeSingle<CaptureRow>();
+  if (error) throw error;
+  return data;
+}
+
+export type CaptureListFilter = { status?: CaptureStatus | "All"; search?: string; limit?: number };
+
+/** Bounded by construction — the brief is explicit that the inbox must not
+ * load an unbounded list, and COST's own learning lookup capped at 500 and
+ * then scanned it linearly per line. */
+export async function listCaptures(companyId: string, filter: CaptureListFilter = {}): Promise<CaptureRow[]> {
+  const supabase = await createClient();
+  let query = supabase.from("supplier_invoice_captures").select("*").eq("company_id", companyId);
+  if (filter.status && filter.status !== "All") query = query.eq("status", filter.status);
+  const search = filter.search?.trim();
+  if (search) {
+    const escaped = search.replace(/[%_,()]/g, " ");
+    query = query.or(`invoice_number.ilike.%${escaped}%,supplier_name_extracted.ilike.%${escaped}%`);
+  }
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .limit(Math.min(filter.limit ?? 100, LIST_CAP))
+    .returns<CaptureRow[]>();
+  if (error) throw error;
+  return data;
+}
+
+/** Captures whose extraction work is outstanding. Ordered oldest first so
+ * a backlog drains fairly rather than starving the earliest upload. */
+export async function listCapturesAwaitingExtraction(companyId: string, limit: number): Promise<CaptureRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_captures")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("status", "Queued")
+    .order("created_at", { ascending: true })
+    .limit(Math.min(limit, LIST_CAP))
+    .returns<CaptureRow[]>();
+  if (error) throw error;
+  return data;
+}
+
+export async function listCaptureLines(companyId: string, captureId: number): Promise<CaptureLineRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_capture_lines")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("capture_id", captureId)
+    .order("line_order", { ascending: true })
+    .returns<CaptureLineRow[]>();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateCapture(companyId: string, captureId: number, fields: Record<string, unknown>): Promise<CaptureRow> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_captures")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("company_id", companyId)
+    .eq("id", captureId)
+    .select("*")
+    .single<CaptureRow>();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Claims a capture for extraction.
+ *
+ * Conditional on its current status, so two runners cannot both claim the
+ * same document — the same technique the posting engine uses to claim
+ * journals. Returns null when another runner got there first.
+ */
+export async function claimCaptureForExtraction(companyId: string, captureId: number): Promise<CaptureRow | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_captures")
+    .update({ status: "Extracting", updated_at: new Date().toISOString() })
+    .eq("company_id", companyId)
+    .eq("id", captureId)
+    .eq("status", "Queued")
+    .select("*")
+    .maybeSingle<CaptureRow>();
+  if (error) throw error;
+  return data;
+}
+
+/** Replaces a capture's lines wholesale. Extraction is the only writer of
+ * the extracted columns; review updates confirmations in place. */
+export async function replaceCaptureLines(
+  companyId: string,
+  captureId: number,
+  lines: Omit<CaptureLineRow, "id" | "capture_id">[],
+): Promise<void> {
+  const supabase = await createClient();
+  const { error: deleteError } = await supabase
+    .from("supplier_invoice_capture_lines")
+    .delete()
+    .eq("company_id", companyId)
+    .eq("capture_id", captureId);
+  if (deleteError) throw deleteError;
+  if (lines.length === 0) return;
+  const { error } = await supabase
+    .from("supplier_invoice_capture_lines")
+    .insert(lines.map((line) => ({ ...line, company_id: companyId, capture_id: captureId })));
+  if (error) throw error;
+}
+
+export async function updateCaptureLine(
+  companyId: string,
+  captureId: number,
+  lineOrder: number,
+  fields: Partial<Pick<CaptureLineRow, "description" | "quantity" | "unit_price" | "discount" | "gl_account_confirmed" | "vat_code_confirmed" | "is_excluded">>,
+): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("supplier_invoice_capture_lines")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("company_id", companyId)
+    .eq("capture_id", captureId)
+    .eq("line_order", lineOrder);
+  if (error) throw error;
+}
+
+export type CaptureEventType =
+  | "Uploaded" | "Queued" | "ExtractionStarted" | "ExtractionSucceeded" | "ExtractionFailed"
+  | "ValidationEvaluated" | "SupplierResolved" | "DuplicateEvaluated" | "FieldCorrected"
+  | "SupplierCreated" | "ConvertedToBill" | "Cancelled" | "Requeued";
+
+/** Appends one audit event. `detail` must be metadata — never document
+ * content; `pii-logging.test.ts` covers the shape callers may pass. */
+export async function recordCaptureEvent(
+  companyId: string,
+  captureId: number,
+  eventType: CaptureEventType,
+  detail: Record<string, unknown>,
+  performedBy: string,
+): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("supplier_invoice_capture_events")
+    .insert({ company_id: companyId, capture_id: captureId, event_type: eventType, detail, performed_by: performedBy });
+  if (error) throw error;
+}
+
+export type CaptureEventRow = {
+  id: number;
+  capture_id: number;
+  event_type: CaptureEventType;
+  detail: Record<string, unknown>;
+  performed_by: string;
+  occurred_at: string;
+};
+
+export async function listCaptureEvents(companyId: string, captureId: number): Promise<CaptureEventRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_capture_events")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("capture_id", captureId)
+    .order("occurred_at", { ascending: false })
+    .limit(LIST_CAP)
+    .returns<CaptureEventRow[]>();
+  if (error) throw error;
+  return data;
+}
+
+/** Candidate rows for the duplicate check — deliberately the narrow
+ * projection `assessDuplicate` needs, not whole captures. */
+export async function listDuplicateCandidates(companyId: string): Promise<
+  { captureId: number; supplierId: number | null; invoiceNumber: string | null; invoiceDate: string | null; total: number | null; contentSha256: string | null; status: string }[]
+> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_invoice_captures")
+    .select("id, supplier_id, invoice_number, invoice_date, total, status, documents!inner(content_sha256)")
+    .eq("company_id", companyId)
+    .limit(LIST_CAP);
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    captureId: row.id as number,
+    supplierId: (row.supplier_id as number | null) ?? null,
+    invoiceNumber: (row.invoice_number as string | null) ?? null,
+    invoiceDate: (row.invoice_date as string | null) ?? null,
+    total: row.total === null || row.total === undefined ? null : Number(row.total),
+    contentSha256: ((row.documents as { content_sha256: string | null } | null)?.content_sha256) ?? null,
+    status: row.status as string,
+  }));
+}
+
+export async function listBillDuplicateCandidates(companyId: string, supplierId: number): Promise<
+  { billId: number; supplierId: number; invoiceNumber: string; invoiceDate: string | null; total: number | null }[]
+> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ae_imported_bills")
+    .select("id, supplier_id, invoice_number, invoice_date, total")
+    .eq("company_id", companyId)
+    .eq("supplier_id", supplierId)
+    .limit(LIST_CAP);
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    billId: row.id as number,
+    supplierId: row.supplier_id as number,
+    invoiceNumber: (row.invoice_number as string) ?? "",
+    invoiceDate: (row.invoice_date as string | null) ?? null,
+    total: row.total === null || row.total === undefined ? null : Number(row.total),
+  }));
+}
+
+/** A document already uploaded for this company with the same bytes. The
+ * hash index added by 0108 makes this a lookup, not a scan. */
+export async function findDocumentByHash(companyId: string, contentSha256: string): Promise<{ id: number; filename: string } | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .select("id, filename")
+    .eq("company_id", companyId)
+    .eq("content_sha256", contentSha256)
+    .limit(1)
+    .maybeSingle<{ id: number; filename: string }>();
+  if (error) throw error;
+  return data;
+}
+
+// ---------------------------------------------------------------------
+// Learning — keyed by supplier_id, written only from a human-approved
+// conversion. Failures are surfaced, never swallowed (COST logged a
+// console.warn and reported success).
+// ---------------------------------------------------------------------
+
+export type LearnedMapping = { descriptionNormalised: string; supplierSkuNormalised: string; glAccount: string; vatCode: string };
+
+export async function listLearnedMappings(companyId: string, supplierId: number): Promise<LearnedMapping[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("supplier_line_mappings")
+    .select("description_normalised, supplier_sku_normalised, gl_account, vat_code")
+    .eq("company_id", companyId)
+    .eq("supplier_id", supplierId)
+    .eq("disabled", false)
+    .order("times_confirmed", { ascending: false })
+    .limit(LIST_CAP);
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    descriptionNormalised: row.description_normalised as string,
+    supplierSkuNormalised: (row.supplier_sku_normalised as string) ?? "",
+    glAccount: (row.gl_account as string) ?? "",
+    vatCode: (row.vat_code as string) ?? "",
+  }));
+}
+
+export async function upsertLearnedMapping(
+  companyId: string,
+  supplierId: number,
+  mapping: LearnedMapping & { captureId: number },
+): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("fn_upsert_supplier_line_mapping", {
+    p_company_id: companyId,
+    p_supplier_id: supplierId,
+    p_description_normalised: mapping.descriptionNormalised,
+    p_supplier_sku_normalised: mapping.supplierSkuNormalised,
+    p_gl_account: mapping.glAccount,
+    p_vat_code: mapping.vatCode,
+    p_capture_id: mapping.captureId,
+  });
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------
+// AI safety — the shared gate and recorder from 0107/0108.
+// ---------------------------------------------------------------------
+
+export type ExtractionGateDecision = {
+  decision: "allow" | "probe" | "circuit_open" | "daily_cap";
+  circuit_state?: string;
+  open_reason?: string | null;
+  next_probe_at?: string | null;
+  refused_layer?: "scope" | "provider" | null;
+  requests_today?: number | null;
+  daily_cap?: number | null;
+};
+
+export async function openExtractionGate(companyId: string, captureId: number): Promise<ExtractionGateDecision> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fn_ai_extraction_gate", { p_company_id: companyId, p_capture_id: captureId });
+  if (error) throw error;
+  return data as ExtractionGateDecision;
+}
+
+export async function recordExtractionAttempt(input: {
+  companyId: string;
+  captureId: number;
+  taskRunId: number | null;
+  attemptNumber: number;
+  outcome: "extracted" | "validation_failed" | "invalid_response" | "provider_error" | "document_error" | "write_error";
+  providerRequestMade: boolean;
+  model: string | null;
+  errorCategory: string | null;
+  httpStatus: number | null;
+  /** MUST already be sanitised — `sanitizeProviderMessage` at the boundary. */
+  providerMessage: string | null;
+  usage: Record<string, unknown> | null;
+  durationMs: number | null;
+  performedBy: string;
+  circuitSignal: "success" | "auth" | "timeout" | "provider_failure" | "rate_limit" | "none";
+  probe: boolean;
+}): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("fn_ai_extraction_record_attempt", {
+    p_company_id: input.companyId,
+    p_capture_id: input.captureId,
+    p_task_run_id: input.taskRunId,
+    p_attempt_number: input.attemptNumber,
+    p_outcome: input.outcome,
+    p_provider_request_made: input.providerRequestMade,
+    p_model: input.model,
+    p_error_category: input.errorCategory,
+    p_http_status: input.httpStatus,
+    p_provider_message: input.providerMessage,
+    p_usage: input.usage,
+    p_duration_ms: input.durationMs,
+    p_performed_by: input.performedBy,
+    p_circuit_signal: input.circuitSignal,
+    p_probe: input.probe,
+  });
+  if (error) throw error;
+}

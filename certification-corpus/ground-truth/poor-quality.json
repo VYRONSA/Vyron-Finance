@@ -1,0 +1,62 @@
+{
+  "caseId": "poor-quality",
+  "documentId": "poor-quality.jpg",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Drakensberg Cold Chain",
+    "vatNumber": "4990887766",
+    "registrationNumber": "2011/998877/07"
+  },
+  "invoiceNumber": "DC-4503",
+  "invoiceDate": "2026-06-09",
+  "dueDate": "2026-07-09",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Blast freezing service",
+      "supplierSku": "BF-STD",
+      "quantity": 1,
+      "uom": "service",
+      "unitPrice": 2750,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 412.5,
+      "lineTotal": 2750
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 2750,
+    "vatAmount": 412.5,
+    "total": 3162.5
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      2750
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 2750,
+    "vat": 412.5,
+    "total": 3162.5
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "Low resolution, faded, heavy JPEG artefacts. Verified legible by eye at full size. A field returned WRONG here is a worse outcome than one returned null."
+}

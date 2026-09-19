@@ -112,7 +112,7 @@ export const CUSTOMERS: Customer[] = [customer(1, "C001", "Acme Retail", 5000), 
 
 const supplier = (id: number, code: string, name: string, vatNumber: string): Supplier => ({
   id, companyId: COMPANY_ID, name, alternativeNames: [], defaultGlAccount: null, defaultVatCode: null, status: "Active", supplierCode: code, supplierCategory: "", supplierType: "Company" as Supplier["supplierType"],
-  bankName: "", bankAccountNumber: "", bankBranchCode: "", vatNumber, taxNumber: "", riskRating: "Low" as Supplier["riskRating"], paymentTermsDays: 30, spendingLimit: 0,
+  bankName: "", bankAccountNumber: "", bankBranchCode: "", vatNumber, taxNumber: "", registrationNumber: "", riskRating: "Low" as Supplier["riskRating"], paymentTermsDays: 30, spendingLimit: 0,
 });
 export const SUPPLIERS: Supplier[] = [supplier(1, "S001", "Northline Supplies", "4000000001"), supplier(2, "S002", "Nova Freight", "")];
 
@@ -121,7 +121,7 @@ const line = (id: number, invoiceId: number, description: string, quantity: numb
 });
 const invoice = (o: Pick<SalesInvoice, "id" | "customerId" | "invoiceNumber" | "documentType" | "invoiceDate" | "dueDate" | "status" | "journalId" | "subtotal" | "vatAmount" | "total" | "outstanding" | "lines">): SalesInvoice => ({
   companyId: COMPANY_ID, orderId: null, deliveryId: null, vatTreatmentCode: "Standard", isRecurringTemplate: false, recurrencePattern: "", reference: "", notes: "", createdAt: `${o.invoiceDate}T08:00:00Z`,
-  submittedBy: null, submittedAt: null, approvedBy: null, approvedAt: null, postedAt: o.status === "Posted" ? `${o.invoiceDate}T09:00:00Z` : null, cancelledBy: null, cancelledAt: null, originalInvoiceId: null, ...o,
+  submittedBy: null, submittedAt: null, approvedBy: null, approvedAt: null, postedAt: o.status === "Posted" ? `${o.invoiceDate}T09:00:00Z` : null, cancelledBy: null, cancelledAt: null, originalInvoiceId: null, reason: "", paymentTermsDays: null, ...o,
 });
 export const INVOICES: SalesInvoice[] = [
   invoice({ id: 1, customerId: 1, invoiceNumber: "INV001", documentType: "Invoice", invoiceDate: "2026-04-10", dueDate: "2026-05-10", status: "Posted", journalId: 2, subtotal: 1000, vatAmount: 150, total: 1150, outstanding: 0, lines: [line(1, 1, "Consulting", 1, 600, 600, 90), line(2, 1, "Widget", 2, 200, 400, 60, 1)] }),
@@ -171,7 +171,7 @@ export const OPENING_BALANCES: OpeningBalanceEntry[] = [
 ];
 
 export const BANK_ACCOUNTS: BankAccount[] = [
-  { id: 1, companyId: COMPANY_ID, accountNumber: "62000000001", accountName: "Business Cheque", bankName: "FNB", accountType: "Cheque", branch: "", currency: "ZAR", status: "Active" as BankAccount["status"], openingBalance: 10000, currentBalance: 0, lastReconciliationDate: "2026-06-30", notes: "", createdAt: null, glAccount: "1000", openingBalanceDate: "2026-03-01", openingBalanceReference: "" },
+  { id: 1, companyId: COMPANY_ID, accountNumber: "62000000001", accountName: "Business Cheque", showOnDocuments: false, bankName: "FNB", accountType: "Cheque", branch: "", currency: "ZAR", status: "Active" as BankAccount["status"], openingBalance: 10000, currentBalance: 0, lastReconciliationDate: "2026-06-30", notes: "", createdAt: null, glAccount: "1000", openingBalanceDate: "2026-03-01", openingBalanceReference: "" },
 ];
 
 const txn = (o: Partial<BankTransactionRecord> & Pick<BankTransactionRecord, "id" | "transactionDate" | "description">): BankTransactionRecord => ({

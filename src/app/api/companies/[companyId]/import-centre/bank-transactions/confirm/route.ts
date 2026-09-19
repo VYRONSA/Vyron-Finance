@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession, getCurrentUserEmail } from "@/server/auth/require-session";
 import { confirmPdfBankStatementImport, ValidationError, type ConfirmPdfImportInput } from "@/server/services/import-service";
-import { requirePermission } from "@/server/services/permission-service";
+import { hasPermission, requirePermission } from "@/server/services/permission-service";
 
 /** Step 2 of the PDF Bank Statement Import review flow — commits the
  * (possibly user-corrected) transactions from a prior `preview` call and
@@ -15,8 +15,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
 
   const { companyId } = await params;
 
+  // Phase 5C — see the CSV import route: `Banking:Create` imports,
+  // `Banking:Post` is what lets the rule pass post what it imported.
   const check = await requirePermission(companyId, "Banking:Create");
   if (!check.ok) return check.response;
+  const mayPost = await hasPermission(companyId, "Banking:Post");
 
   const input = (await request.json()) as ConfirmPdfImportInput;
   if (!input?.batchId || !input?.sourceFilename || !Array.isArray(input?.transactions)) {
@@ -25,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
 
   try {
     const importedBy = (await getCurrentUserEmail()) ?? "System";
-    const outcome = await confirmPdfBankStatementImport(companyId, input, importedBy);
+    const outcome = await confirmPdfBankStatementImport(companyId, input, importedBy, { mayPost });
     return NextResponse.json(outcome, { status: 201 });
   } catch (error) {
     // See preview/route.ts's own note — same "specific message for a

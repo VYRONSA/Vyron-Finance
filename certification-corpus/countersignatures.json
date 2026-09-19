@@ -1,0 +1,367 @@
+{
+  "corpusSha256": "cce1e6168c1613554f79787abddec3885f47836cf739e96afb9884589beaa799",
+  "reviewedBy": "Gerhard van Schalkwyk",
+  "reviewedOn": "2026-09-19",
+  "cases": {
+    "ambiguous-supplier": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "arithmetic-mismatch": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "clean-pdf": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "credit-note": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "debit-note": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "discount": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "duplicate": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "foreign-currency": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "jpg": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "many-lines": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "missing-invoice-number": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "missing-vat-number": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "mixed-vat": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "multi-page": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "no-vat": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "png": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "poor-quality": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "repeated-invoice-number": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "rotated": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "scan": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "small-text": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "uom-pack": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "weight-column": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    },
+    "zero-vat": {
+      "status": "agreed",
+      "reviewedBy": "Gerhard van Schalkwyk",
+      "reviewedOn": "2026-09-19",
+      "checks": {
+        "supplierIdentity": true,
+        "documentIdentity": true,
+        "lineItems": true,
+        "totals": true,
+        "absenceSemantics": true,
+        "expectations": true
+      },
+      "discrepancies": [],
+      "notes": ""
+    }
+  }
+}

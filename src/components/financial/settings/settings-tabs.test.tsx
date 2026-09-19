@@ -26,7 +26,7 @@ const COMPANY: Company = {
   telephone: "",
   email: "",
   website: "",
-  postalAddress: "",
+  postalAddress: "", invoiceFooter: "", paymentInstructions: "", defaultPaymentTermsDays: 30,
   city: "", province: "", postalCode: "", country: "",
 };
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { OperationsTabs } from "@/components/platform/operations/operations-tabs";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
@@ -66,7 +67,18 @@ export default async function OperationsCentrePage() {
           </CardContent>
         </Card>
       ) : (
-        <OperationsTabs snapshots={snapshots} previewMode={previewMode} />
+        // `OperationsTabs` keeps its selected tab in the query string
+        // (`useUrlParam` -> `useSearchParams`). This page renders
+        // statically when Supabase is not configured (Preview Mode takes
+        // the mock-data branch above and awaits nothing), and a client
+        // component reading search params during a static prerender needs
+        // its own boundary or the prerender bails out and `next build`
+        // fails. Same bare `<Suspense>` the login page already uses for
+        // `LoginForm` — no fallback, because the tabs render instantly on
+        // the client and a skeleton here would only flash.
+        <Suspense>
+          <OperationsTabs snapshots={snapshots} previewMode={previewMode} />
+        </Suspense>
       )}
     </div>
   );

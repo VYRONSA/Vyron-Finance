@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
+import { FormSection, validateCustomerForm, type CustomerFormErrors } from "@/components/financial/master-data-form";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -43,8 +44,28 @@ export function CustomerWorkspace({ companyId, customers, previewMode }: { compa
   const [riskRating, setRiskRating] = useState<RiskRating>("Low");
   const [creditLimit, setCreditLimit] = useState("0");
   const [paymentTermsDays, setPaymentTermsDays] = useState("30");
+  // Phase 5I — fields that already exist on the customer record (VAT and
+  // registration number) or on its satellite tables (contact, address),
+  // but which the create form never offered. A customer created here had
+  // to be re-opened and edited before it could appear correctly on a tax
+  // invoice, and the SARS-required recipient details were the ones
+  // missing. Nothing new is stored: these write to the same columns the
+  // edit panel and the CSV importer already write to.
+  const [vatNumber, setVatNumber] = useState("");
+  const [registrationNumber, setRegistrationNumber] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [addressLine1, setAddressLine1] = useState("");
+  const [addressLine2, setAddressLine2] = useState("");
+  const [addressCity, setAddressCity] = useState("");
+  const [addressPostalCode, setAddressPostalCode] = useState("");
+  const [attempted, setAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const customerErrors = validateCustomerForm({ code, name, vatNumber, registrationNumber, contactEmail });
+  const customerField = (key: keyof CustomerFormErrors) => (attempted ? customerErrors[key] : undefined);
 
   const disabledTitle = previewMode ? "Available once a production Supabase project is connected" : undefined;
   const apiBase = `/api/companies/${companyId}/customers`;
@@ -64,6 +85,8 @@ export function CustomerWorkspace({ companyId, customers, previewMode }: { compa
   }, [customers, statusFilter, riskFilter, search, sort]);
 
   async function submitCreate() {
+    setAttempted(true);
+    if (Object.keys(customerErrors).length > 0) return;
     setLoading(true);
     setError(null);
     try {
@@ -77,6 +100,10 @@ export function CustomerWorkspace({ companyId, customers, previewMode }: { compa
           riskRating,
           creditLimit: Number(creditLimit) || 0,
           paymentTermsDays: Number(paymentTermsDays) || 0,
+          // Phase 5I — existing columns on `customers`, already validated
+          // server-side by `validateVatAndRegistrationNumbers`.
+          vatNumber: vatNumber.trim(),
+          registrationNumber: registrationNumber.trim(),
         }),
       });
       const data = await res.json();
@@ -84,9 +111,57 @@ export function CustomerWorkspace({ companyId, customers, previewMode }: { compa
         setError(data.error ?? `Request failed (${res.status})`);
         return;
       }
+      // Phase 5I — contact and address live in the existing satellite
+      // tables with their own endpoints, exactly as the detail panel
+      // already uses them. Neither is required, so a failure here must
+      // not discard the customer that was just created successfully —
+      // it is reported, and the customer stands.
+      const created = data.customer;
+      if (created?.id) {
+        const sideEffects: Promise<unknown>[] = [];
+        if (contactName.trim() || contactEmail.trim() || contactPhone.trim()) {
+          sideEffects.push(
+            fetch(`${apiBase}/${created.id}/contacts`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: contactName.trim(), email: contactEmail.trim(), phone: contactPhone.trim(), isPrimary: true }),
+            }),
+          );
+        }
+        if (addressLine1.trim() || addressCity.trim()) {
+          sideEffects.push(
+            fetch(`${apiBase}/${created.id}/addresses`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                addressType: "Billing",
+                line1: addressLine1.trim(),
+                line2: addressLine2.trim(),
+                city: addressCity.trim(),
+                postalCode: addressPostalCode.trim(),
+                isDefault: true,
+              }),
+            }),
+          );
+        }
+        const results = await Promise.allSettled(sideEffects);
+        if (results.some((r) => r.status === "rejected" || (r.status === "fulfilled" && !(r.value as Response).ok))) {
+          setError("The customer was created, but its contact or address could not be saved. Add them from the customer's own page.");
+        }
+      }
       setCreating(false);
       setCode("");
       setName("");
+      setVatNumber("");
+      setRegistrationNumber("");
+      setContactName("");
+      setContactEmail("");
+      setContactPhone("");
+      setAddressLine1("");
+      setAddressLine2("");
+      setAddressCity("");
+      setAddressPostalCode("");
+      setAttempted(false);
       router.refresh();
     } catch {
       setError("Couldn't reach the API. Check the dev server is running.");
@@ -203,11 +278,15 @@ export function CustomerWorkspace({ companyId, customers, previewMode }: { compa
       {creating && (
         <div className="rounded-vf-md border border-vf-paper-border p-4">
           <p className="mb-3 text-sm font-semibold text-vf-ink">New Customer</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Customer Code" htmlFor="cust-code" required>
+          {/* Phase 5I — grouped rather than one undifferentiated grid, so
+              the tax details a compliant invoice needs are visible at
+              capture time instead of being discovered later. Every field
+              writes to a column or satellite table that already exists. */}
+          <FormSection title="Basic Information">
+            <Field label="Customer Code" htmlFor="cust-code" required error={customerField("code")}>
               <Input id="cust-code" value={code} onChange={(e) => setCode(e.target.value)} />
             </Field>
-            <Field label="Customer Name" htmlFor="cust-name" required className="lg:col-span-2">
+            <Field label="Customer Name" htmlFor="cust-name" required className="lg:col-span-2" error={customerField("name")}>
               <Input id="cust-name" value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
             <Field label="Customer Type" htmlFor="cust-type">
@@ -217,6 +296,51 @@ export function CustomerWorkspace({ companyId, customers, previewMode }: { compa
                 ))}
               </Select>
             </Field>
+          </FormSection>
+
+          <FormSection title="Tax Information">
+            <Field label="VAT Number" htmlFor="cust-vat" error={customerField("vatNumber")}>
+              <Input id="cust-vat" value={vatNumber} onChange={(e) => setVatNumber(e.target.value)} placeholder="10 digits" />
+            </Field>
+            <Field label="Registration Number" htmlFor="cust-reg" error={customerField("registrationNumber")}>
+              <Input id="cust-reg" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} placeholder="YYYY/NNNNNN/NN" />
+            </Field>
+          </FormSection>
+
+          <FormSection title="Billing Address">
+            <Field label="Address Line 1" htmlFor="cust-addr1" className="lg:col-span-2">
+              <Input id="cust-addr1" value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} />
+            </Field>
+            <Field label="Address Line 2" htmlFor="cust-addr2">
+              <Input id="cust-addr2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} />
+            </Field>
+            <Field label="City" htmlFor="cust-city">
+              <Input id="cust-city" value={addressCity} onChange={(e) => setAddressCity(e.target.value)} />
+            </Field>
+            <Field label="Postal Code" htmlFor="cust-postal">
+              <Input id="cust-postal" value={addressPostalCode} onChange={(e) => setAddressPostalCode(e.target.value)} />
+            </Field>
+          </FormSection>
+
+          <FormSection title="Contact Information">
+            <Field label="Contact Person" htmlFor="cust-contact">
+              <Input id="cust-contact" value={contactName} onChange={(e) => setContactName(e.target.value)} />
+            </Field>
+            <Field label="Email" htmlFor="cust-email" error={customerField("contactEmail")}>
+              <Input id="cust-email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+            </Field>
+            <Field label="Telephone" htmlFor="cust-phone">
+              <Input id="cust-phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+            </Field>
+          </FormSection>
+
+          <FormSection title="Accounting Defaults">
+            <Field label="Credit Limit" htmlFor="cust-credit">
+              <Input id="cust-credit" type="number" step="0.01" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
+            </Field>
+            <Field label="Payment Terms (days)" htmlFor="cust-terms">
+              <Input id="cust-terms" type="number" value={paymentTermsDays} onChange={(e) => setPaymentTermsDays(e.target.value)} />
+            </Field>
             <Field label="Risk Rating" htmlFor="cust-risk">
               <Select id="cust-risk" value={riskRating} onChange={(e) => setRiskRating(e.target.value as RiskRating)}>
                 {RISK_RATINGS.map((r) => (
@@ -224,13 +348,7 @@ export function CustomerWorkspace({ companyId, customers, previewMode }: { compa
                 ))}
               </Select>
             </Field>
-            <Field label="Credit Limit" htmlFor="cust-credit">
-              <Input id="cust-credit" type="number" step="0.01" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
-            </Field>
-            <Field label="Payment Terms (days)" htmlFor="cust-terms">
-              <Input id="cust-terms" type="number" value={paymentTermsDays} onChange={(e) => setPaymentTermsDays(e.target.value)} />
-            </Field>
-          </div>
+          </FormSection>
           <div className="mt-3 flex gap-2">
             <Button variant="primary" size="sm" disabled={loading || !code.trim() || !name.trim()} onClick={submitCreate}>
               Create Customer

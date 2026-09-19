@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "authoredOn": "2026-09-19",
+  "description": "VYRON AI Supplier Invoice Capture — independent certification corpus. Synthetic documents and independently authored ground truth. No production data. No value here derives from any AI extraction.",
+  "caseCount": 24,
+  "cases": [
+    {
+      "caseId": "ambiguous-supplier",
+      "documentFile": "ambiguous-supplier.pdf",
+      "documentBytes": 79297,
+      "documentSha256": "9e55d9bf50e77148e3129f78ec6d3fbec57da8a884afb0d8bb5e901fe2c1e9d6",
+      "groundTruthFile": "ambiguous-supplier.json",
+      "groundTruthSha256": "797beaa810b3537b6a15f2924597404819a30f9f3d1d275316af9714075b9541"
+    },
+    {
+      "caseId": "arithmetic-mismatch",
+      "documentFile": "arithmetic-mismatch.pdf",
+      "documentBytes": 79284,
+      "documentSha256": "879bc20743767cd6bf036c58f8692a39db6d111bfc5bf480f486fa765f8fbf05",
+      "groundTruthFile": "arithmetic-mismatch.json",
+      "groundTruthSha256": "7dc660ca8b654cf4e6fcc54e2ea50c658423b718fcf5b294d4a5a312632210b4"
+    },
+    {
+      "caseId": "clean-pdf",
+      "documentFile": "clean-pdf.pdf",
+      "documentBytes": 80926,
+      "documentSha256": "1e0af34c0cce5ff55e819b08a398237524b83a0090f954784e3b97072cdec6f8",
+      "groundTruthFile": "clean-pdf.json",
+      "groundTruthSha256": "4bf4c980fca34820ef6da704fee97848f0859ac3626d8272ccbad16db5e8b8e5"
+    },
+    {
+      "caseId": "credit-note",
+      "documentFile": "credit-note.pdf",
+      "documentBytes": 82488,
+      "documentSha256": "1114338ee24a4b0464f8f038a14264261e1b542793ed8e0b6e3323e0bc0dbbf5",
+      "groundTruthFile": "credit-note.json",
+      "groundTruthSha256": "96b2e4d07000eb7ddf726a33adec1891c12b2da3da517541c6f3e02ef08a8726"
+    },
+    {
+      "caseId": "debit-note",
+      "documentFile": "debit-note.pdf",
+      "documentBytes": 82171,
+      "documentSha256": "bc3fb20e33fffa1cc7ea1ccc82715d5e48056a68e9e227932564743e26a984b5",
+      "groundTruthFile": "debit-note.json",
+      "groundTruthSha256": "8873057cae9bd0e6b16c88b89e918e70352b3b7caa3124fc814c625e47b40f58"
+    },
+    {
+      "caseId": "discount",
+      "documentFile": "discount.pdf",
+      "documentBytes": 80115,
+      "documentSha256": "43a2d68776738fff052e1a56dfd6f49b650f4d36e5fdd58355b8efee6f83dc62",
+      "groundTruthFile": "discount.json",
+      "groundTruthSha256": "c68901aeac23d30329b2d22809da5455fdf2e6bfc0114cfe52381f7fda682738"
+    },
+    {
+      "caseId": "duplicate",
+      "documentFile": "duplicate.pdf",
+      "documentBytes": 86128,
+      "documentSha256": "5fd9673770854c8b4e682aa5885bf68be40255b4e2cabf7cc7d89c86c5289486",
+      "groundTruthFile": "duplicate.json",
+      "groundTruthSha256": "bcbe1162c6b9b596fcb42eca80c21a05833af5f1c73b706b4fd99ebab858e9b7"
+    },
+    {
+      "caseId": "foreign-currency",
+      "documentFile": "foreign-currency.pdf",
+      "documentBytes": 75647,
+      "documentSha256": "68f4e5f5ad7fb7672eeed7db607a76bb5dece59d444d69ad79e001b1498beba7",
+      "groundTruthFile": "foreign-currency.json",
+      "groundTruthSha256": "5c886811fb32d060fdea5317d6ffbb1c41921ee9b4acd2eb73acdac75e2e163b"
+    },
+    {
+      "caseId": "jpg",
+      "documentFile": "jpg.jpg",
+      "documentBytes": 99205,
+      "documentSha256": "65e68ed329726b576d9e9713fbb2949db3d7e468cf13a2d18e77cedc4e04a5c1",
+      "groundTruthFile": "jpg.json",
+      "groundTruthSha256": "e3a822b0f1f20392feabe5b180ce78f67074454d6b6042f6787622e57c9354a6"
+    },
+    {
+      "caseId": "many-lines",
+      "documentFile": "many-lines.pdf",
+      "documentBytes": 130299,
+      "documentSha256": "9cc8c3e2055781723b9afd4789e40c892929da3cacde61e72b45b23ff9e558ab",
+      "groundTruthFile": "many-lines.json",
+      "groundTruthSha256": "0225c2298b6f44838f1806e149b13236414a59b12a853c1c8969e555703ba8c7"
+    },
+    {
+      "caseId": "missing-invoice-number",
+      "documentFile": "missing-invoice-number.pdf",
+      "documentBytes": 75761,
+      "documentSha256": "2e3fc43bba7c237f3edc3f5bd18da4437f13d99c87378c1233a1116dc92d2f8c",
+      "groundTruthFile": "missing-invoice-number.json",
+      "groundTruthSha256": "062fef1e06b07f6bcd1e73d87ef27ac39e02bda101ae62da1e52ee505768d9af"
+    },
+    {
+      "caseId": "missing-vat-number",
+      "documentFile": "missing-vat-number.pdf",
+      "documentBytes": 77580,
+      "documentSha256": "bdaf8f46f3ac78502859dc4fa8c8336213e23b7169252c86b86ab4e90e29ccb3",
+      "groundTruthFile": "missing-vat-number.json",
+      "groundTruthSha256": "0f4dc7aaa3c6dea792c09673beb0f675d37a207d4050346a6befb14916f0a6fb"
+    },
+    {
+      "caseId": "mixed-vat",
+      "documentFile": "mixed-vat.pdf",
+      "documentBytes": 81204,
+      "documentSha256": "b4a7ad3abeb9fef072f029a9bf89bf141bfebd0335e14bc9bd8eab3ec84084c3",
+      "groundTruthFile": "mixed-vat.json",
+      "groundTruthSha256": "e768c9f2f557a2f0bb43a35d516751afe00ce358c33cab647be96894ba5db977"
+    },
+    {
+      "caseId": "multi-page",
+      "documentFile": "multi-page.pdf",
+      "documentBytes": 115380,
+      "documentSha256": "bcb573ce31024c662c8414d7ba157cb75d956de898722bac5a46933ce85dfc8f",
+      "groundTruthFile": "multi-page.json",
+      "groundTruthSha256": "4d84373e94893260d40b0009bc128e94816e633f798d507158f1578179a582cf"
+    },
+    {
+      "caseId": "no-vat",
+      "documentFile": "no-vat.pdf",
+      "documentBytes": 68992,
+      "documentSha256": "05ad32c80c60206946e8ac2d39a1562ba0459233278007acb19bcb562e9d46b0",
+      "groundTruthFile": "no-vat.json",
+      "groundTruthSha256": "9c93c19741f1c686761d05d3009685996542719f7e9d6d0fb37f73da2fddb4da"
+    },
+    {
+      "caseId": "png",
+      "documentFile": "png.png",
+      "documentBytes": 76072,
+      "documentSha256": "d1cf2f93b5b81942beff1009b3123b2ccf32abd26053d9a9ac88b0054e05a021",
+      "groundTruthFile": "png.json",
+      "groundTruthSha256": "cf9233e88ca6dba162fa347719fe2460f8be22ca8c13055bb74d8253c92d6630"
+    },
+    {
+      "caseId": "poor-quality",
+      "documentFile": "poor-quality.jpg",
+      "documentBytes": 7648,
+      "documentSha256": "eb65acc5a6a725a246bd1b957f2a297e6b96443931e73ac2e10ecbde142a0615",
+      "groundTruthFile": "poor-quality.json",
+      "groundTruthSha256": "88ba5e71ae93efb7748fcae29a26726a5b31ef7b1f80719fd13b468bccfb7738"
+    },
+    {
+      "caseId": "repeated-invoice-number",
+      "documentFile": "repeated-invoice-number.pdf",
+      "documentBytes": 78660,
+      "documentSha256": "9392f9dd1a3ee073b026a4dc43128c44380e8258b8b147affe6aefcb97c5565d",
+      "groundTruthFile": "repeated-invoice-number.json",
+      "groundTruthSha256": "55cf65f6f147ef54d86b4c71ba694b968fdaca6ac288d5be63474fc725b8ae3f"
+    },
+    {
+      "caseId": "rotated",
+      "documentFile": "rotated.png",
+      "documentBytes": 177427,
+      "documentSha256": "694f95e8fbeb1c11d6d91e354cbde0172c14b5cca4fe2a2efda561d942420aa3",
+      "groundTruthFile": "rotated.json",
+      "groundTruthSha256": "8d70757da23170885b7d97b2cff1a6141acf48928d3df1ea27e244bf120a9ac5"
+    },
+    {
+      "caseId": "scan",
+      "documentFile": "scan.pdf",
+      "documentBytes": 66742,
+      "documentSha256": "ba9c280f3e0ad9588b93e3c773bbc93c75d8889884086dc571736960aae6fc5f",
+      "groundTruthFile": "scan.json",
+      "groundTruthSha256": "83c289d1f684f086996a8baf6fc182f1e58c482e1c9c948d00a68135308e523c"
+    },
+    {
+      "caseId": "small-text",
+      "documentFile": "small-text.pdf",
+      "documentBytes": 84899,
+      "documentSha256": "aef031f99301645af7b3b83b1ff763ec4421a99c9e5fabdde4fd37d379b311fd",
+      "groundTruthFile": "small-text.json",
+      "groundTruthSha256": "fdad4e0c64eef7762b4a6bf20955774a450865b172a96adf79bc0464792b6d3f"
+    },
+    {
+      "caseId": "uom-pack",
+      "documentFile": "uom-pack.pdf",
+      "documentBytes": 77578,
+      "documentSha256": "0cb143bae731a1189fa7265668928bbf9094fb74573a906c047f94bf180adc61",
+      "groundTruthFile": "uom-pack.json",
+      "groundTruthSha256": "5e6e5792ad8b6d2c4c7d23508fd1b717cc1a236f89ecd2f0fe5b5a239c6129e0"
+    },
+    {
+      "caseId": "weight-column",
+      "documentFile": "weight-column.pdf",
+      "documentBytes": 85204,
+      "documentSha256": "a6999a8e6f9c52c17b146addd483840801b55f0555ecbeac63163da992a0d01b",
+      "groundTruthFile": "weight-column.json",
+      "groundTruthSha256": "f9da4dc7b096761984152589581a1b57e542b1687e98d40b79992f429ec1ac63"
+    },
+    {
+      "caseId": "zero-vat",
+      "documentFile": "zero-vat.pdf",
+      "documentBytes": 93246,
+      "documentSha256": "3716e1b96a4422de20e5c9555c66902cdc96236271e7b10460d4f67ffa79e805",
+      "groundTruthFile": "zero-vat.json",
+      "groundTruthSha256": "c380ca85d59c1ae5599a8ca9e9b88a0f40295749f403b95afcc1c35d2ad84fb9"
+    }
+  ],
+  "corpusSha256": "cce1e6168c1613554f79787abddec3885f47836cf739e96afb9884589beaa799"
+}

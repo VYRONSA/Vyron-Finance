@@ -199,6 +199,8 @@ export type UpdatableCompanyFields = Partial<{
   email: string;
   website: string;
   postal_address: string;
+  invoice_footer?: string | null;
+  payment_instructions?: string | null;
   city: string;
   province: string;
   postal_code: string;

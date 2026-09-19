@@ -31,6 +31,8 @@ export type Supplier = {
   bankBranchCode: string;
   vatNumber: string;
   taxNumber: string;
+  /** Phase 5I — mirrors `Customer.registrationNumber` (migration 0103). */
+  registrationNumber: string;
   riskRating: SupplierRiskRating;
   paymentTermsDays: number;
   // Finding #154 — the AP-side equivalent of Customer.creditLimit; 0
@@ -423,6 +425,9 @@ export type BankAccount = {
   accountNumber: string;
   accountName: string;
   bankName: string;
+  /** Phase 5I (migration 0104) — opt in to printing this account on
+   * customer-facing documents. Defaults false. */
+  showOnDocuments: boolean;
   accountType: string;
   branch: string;
   currency: string;

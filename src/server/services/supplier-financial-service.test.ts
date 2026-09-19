@@ -5,7 +5,7 @@ import type { ImportedBill, Supplier } from "@/server/accounting/types";
 const SUPPLIER: Supplier = {
   id: 1, companyId: "co_1", name: "ABC Supplies", alternativeNames: [], defaultGlAccount: null, defaultVatCode: null, status: "Active",
   supplierCode: "SUPP-1000", supplierCategory: "", supplierType: "Company", bankName: "", bankAccountNumber: "", bankBranchCode: "",
-  vatNumber: "", taxNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0,
+  vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0,
 };
 
 function bill(overrides: Partial<ImportedBill> & Pick<ImportedBill, "id">): ImportedBill {

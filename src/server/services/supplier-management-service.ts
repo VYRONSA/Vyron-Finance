@@ -39,6 +39,17 @@ export type NewSupplierRequest = {
   supplierType?: SupplierType;
   riskRating?: SupplierRiskRating;
   paymentTermsDays?: number;
+  // Phase 5I — capturable at creation rather than only on a later edit.
+  // `defaultGlAccount` and `defaultVatCode` matter most: the Allocation
+  // Engine reads exactly those two to code a supplier's bank payments,
+  // so a supplier created without them cannot be auto-coded until
+  // somebody reopens it. They are written through the SAME
+  // `updateSupplier` the edit panel uses — no new write path, and the
+  // allocation logic itself is untouched.
+  defaultGlAccount?: string | null;
+  defaultVatCode?: string | null;
+  vatNumber?: string;
+  registrationNumber?: string;
 };
 
 /** Creates via the same `createSupplierByName` the Matching Engine relies
@@ -71,7 +82,11 @@ export async function createSupplier(companyId: string, input: NewSupplierReques
     input.supplierCategory === undefined &&
     input.supplierType === undefined &&
     input.riskRating === undefined &&
-    input.paymentTermsDays === undefined
+    input.paymentTermsDays === undefined &&
+    input.defaultGlAccount === undefined &&
+    input.defaultVatCode === undefined &&
+    input.vatNumber === undefined &&
+    input.registrationNumber === undefined
       ? created
       : await updateSupplier(companyId, created.id, {
           supplierCode: input.supplierCode,
@@ -79,6 +94,10 @@ export async function createSupplier(companyId: string, input: NewSupplierReques
           supplierType: input.supplierType,
           riskRating: input.riskRating,
           paymentTermsDays: input.paymentTermsDays,
+          defaultGlAccount: input.defaultGlAccount,
+          defaultVatCode: input.defaultVatCode,
+          vatNumber: input.vatNumber,
+          registrationNumber: input.registrationNumber,
         });
 
   // Finding #039 (RC-12) — see customer-service.ts::createCustomer's
@@ -172,6 +191,8 @@ export type EditSupplierRequest = Partial<{
   bankBranchCode: string;
   vatNumber: string;
   taxNumber: string;
+  /** Phase 5I — migration 0103. */
+  registrationNumber: string;
   riskRating: SupplierRiskRating;
   paymentTermsDays: number;
   spendingLimit: number;
@@ -226,6 +247,7 @@ export async function updateSupplier(companyId: string, supplierId: number, inpu
     ...(input.bankBranchCode !== undefined && { bank_branch_code: input.bankBranchCode }),
     ...(input.vatNumber !== undefined && { vat_number: input.vatNumber }),
     ...(input.taxNumber !== undefined && { tax_number: input.taxNumber }),
+    ...(input.registrationNumber !== undefined && { registration_number: input.registrationNumber }),
     ...(input.riskRating !== undefined && { risk_rating: input.riskRating }),
     ...(input.paymentTermsDays !== undefined && { payment_terms_days: input.paymentTermsDays }),
     ...(input.spendingLimit !== undefined && { spending_limit: input.spendingLimit }),
@@ -237,6 +259,7 @@ export async function updateSupplier(companyId: string, supplierId: number, inpu
     ["name", existing.name, updated.name],
     ["defaultGlAccount", existing.defaultGlAccount, updated.defaultGlAccount],
     ["defaultVatCode", existing.defaultVatCode, updated.defaultVatCode],
+    ["registrationNumber", existing.registrationNumber, updated.registrationNumber],
     ["supplierCode", existing.supplierCode, updated.supplierCode],
     ["supplierCategory", existing.supplierCategory, updated.supplierCategory],
     ["supplierType", existing.supplierType, updated.supplierType],

@@ -15,6 +15,11 @@ import { DownloadTemplateButton } from "@/components/financial/shared/download-t
 import { useUrlParam } from "@/hooks/use-url-param";
 import type { Supplier, SupplierRiskRating, SupplierType } from "@/server/accounting/types";
 import { SUPPLIER_IMPORT_TEMPLATE_HEADERS } from "@/server/import-centre/customer-supplier-import-parser";
+import { Combobox } from "@/components/ui/combobox";
+import { glAccountOptions, vatCodeOptions } from "@/lib/account-picker-options";
+import { FormSection, validateSupplierForm, type SupplierFormErrors } from "@/components/financial/master-data-form";
+import type { ChartOfAccount } from "@/server/general-ledger/types";
+import type { VatTreatment } from "@/server/company-management/types";
 
 const SUPPLIER_TYPES: SupplierType[] = ["Company", "Individual"];
 const RISK_RATINGS: SupplierRiskRating[] = ["Low", "Medium", "High"];
@@ -23,7 +28,19 @@ const ALL = "All";
 type StatusFilter = "Active" | "Inactive" | typeof ALL;
 type RiskFilter = SupplierRiskRating | typeof ALL;
 
-export function SupplierWorkspace({ companyId, suppliers, previewMode }: { companyId: string; suppliers: Supplier[]; previewMode: boolean }) {
+export function SupplierWorkspace({
+  companyId,
+  suppliers,
+  chartOfAccounts,
+  vatTreatments,
+  previewMode,
+}: {
+  companyId: string;
+  suppliers: Supplier[];
+  chartOfAccounts: ChartOfAccount[];
+  vatTreatments: VatTreatment[];
+  previewMode: boolean;
+}) {
   const router = useRouter();
   // Finding #251 (RC-5) — search survives a refresh and participates in
   // Back/Forward instead of resetting.
@@ -37,8 +54,35 @@ export function SupplierWorkspace({ companyId, suppliers, previewMode }: { compa
   const [category, setCategory] = useState("");
   const [supplierType, setSupplierType] = useState<SupplierType>("Company");
   const [riskRating, setRiskRating] = useState<SupplierRiskRating>("Low");
+  // Phase 5I — `defaultGlAccount` and `defaultVatCode` are the two fields
+  // the Allocation Engine reads to code a supplier's bank payments
+  // (`allocation-engine.ts`). Until now they could only be set by
+  // reopening the supplier after creating it, so every supplier created
+  // here started un-codeable. Capturing them up front changes nothing
+  // about how allocation works — only when the values exist.
+  const [defaultGlAccount, setDefaultGlAccount] = useState<string | null>(null);
+  const [defaultVatCode, setDefaultVatCode] = useState<string | null>(null);
+  const [vatNumber, setVatNumber] = useState("");
+  const [registrationNumber, setRegistrationNumber] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [attempted, setAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const glOptions = glAccountOptions(chartOfAccounts);
+  const vatOptions = vatCodeOptions(vatTreatments);
+  const supplierErrors = validateSupplierForm({ name, vatNumber, registrationNumber, contactEmail });
+  const supplierField = (key: keyof SupplierFormErrors) => (attempted ? supplierErrors[key] : undefined);
+  /** Phase 5I — a name-based duplicate warning. The server only refuses a
+   * duplicate supplier CODE, and the code is optional, so two suppliers
+   * with the same name are accepted silently today. This warns before
+   * saving without blocking it: genuinely distinct suppliers can share a
+   * name, so this is advice, not a rule, and no server behaviour changes. */
+  const duplicateName = name.trim()
+    ? suppliers.find((s) => s.name.trim().toLowerCase() === name.trim().toLowerCase())
+    : undefined;
 
   const disabledTitle = previewMode ? "Available once a production Supabase project is connected" : undefined;
   const apiBase = `/api/companies/${companyId}/suppliers`;
@@ -58,22 +102,56 @@ export function SupplierWorkspace({ companyId, suppliers, previewMode }: { compa
   }, [suppliers, statusFilter, riskFilter, search, sort]);
 
   async function submitCreate() {
+    setAttempted(true);
+    if (Object.keys(supplierErrors).length > 0) return;
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(apiBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, supplierCode: code, supplierCategory: category, supplierType, riskRating }),
+        body: JSON.stringify({
+          name,
+          supplierCode: code,
+          supplierCategory: category,
+          supplierType,
+          riskRating,
+          defaultGlAccount,
+          defaultVatCode,
+          vatNumber: vatNumber.trim(),
+          registrationNumber: registrationNumber.trim(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? `Request failed (${res.status})`);
         return;
       }
+      // Phase 5I — the contact goes to the existing satellite endpoint,
+      // exactly as the detail panel already does. Optional, and a failure
+      // must not discard the supplier that was created successfully.
+      const created = data.supplier;
+      if (created?.id && (contactName.trim() || contactEmail.trim() || contactPhone.trim())) {
+        const res2 = await fetch(`${apiBase}/${created.id}/contacts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: contactName.trim() || name.trim(), email: contactEmail.trim(), phone: contactPhone.trim(), isPrimary: true }),
+        }).catch(() => null);
+        if (!res2 || !res2.ok) {
+          setError("The supplier was created, but its contact could not be saved. Add it from the supplier's own page.");
+        }
+      }
       setCreating(false);
       setName("");
       setCode("");
+      setDefaultGlAccount(null);
+      setDefaultVatCode(null);
+      setVatNumber("");
+      setRegistrationNumber("");
+      setContactName("");
+      setContactEmail("");
+      setContactPhone("");
+      setAttempted(false);
       router.refresh();
     } catch {
       setError("Couldn't reach the API. Check the dev server is running.");
@@ -243,12 +321,14 @@ export function SupplierWorkspace({ companyId, suppliers, previewMode }: { compa
       {creating && (
         <div className="rounded-vf-md border border-vf-paper-border p-4">
           <p className="mb-3 text-sm font-semibold text-vf-ink">New Supplier</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Phase 5I — grouped, and now capturing the fields the rest of
+              the system actually needs from a supplier at creation time. */}
+          <FormSection title="Basic Information">
+            <Field label="Supplier Name" htmlFor="supp-name" required className="lg:col-span-2" error={supplierField("name")}>
+              <Input id="supp-name" value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
             <Field label="Supplier Code" htmlFor="supp-code">
               <Input id="supp-code" value={code} onChange={(e) => setCode(e.target.value)} />
-            </Field>
-            <Field label="Supplier Name" htmlFor="supp-name" required className="lg:col-span-2">
-              <Input id="supp-name" value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
             <Field label="Category" htmlFor="supp-category">
               <Input id="supp-category" value={category} onChange={(e) => setCategory(e.target.value)} />
@@ -267,7 +347,47 @@ export function SupplierWorkspace({ companyId, suppliers, previewMode }: { compa
                 ))}
               </Select>
             </Field>
-          </div>
+          </FormSection>
+
+          <FormSection title="Tax Information">
+            <Field label="VAT Number" htmlFor="supp-vat" error={supplierField("vatNumber")}>
+              <Input id="supp-vat" value={vatNumber} onChange={(e) => setVatNumber(e.target.value)} placeholder="10 digits" />
+            </Field>
+            <Field label="Registration Number" htmlFor="supp-reg" error={supplierField("registrationNumber")}>
+              <Input id="supp-reg" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} placeholder="YYYY/NNNNNN/NN" />
+            </Field>
+          </FormSection>
+
+          {/* These two are what the Allocation Engine reads to code this
+              supplier's bank payments. Optional, but a supplier without
+              them cannot be auto-coded. */}
+          <FormSection title="Accounting Defaults">
+            <Field label="Default GL Account" htmlFor="supp-gl" className="lg:col-span-2">
+              <Combobox aria-label="Default GL Account" value={defaultGlAccount} options={glOptions} placeholder="Search account…" onCommit={setDefaultGlAccount} />
+            </Field>
+            <Field label="Default VAT Code" htmlFor="supp-vatcode">
+              <Combobox aria-label="Default VAT Code" value={defaultVatCode} options={vatOptions} placeholder="Search VAT code…" onCommit={setDefaultVatCode} />
+            </Field>
+          </FormSection>
+
+          <FormSection title="Contact Information">
+            <Field label="Contact Person" htmlFor="supp-contact">
+              <Input id="supp-contact" value={contactName} onChange={(e) => setContactName(e.target.value)} />
+            </Field>
+            <Field label="Email" htmlFor="supp-email" error={supplierField("contactEmail")}>
+              <Input id="supp-email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+            </Field>
+            <Field label="Telephone" htmlFor="supp-phone">
+              <Input id="supp-phone" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+            </Field>
+          </FormSection>
+
+          {duplicateName && (
+            <p role="status" className="mt-3 text-sm text-vf-warning">
+              A supplier named &ldquo;{duplicateName.name}&rdquo; already exists{duplicateName.supplierCode ? ` (${duplicateName.supplierCode})` : ""}. Check
+              this is not the same one before creating a second record.
+            </p>
+          )}
           <div className="mt-3 flex gap-2">
             <Button variant="primary" size="sm" disabled={loading || !name.trim()} onClick={submitCreate}>
               Create Supplier

@@ -14,7 +14,7 @@ function invoice(overrides: Partial<SalesInvoice> & Pick<SalesInvoice, "id" | "c
     invoiceDate: "2026-07-01", dueDate: "2026-07-31", vatTreatmentCode: "Standard Rated", status: "Posted", journalId: null,
     subtotal: 1000, vatAmount: 150, total: 1150, outstanding: 1150, isRecurringTemplate: false, recurrencePattern: "",
     reference: "", notes: "", createdAt: "2026-07-01T00:00:00Z", submittedBy: null, submittedAt: null, approvedBy: null,
-    approvedAt: null, postedAt: null, cancelledBy: null, cancelledAt: null, originalInvoiceId: null, lines: [],
+    approvedAt: null, postedAt: null, cancelledBy: null, cancelledAt: null, originalInvoiceId: null, reason: "", paymentTermsDays: null, lines: [],
     ...overrides,
   };
 }

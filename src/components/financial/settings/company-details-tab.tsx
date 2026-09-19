@@ -29,6 +29,8 @@ export function CompanyDetailsTab({ company, currencies, previewMode }: { compan
     email: company.email,
     website: company.website,
     postalAddress: company.postalAddress,
+    invoiceFooter: company.invoiceFooter,
+    paymentInstructions: company.paymentInstructions,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +62,8 @@ export function CompanyDetailsTab({ company, currencies, previewMode }: { compan
           email: values.email,
           website: values.website,
           postalAddress: values.postalAddress,
+          invoiceFooter: values.invoiceFooter,
+          paymentInstructions: values.paymentInstructions,
         }),
       });
       const body = await res.json();
@@ -128,6 +132,25 @@ export function CompanyDetailsTab({ company, currencies, previewMode }: { compan
         </Field>
         <Field label="Postal Address" htmlFor="cd-postal-address">
           <Input id="cd-postal-address" value={values.postalAddress} onChange={(e) => set("postalAddress", e.target.value)} placeholder="If different from the physical address" />
+        </Field>
+        {/* Phase 5I — printed on invoices and statements. Both are
+            optional: leaving them blank prints the document exactly as
+            it prints today. */}
+        <Field label="Payment Instructions" htmlFor="cd-payment-instructions" className="sm:col-span-2">
+          <Input
+            id="cd-payment-instructions"
+            value={values.paymentInstructions}
+            onChange={(e) => set("paymentInstructions", e.target.value)}
+            placeholder="Shown with your banking details, e.g. use the invoice number as your reference"
+          />
+        </Field>
+        <Field label="Document Footer" htmlFor="cd-invoice-footer" className="sm:col-span-2">
+          <Input
+            id="cd-invoice-footer"
+            value={values.invoiceFooter}
+            onChange={(e) => set("invoiceFooter", e.target.value)}
+            placeholder="Printed at the foot of invoices and statements, e.g. trading terms"
+          />
         </Field>
       </div>
 

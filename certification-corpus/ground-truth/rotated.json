@@ -1,0 +1,62 @@
+{
+  "caseId": "rotated",
+  "documentId": "rotated.png",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-10102",
+  "invoiceDate": "2026-06-18",
+  "dueDate": "2026-07-18",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Sunflower oil 5L",
+      "supplierSku": "SO5",
+      "quantity": 8,
+      "uom": "bottle",
+      "unitPrice": 189,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 226.8,
+      "lineTotal": 1512
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1512,
+    "vatAmount": 226.8,
+    "total": 1738.8
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1512
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1512,
+    "vat": 226.8,
+    "total": 1738.8
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "Photographed about 6.5 degrees off square on a grey surface. Every value is legible; rotation is not an excuse for a missing field."
+}

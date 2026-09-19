@@ -64,6 +64,8 @@ export type NewDocument = {
   mimeType: string;
   sizeBytes: number;
   retentionUntil: string | null;
+  /** Phase 5L — see `UploadDocumentInput.contentSha256`. */
+  contentSha256?: string | null;
   uploadedBy: string;
 };
 
@@ -106,6 +108,7 @@ export async function insertDocumentVersion(input: NewDocument): Promise<Documen
       category: input.category,
       filename: input.filename,
       storage_path: input.storagePath,
+      content_sha256: input.contentSha256 ?? null,
       mime_type: input.mimeType,
       size_bytes: input.sizeBytes,
       retention_until: input.retentionUntil,

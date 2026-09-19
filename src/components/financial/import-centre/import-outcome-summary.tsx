@@ -33,6 +33,7 @@ export function ImportOutcomeSummary({
   duplicateCount,
   rulesAllocatedCount,
   exceptionCount,
+  rulePass,
   onImportAnother,
   onFinish,
 }: {
@@ -42,10 +43,19 @@ export function ImportOutcomeSummary({
   duplicateCount: number;
   rulesAllocatedCount: number;
   exceptionCount: number;
+  /** Phase 5C — what the Banking Rules pass deliberately did NOT do.
+   * Optional so a caller that has no rule pass is unaffected. */
+  rulePass?: { notPermitted: number; notAttempted: number; stopReason: "time-budget" | "posting-limit" | null } | null;
   onImportAnother: () => void;
   onFinish: () => void;
 }) {
   const needsReview = Math.max(importedCount - rulesAllocatedCount, 0);
+  // Phase 5C — an import that left transactions unposted must SAY so. The
+  // rows are imported and unchanged, so nothing is lost, but reporting
+  // only "Imported / Rules Applied" would let a permission refusal or a
+  // bound look like a complete import.
+  const notPermitted = rulePass?.notPermitted ?? 0;
+  const notAttempted = rulePass?.notAttempted ?? 0;
 
   return (
     <Card>
@@ -60,6 +70,23 @@ export function ImportOutcomeSummary({
           <SummaryStat label="Duplicates" value={duplicateCount} tone="muted" />
           <SummaryStat label="Exceptions" value={exceptionCount} tone={exceptionCount > 0 ? "danger" : "muted"} />
         </div>
+
+        {notPermitted > 0 && (
+          <p role="status" className="text-sm text-vf-warning">
+            {notPermitted === 1 ? "1 transaction was" : `${notPermitted} transactions were`} not posted because posting needs the
+            &ldquo;Banking:Post&rdquo; permission. {notPermitted === 1 ? "It is" : "They are"} imported and unchanged — someone with that
+            permission can still post {notPermitted === 1 ? "it" : "them"}.
+          </p>
+        )}
+
+        {notAttempted > 0 && (
+          <p role="status" className="text-sm text-vf-warning">
+            {notAttempted === 1 ? "1 transaction was" : `${notAttempted} transactions were`} not processed by the Banking Rules in this
+            import because it reached its {rulePass?.stopReason === "posting-limit" ? "posting limit" : "time limit"}.{" "}
+            {notAttempted === 1 ? "It is" : "They are"} imported and unchanged, and will be picked up by the next Banking Rules run.
+          </p>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" size="sm" href={`/company/${companyId}/transactions?importBatch=${encodeURIComponent(batchId)}`}>
             Review Transactions

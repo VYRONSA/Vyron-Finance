@@ -1,0 +1,62 @@
+{
+  "caseId": "png",
+  "documentId": "png.png",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Umgeni Packaging Co",
+    "vatNumber": "4223344556",
+    "registrationNumber": "2008/112233/07"
+  },
+  "invoiceNumber": "UP-9912",
+  "invoiceDate": "2026-06-05",
+  "dueDate": "2026-07-05",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Corrugated carton 400x300x200",
+      "supplierSku": "CC403020",
+      "quantity": 250,
+      "uom": "each",
+      "unitPrice": 12.4,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 465,
+      "lineTotal": 3100
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 3100,
+    "vatAmount": 465,
+    "total": 3565
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      3100
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 3100,
+    "vat": 465,
+    "total": 3565
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "A screenshot of an emailed invoice. The description contains dimensions (400x300x200) that are NOT money and must not become one."
+}

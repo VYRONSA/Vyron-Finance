@@ -43,7 +43,30 @@ export const Table = React.forwardRef<
       ref={ref}
       onScroll={onScroll}
       className={cn(
-        "overflow-x-auto rounded-vf-md border",
+        // Phase 5I — two separate fixes for one symptom: the PAGE, rather
+        // than the table, scrolled sideways (measured: Sales 171px of
+        // horizontal document scroll at 1440 and 949px at 390; Customers
+        // 676px at 390). Both are fixed once here rather than per page, so
+        // neither can recur on the next screen that renders a wide table.
+        //
+        // `min-w-0` — a flex item's automatic minimum size is its CONTENT
+        // width, so inside a flex/grid parent this scroll container grew
+        // to the table's full width instead of shrinking to the space
+        // available. Same gotcha `workspace-shell.tsx` documents for
+        // VR-022.
+        //
+        // `relative` — the real culprit, and the subtler one. Tailwind's
+        // `sr-only` is `position: absolute`. An absolutely positioned
+        // element is only clipped by an ancestor that is its containing
+        // block, so with no positioned ancestor its containing block was
+        // the document itself: a `<span class="sr-only">Actions</span>` in
+        // a far-right column sat at x=1339 and extended the document's
+        // scrollable width, straight through `overflow-x-auto` (which is
+        // why raising the overflow to `hidden` did not help either).
+        // Making the scroll container positioned puts those spans back
+        // inside it. This was latent in every table — Sales only showed it
+        // because its `sr-only` is in the LAST column rather than the first.
+        "relative min-w-0 overflow-x-auto rounded-vf-md border",
         tone === "dark" ? "border-vf-dark-border" : "border-vf-paper-border",
         hideScrollbar && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
       )}

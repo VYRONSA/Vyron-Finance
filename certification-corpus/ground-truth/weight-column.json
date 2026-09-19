@@ -1,0 +1,80 @@
+{
+  "caseId": "weight-column",
+  "documentId": "weight-column.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Highveld Fasteners",
+    "vatNumber": "4778899001",
+    "registrationNumber": "2013/667788/07"
+  },
+  "invoiceNumber": "HF-2260",
+  "invoiceDate": "2026-07-14",
+  "dueDate": "2026-08-13",
+  "orderReference": "PO-4530",
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Steel bar 12mm x 6m",
+      "supplierSku": "SB126",
+      "quantity": 20,
+      "uom": "each",
+      "unitPrice": 96.5,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 289.5,
+      "lineTotal": 1930,
+      "printedNonMoneyColumns": {
+        "MASS (kg)": 5.33
+      }
+    },
+    {
+      "description": "Steel plate 3mm 1m x 2m",
+      "supplierSku": "SP312",
+      "quantity": 4,
+      "uom": "sheet",
+      "unitPrice": 412,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 247.2,
+      "lineTotal": 1648,
+      "printedNonMoneyColumns": {
+        "MASS (kg)": 47.1
+      }
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 3578,
+    "vatAmount": 536.7,
+    "total": 4114.7
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1930,
+      1648
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 3578,
+    "vat": 536.7,
+    "total": 4114.7
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "present"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "THE VYRON COST PRODUCTION FAILURE, reproduced. A MASS (kg) column sits between UNIT PRICE and V.A.T. The values 5.33 and 47.10 are kilograms and are NOT money. They must never appear as unitPrice, vatAmount or lineTotal. In COST this exact layout put a weight into a cost field on every row of a real invoice."
+}

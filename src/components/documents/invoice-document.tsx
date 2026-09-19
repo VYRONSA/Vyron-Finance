@@ -26,6 +26,7 @@ export function InvoiceDocument({
   open,
   onClose,
   previewMode,
+  originalInvoice,
 }: {
   companyId: string;
   invoice: SalesInvoice;
@@ -37,6 +38,11 @@ export function InvoiceDocument({
    * (defaults to `false`) so any existing caller that doesn't yet know
    * about Preview Mode keeps compiling unchanged. */
   previewMode?: boolean;
+  /** Phase 5J — the invoice this credit/debit note adjusts, so the
+   * preview shows the same s21(3) particulars the PDF does. The caller
+   * already holds the company's invoices, so this resolves without a
+   * fetch. */
+  originalInvoice?: Pick<SalesInvoice, "invoiceNumber" | "invoiceDate"> | null;
 }) {
   const address = useCustomerAddress(companyId, open ? invoice.customerId : null);
   const recipientEmail = useCustomerPrimaryEmail(companyId, open ? invoice.customerId : null);
@@ -67,6 +73,7 @@ export function InvoiceDocument({
         customer={customer}
         addressLine={formatCustomerAddress(address)}
         letterhead={<DocumentBrandingHeader companyId={companyId} />}
+        originalInvoice={originalInvoice}
       />
     </DocumentPreviewOverlay>
   );

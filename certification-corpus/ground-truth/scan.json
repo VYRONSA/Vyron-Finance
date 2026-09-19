@@ -1,0 +1,62 @@
+{
+  "caseId": "scan",
+  "documentId": "scan.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Drakensberg Cold Chain",
+    "vatNumber": "4990887766",
+    "registrationNumber": "2011/998877/07"
+  },
+  "invoiceNumber": "DC-4471",
+  "invoiceDate": "2026-05-29",
+  "dueDate": "2026-06-28",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Cold storage pallet handling",
+      "supplierSku": "CS-PAL",
+      "quantity": 6,
+      "uom": "pallet",
+      "unitPrice": 240,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 216,
+      "lineTotal": 1440
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 1440,
+    "vatAmount": 216,
+    "total": 1656
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1440
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 1440,
+    "vat": 216,
+    "total": 1656
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "Image-only PDF with NO text layer, greyscaled — a genuine scan. Anything reading this must look at the page rather than parse it."
+}

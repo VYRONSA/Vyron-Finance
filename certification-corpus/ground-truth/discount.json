@@ -1,0 +1,64 @@
+{
+  "caseId": "discount",
+  "documentId": "discount.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-10188",
+  "invoiceDate": "2026-07-01",
+  "dueDate": "2026-07-31",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Maize meal 10kg",
+      "supplierSku": "MM10",
+      "quantity": 10,
+      "uom": "bag",
+      "unitPrice": 100,
+      "discount": 100,
+      "vatRatePercent": 15,
+      "vatAmount": 135,
+      "lineTotal": 900
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 900,
+    "discountTotal": 100,
+    "vatAmount": 135,
+    "total": 1035
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      1000
+    ],
+    "discountTotal": 100,
+    "taxableAmount": 900,
+    "vat": 135,
+    "total": 1035
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent",
+    "discount": "present"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "VAT is charged on 900.00, not on 1 000.00. A reader that returns VAT of 150.00 has taxed the pre-discount amount — the defect Phase 5J fixed in Finance's own invoicing."
+}

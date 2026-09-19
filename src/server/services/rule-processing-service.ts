@@ -47,7 +47,7 @@ import { computeFinancialPeriod, computeFinancialYearLabel } from "@/server/serv
 import { buildJournalLinesForTransaction, type BankAccountGlInfo } from "@/server/services/journal-service";
 import { evaluateTransactionAgainstRules, type EvaluableTransaction } from "@/server/banking-rules/rule-engine";
 import { buildBankingIntelligence, type IntelligenceTransaction } from "@/server/banking-rules/banking-intelligence";
-import type { BankingRule } from "@/server/banking-rules/types";
+import type { BankingRule, ExceptionType } from "@/server/banking-rules/types";
 import type { BankTransactionRecord, RuleEngineJournalRef } from "@/server/accounting/types";
 import type { FinancialYear } from "@/server/company-management/types";
 
@@ -62,6 +62,73 @@ export const DEFAULT_RULE_ENGINE_BUDGET_MS = 120_000;
 /** At most this many posting/recovery database calls per sweep; the rest
  * wait for the next run. Transactions no rule matches never count. */
 export const DEFAULT_RULE_ENGINE_MAX_POSTINGS = 150;
+
+/** Phase 5A — accounting-policy DECISION GATES. The defaults reproduce
+ * exactly what production does today, and changing a default is an
+ * accounting decision that needs explicit approval
+ * (docs/RULE_ENGINE_HARDENING_5A.md).
+ *
+ * Not a gate (Phase 5B decision 1): a Supplier/Customer rule with no GL
+ * rule behind it posts to the transaction's existing
+ * `suggested_gl_account` (for "Future AI" rows, the AI's suggestion) —
+ * current production behaviour, preserved as is.
+ *
+ * `journalDate` — "run-date" (today): the journal, its GL rows and its
+ * period are the UTC date of the run; "transaction-date": the bank
+ * transaction's own date (period and lock checks then apply to that date;
+ * the posting batch keeps the run date, as Bank Posting does).
+ *
+ * `blockingExceptionTypes` — open banking exceptions of these types stop a
+ * transaction from being posted (nothing is written; it waits for a
+ * person). Today: none.
+ *
+ * Phase 5B — APPROVED POLICY DECISIONS (owner, 2026-09-17), recorded in
+ * docs/RULE_ENGINE_HARDENING_5A.md:
+ *   1. Supplier/Customer-only rules keep posting to the existing suggested
+ *      GL account — current production behaviour is PRESERVED pending a
+ *      separate accounting review; this is not a validation that the
+ *      treatment is correct. No classify-only or control-account variant
+ *      is built.
+ *   2. journalDate stays "run-date" — transaction dating is a PENDING
+ *      accounting review; the switch stays off.
+ *   3. blockingExceptionTypes stays EMPTY — exceptions are informational.
+ * Changing any default needs a new explicit authorization. */
+export type RuleEngineJournalDatePolicy = "run-date" | "transaction-date";
+export type RuleEnginePostingPolicy = {
+  journalDate: RuleEngineJournalDatePolicy;
+  blockingExceptionTypes: readonly ExceptionType[];
+};
+export const DEFAULT_RULE_ENGINE_POSTING_POLICY: Readonly<RuleEnginePostingPolicy> = Object.freeze({
+  journalDate: "run-date",
+  blockingExceptionTypes: Object.freeze([]) as readonly ExceptionType[],
+});
+
+/** Phase 5A — what happened to one transaction, so a run can tell apart
+ * work done, work deliberately not done, and work that failed:
+ *   posted        journal + link written by the atomic call
+ *   recovered     a missing link to an existing Posted journal restored
+ *   classified    the rule's claim written, nothing posted (by design)
+ *   skipped       nothing to do: no rule matched, not claimable, already
+ *                 linked, or another worker got there first
+ *   refused       the data cannot be posted as it stands (validation:
+ *                 unbalanced/unknown account/lines cannot be built...)
+ *   failed        a temporary failure (database unavailable...) — retried
+ *   needs-review  a person must decide (legacy rule-owned row, flagged
+ *                 posted without a link, reconciled, closed period,
+ *                 blocking exception, unsafe existing journal)
+ * Only `refused`/`failed`/`posted`/`recovered` outcomes that made a
+ * posting call count towards `maxPostings`; pre-checked refusals never do.
+ *
+ * Phase 5C adds one more:
+ *   not-permitted  this transaction would have been POSTED, and the
+ *                  caller does not hold `Banking:Post`. NOTHING was
+ *                  written — not even the rule's claim — so the
+ *                  transaction is left exactly as it was and a later run
+ *                  by someone who can post still posts it. See the
+ *                  `mayPost` note on `ProcessTransactionOptions` for why
+ *                  it must not be downgraded to `classified`. */
+export type RuleEngineOutcomeKind = "posted" | "recovered" | "classified" | "skipped" | "refused" | "failed" | "needs-review" | "not-permitted";
+export const RULE_ENGINE_OUTCOME_KINDS: readonly RuleEngineOutcomeKind[] = ["posted", "recovered", "classified", "skipped", "refused", "failed", "needs-review", "not-permitted"];
 
 export function toEvaluable(t: BankTransactionRecord): EvaluableTransaction {
   return {
@@ -153,6 +220,8 @@ export type TransactionProcessingResult = {
   /** A rule already owns this transaction but nothing posted it (legacy or
    * classification-only): left for a person, never posted automatically. */
   awaitingReview?: boolean;
+  /** Phase 5A — see `RuleEngineOutcomeKind`. */
+  outcome: RuleEngineOutcomeKind;
 };
 
 /** Everything posting needs that is the same for every transaction in a run. */
@@ -171,12 +240,52 @@ export type ProcessTransactionOptions = {
   /** `false`: never claim or post — only recover or raise exceptions (a
    * sweep's unbudgeted pass). Default `true`. */
   mayClaim?: boolean;
+  /** Phase 5C — `false`: this caller may classify but may NOT cause an
+   * accounting journal to be created or posted (it holds `Banking:Edit`
+   * or `Banking:Create` but not `Banking:Post`). Default `true`, so every
+   * existing caller and both service-role paths behave exactly as before.
+   *
+   * A transaction the rules would POST is then left COMPLETELY
+   * UNTOUCHED and reported as `not-permitted`. It is deliberately NOT
+   * "classified instead", which would look like the helpful thing to do
+   * and is in fact the one genuinely dangerous option: writing the
+   * rule's claim sets `rule_id` with no journal, which
+   * `isRuleOwnedAwaitingReview` reads as "a person must deal with this"
+   * and `isClaimableByRule` then refuses forever — so the transaction
+   * would silently drop out of automatic posting for good, and no later
+   * run by a user who DOES hold `Banking:Post` would ever pick it up.
+   * Leaving it untouched keeps it in the worklist, which is the whole
+   * point: a weaker permission may do less work, never less recoverable
+   * work.
+   *
+   * Classification the rules would have done ANYWAY without posting
+   * (a `flag_for_review` rule, no resolved GL account, journal lines that
+   * cannot be built) still happens — those paths post nothing, so
+   * `Banking:Edit` remains sufficient for them, and blocking them would
+   * remove function from users who are entitled to it. */
+  mayPost?: boolean;
   /** The caller already knows an Open UnknownMerchant exception exists, so
    * raising it again (a guaranteed no-op) is skipped. */
   hasOpenUnknownMerchantException?: boolean;
   /** Test seam for the run date. Default: today's UTC date, as always. */
   today?: () => string;
+  /** Phase 5A decision gates. Default: `DEFAULT_RULE_ENGINE_POSTING_POLICY`. */
+  policy?: RuleEnginePostingPolicy;
+  /** The caller already knows whether this transaction has an Open
+   * exception of a `policy.blockingExceptionTypes` type. Omitted = look it
+   * up (only when the policy names any). */
+  hasBlockingException?: boolean;
 };
+
+/** Phase 5A — which of these transactions have an Open exception of any of
+ * the policy's blocking types (none looked up when the policy has none). */
+export async function listTransactionIdsWithBlockingException(companyId: string, types: readonly ExceptionType[], transactionIds: number[]): Promise<Set<number>> {
+  const blocked = new Set<number>();
+  if (types.length === 0 || transactionIds.length === 0) return blocked;
+  const sets = await Promise.all([...new Set(types)].map((type) => exceptionRepo.listTransactionIdsWithOpenException(companyId, type, transactionIds)));
+  for (const set of sets) for (const id of set) blocked.add(id);
+  return blocked;
+}
 
 export async function loadRuleEnginePostingContext(companyId: string): Promise<RuleEnginePostingContext> {
   const [financialYears, company, accounts, postedBy] = await Promise.all([
@@ -216,27 +325,28 @@ async function resolveExistingJournal(
   const base = { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, exceptionsRaised: [] };
   if (existing.status !== "Posted" || existing.isReversed) {
     const state = existing.isReversed ? "reversed" : existing.status;
-    return { ...base, journalId: null, notPostedReason: `Banking Rule journal ${existing.journalNumber} already exists for this transaction (${state}); it is not posted again.` };
+    return { ...base, journalId: null, outcome: "needs-review", notPostedReason: `Banking Rule journal ${existing.journalNumber} already exists for this transaction (${state}); it is not posted again.` };
   }
   // The same two states `fn_recover_rule_engine_journal_link` refuses —
   // answered here without a database call.
   if (transaction.postedFlag) {
-    return { ...base, journalId: null, notPostedReason: `Banking Rule journal ${existing.journalNumber} exists, but the transaction is already flagged posted without a journal link; it needs a person to review it.` };
+    return { ...base, journalId: null, outcome: "needs-review", notPostedReason: `Banking Rule journal ${existing.journalNumber} exists, but the transaction is already flagged posted without a journal link; it needs a person to review it.` };
   }
   if (transaction.reconciliationId !== null) {
-    return { ...base, journalId: null, notPostedReason: `Banking Rule journal ${existing.journalNumber} exists, but the transaction is reconciled; it needs a person to review it.` };
+    return { ...base, journalId: null, outcome: "needs-review", notPostedReason: `Banking Rule journal ${existing.journalNumber} exists, but the transaction is reconciled; it needs a person to review it.` };
   }
   try {
     const outcome = await postingRepo.recoverRuleEngineJournalLink(companyId, transaction.id, performedBy);
     if (outcome.outcome === "recovered" || outcome.outcome === "already_linked") {
-      return { ...base, journalId: outcome.journalId, recovered: outcome.outcome === "recovered", postingAttempted: true };
+      const recovered = outcome.outcome === "recovered";
+      return { ...base, journalId: outcome.journalId, recovered, postingAttempted: true, outcome: recovered ? "recovered" : "skipped" };
     }
-    return { ...base, journalId: null, postingAttempted: true, notPostedReason: outcome.reason ?? `Existing Banking Rule journal could not be linked (${outcome.outcome}).` };
+    return { ...base, journalId: null, postingAttempted: true, outcome: "needs-review", notPostedReason: outcome.reason ?? `Existing Banking Rule journal could not be linked (${outcome.outcome}).` };
   } catch (err) {
     const message = errorMessage(err);
     return isPostingValidationError(message)
-      ? { ...base, journalId: null, postingAttempted: true, notPostedReason: message }
-      : { ...base, journalId: null, postingAttempted: true, postingError: message };
+      ? { ...base, journalId: null, postingAttempted: true, outcome: "refused", notPostedReason: message }
+      : { ...base, journalId: null, postingAttempted: true, outcome: "failed", postingError: message };
   }
 }
 
@@ -262,9 +372,10 @@ export async function processTransaction(
   options: ProcessTransactionOptions = {},
 ): Promise<TransactionProcessingResult> {
   const exceptionsRaised: string[] = [];
+  const policy = options.policy ?? DEFAULT_RULE_ENGINE_POSTING_POLICY;
 
   if (transaction.journalId !== null) {
-    return { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, journalId: transaction.journalId, exceptionsRaised };
+    return { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, journalId: transaction.journalId, exceptionsRaised, outcome: "skipped" };
   }
 
   // Migration 0100 — checked BEFORE rule matching. A transaction whose
@@ -292,20 +403,20 @@ export async function processTransaction(
       });
     }
     exceptionsRaised.push("UnknownMerchant");
-    return { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised };
+    return { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised, outcome: "skipped" };
   }
 
   // Rule-owned without a journal (legacy, or classification-only): never
   // claimed again, never posted, never retried — it waits for a person.
   if (isRuleOwnedAwaitingReview(transaction)) {
-    return { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised, awaitingReview: true };
+    return { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised, awaitingReview: true, outcome: "needs-review" };
   }
 
   // The claim would refuse this row (the Matching Engine or a person
   // already owns it, or it is a Manual Cashbook entry) — same answer, no
   // round trip. A sweep's unbudgeted pass never claims.
   if (!isClaimableByRule(transaction) || options.mayClaim === false) {
-    return { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised };
+    return { transactionId: transaction.id, matchedRuleIds: [], autoPosted: false, journalId: null, exceptionsRaised, outcome: "skipped" };
   }
 
   let resolvedGlAccount = transaction.suggestedGlAccount;
@@ -351,7 +462,7 @@ export async function processTransaction(
     allocationStatus: resolvedSupplierId !== undefined || resolvedCustomerId !== undefined ? "Allocated" : "Suggested",
   };
 
-  const result = (fields: Partial<TransactionProcessingResult>): TransactionProcessingResult => ({
+  const result = (fields: Partial<TransactionProcessingResult> & Pick<TransactionProcessingResult, "outcome">): TransactionProcessingResult => ({
     transactionId: transaction.id,
     matchedRuleIds,
     autoPosted: false,
@@ -363,7 +474,8 @@ export async function processTransaction(
   // a person recoded it) between this pass reading it and this write. Never
   // record a rule application or create a journal for a transaction this
   // pass no longer owns.
-  const lostRace = (fields: Partial<TransactionProcessingResult> = {}) => result({ matchedRuleIds: [], ...fields });
+  const lostRace = (fields: Partial<TransactionProcessingResult> & Pick<TransactionProcessingResult, "outcome"> = { outcome: "skipped" }) =>
+    result({ matchedRuleIds: [], ...fields });
 
   /** Classification only (no posting): the claim, its history and the rule
    * applications, in one database call. */
@@ -379,37 +491,85 @@ export async function processTransaction(
       recommendedAction: "Review this transaction manually before it is posted.",
     });
     exceptionsRaised.push("UnbalancedAllocation");
-    return result({});
+    return result({ outcome: "classified" });
   }
 
   if (!resolvedGlAccount) {
-    return (await claimOnly()) ? result({}) : lostRace();
+    return (await claimOnly()) ? result({ outcome: "classified" }) : lostRace();
   }
 
   const bankAccount = transaction.bankAccountId !== null ? (bankAccountsById.get(transaction.bankAccountId) ?? null) : null;
   const built = buildJournalLinesForTransaction({ ...transaction, suggestedGlAccount: resolvedGlAccount, journalId: null }, bankAccount);
   if (!built.ok) {
-    return (await claimOnly()) ? result({ notPostedReason: built.reason }) : lostRace();
+    return (await claimOnly()) ? result({ outcome: "classified", notPostedReason: built.reason }) : lostRace();
   }
 
   // From here on nothing is written unless the atomic call succeeds, so
   // every early return leaves the transaction open for the next sweep.
+
+  // Phase 5C — the posting-permission gate, and the reason it sits
+  // exactly here: this is the first point at which we know this
+  // transaction WOULD be posted (a rule resolved a GL account and the
+  // journal lines built), and it is still before anything has been
+  // written. Every classify-only outcome has already returned above, so
+  // a caller without `Banking:Post` keeps all of its legitimate
+  // classification and loses only the posting. Nothing is written here —
+  // no claim, no journal, no exception — so the transaction stays in the
+  // worklist for a caller who may post it.
+  if (options.mayPost === false) {
+    return result({
+      outcome: "not-permitted",
+      notPostedReason: "Posting this transaction needs the \"Banking:Post\" permission. It was left unchanged so someone who has it can still post it.",
+    });
+  }
+
+  // Phase 5A — states the database would refuse anyway (0100's posting
+  // call answers `already_posted`) are answered here, without a posting
+  // call, so they never use up a run's `maxPostings`.
+  if (transaction.postedFlag) {
+    return result({ outcome: "needs-review", notPostedReason: "The transaction is flagged posted but has no journal link; it needs a person to review it." });
+  }
+  if (transaction.reconciliationId !== null) {
+    return result({ outcome: "needs-review", notPostedReason: "The transaction is reconciled but not posted; it needs a person to review it." });
+  }
+
+  if (policy.blockingExceptionTypes.length > 0) {
+    let blocked = options.hasBlockingException;
+    if (blocked === undefined) {
+      try {
+        blocked = (await listTransactionIdsWithBlockingException(companyId, policy.blockingExceptionTypes, [transaction.id])).has(transaction.id);
+      } catch (err) {
+        return result({ outcome: "failed", postingError: errorMessage(err) });
+      }
+    }
+    if (blocked) {
+      return result({ outcome: "needs-review", notPostedReason: `An open banking exception (${policy.blockingExceptionTypes.join(", ")}) must be resolved before this transaction is posted.` });
+    }
+  }
+
   let context: RuleEnginePostingContext;
   try {
     context = options.postingContext ?? (await loadRuleEnginePostingContext(companyId));
   } catch (err) {
-    return result({ postingError: errorMessage(err) });
+    return result({ outcome: "failed", postingError: errorMessage(err) });
   }
 
-  // Unchanged accounting: dated the day the rule posts it (what
-  // `createJournal` defaulted to), the posting batch carries the same date
-  // (what `postApprovedJournals` used), same period rules and account
-  // checks. A journal that fails them is simply not created.
-  const journalDate = options.today ? options.today() : new Date().toISOString().slice(0, 10);
+  // Default ("run-date", unchanged accounting): dated the day the rule
+  // posts it (what `createJournal` defaulted to), the posting batch carries
+  // the same date (what `postApprovedJournals` used), same period rules and
+  // account checks. A journal that fails them is simply not created.
+  // "transaction-date" (decision gate): the journal, its GL rows, its
+  // period and the period/lock check use the bank transaction's own date;
+  // the posting batch keeps the run date, as Bank Posting does.
+  const runDate = options.today ? options.today() : new Date().toISOString().slice(0, 10);
+  const journalDate = policy.journalDate === "transaction-date" ? transaction.transactionDate : runDate;
+  if (!journalDate) {
+    return result({ outcome: "needs-review", notPostedReason: "No transaction date — the journal cannot be dated." });
+  }
   const dateCheck = checkPostingDate(context.financialYears, journalDate);
-  if (!dateCheck.ok) return result({ notPostedReason: dateCheck.reason });
+  if (!dateCheck.ok) return result({ outcome: "needs-review", notPostedReason: dateCheck.reason });
   const missingAccount = built.lines.find((line) => !context.accountCodes.has(line.accountCode));
-  if (missingAccount) return result({ notPostedReason: `No Chart of Accounts entry for account code "${missingAccount.accountCode}".` });
+  if (missingAccount) return result({ outcome: "refused", notPostedReason: `No Chart of Accounts entry for account code "${missingAccount.accountCode}".` });
 
   try {
     const outcome = await postingRepo.postRuleEngineJournalAtomic(
@@ -425,24 +585,33 @@ export async function processTransaction(
         lines: built.lines,
       },
       context.postedBy,
-      journalDate,
+      runDate,
       buildRuleClaim(claimFields, ruleName, matchedRuleIds, performedBy),
     );
     switch (outcome.outcome) {
       case "posted":
-        return result({ autoPosted: true, journalId: outcome.journalId, postingAttempted: true });
+        return result({ outcome: "posted", autoPosted: true, journalId: outcome.journalId, postingAttempted: true });
       case "recovered":
       case "already_linked":
         // Another worker got there first; this call only linked (or found
         // linked) that worker's journal and claimed nothing.
-        return lostRace({ journalId: outcome.journalId, recovered: outcome.outcome === "recovered", postingAttempted: true });
+        return lostRace({
+          outcome: outcome.outcome === "recovered" ? "recovered" : "skipped",
+          journalId: outcome.journalId,
+          recovered: outcome.outcome === "recovered",
+          postingAttempted: true,
+        });
+      case "not_eligible":
+      case "already_posted":
+      case "not_found":
+        return lostRace({ outcome: "skipped", postingAttempted: true, notPostedReason: outcome.reason ?? `Not posted (${outcome.outcome}).` });
       default:
-        return lostRace({ postingAttempted: true, notPostedReason: outcome.reason ?? `Not posted (${outcome.outcome}).` });
+        return lostRace({ outcome: "needs-review", postingAttempted: true, notPostedReason: outcome.reason ?? `Not posted (${outcome.outcome}).` });
     }
   } catch (err) {
     const message = errorMessage(err);
-    if (isPostingValidationError(message)) return lostRace({ postingAttempted: true, notPostedReason: message });
-    return lostRace({ postingAttempted: true, postingError: message });
+    if (isPostingValidationError(message)) return lostRace({ outcome: "refused", postingAttempted: true, notPostedReason: message });
+    return lostRace({ outcome: "failed", postingAttempted: true, postingError: message });
   }
 }
 
@@ -455,7 +624,19 @@ export type RuleEngineRunOptions = {
   pageSize?: number;
   /** Test seam for the clock. */
   now?: () => number;
+  /** Phase 5A decision gates. Default: `DEFAULT_RULE_ENGINE_POSTING_POLICY`. */
+  policy?: RuleEnginePostingPolicy;
+  /** Test seam for the run date (see `ProcessTransactionOptions.today`). */
+  today?: () => string;
 };
+
+export type RuleEngineOutcomeCounts = Record<RuleEngineOutcomeKind, number>;
+
+export function countOutcomes(results: Pick<TransactionProcessingResult, "outcome">[]): RuleEngineOutcomeCounts {
+  const counts = Object.fromEntries(RULE_ENGINE_OUTCOME_KINDS.map((kind) => [kind, 0])) as RuleEngineOutcomeCounts;
+  for (const r of results) counts[r.outcome]++;
+  return counts;
+}
 
 export type RuleEngineRunOutcome = {
   processed: number;
@@ -479,6 +660,8 @@ export type RuleEngineRunOutcome = {
   stopReason: "time-budget" | "posting-limit" | null;
   /** The batch-level duplicate/large-payment pass was left for a later run. */
   intelligenceSkipped: boolean;
+  /** Phase 5A — how many transactions ended in each outcome. */
+  outcomes: RuleEngineOutcomeCounts;
   results: TransactionProcessingResult[];
 };
 
@@ -493,6 +676,10 @@ type PreparedRun = {
   bankAccountsById: Map<number, BankAccountGlInfo>;
   journalsByTransactionId: Map<number, RuleEngineJournalRef>;
   postingContext: RuleEnginePostingContext;
+  policy: RuleEnginePostingPolicy;
+  blockedIds: Set<number>;
+  /** Phase 5C — see `ProcessTransactionOptions.mayPost`. */
+  mayPost: boolean;
 };
 
 async function loadBankAccounts(companyId: string, transactions: BankTransactionRecord[], into: Map<number, BankAccountGlInfo>, missing: Set<number>): Promise<void> {
@@ -505,23 +692,25 @@ async function loadBankAccounts(companyId: string, transactions: BankTransaction
   });
 }
 
-async function prepareRun(companyId: string, transactions: BankTransactionRecord[], activeRules: BankingRule[]): Promise<PreparedRun> {
+async function prepareRun(companyId: string, transactions: BankTransactionRecord[], activeRules: BankingRule[], policy: RuleEnginePostingPolicy, mayPost = true): Promise<PreparedRun> {
   const bankAccountsById = new Map<number, BankAccountGlInfo>();
-  const [journalsByTransactionId, postingContext] = await Promise.all([
-    journalRepo.listRuleEngineJournalsForTransactions(
-      companyId,
-      transactions.filter((t) => t.journalId === null).map((t) => t.id),
-    ),
+  const open = transactions.filter((t) => t.journalId === null).map((t) => t.id);
+  const [journalsByTransactionId, postingContext, , blockedIds] = await Promise.all([
+    journalRepo.listRuleEngineJournalsForTransactions(companyId, open),
     loadRuleEnginePostingContext(companyId),
     loadBankAccounts(companyId, transactions, bankAccountsById, new Set()),
+    listTransactionIdsWithBlockingException(companyId, policy.blockingExceptionTypes, open),
   ]);
-  return { activeRules, bankAccountsById, journalsByTransactionId, postingContext };
+  return { activeRules, bankAccountsById, journalsByTransactionId, postingContext, policy, blockedIds, mayPost };
 }
 
 function processPrepared(companyId: string, transaction: BankTransactionRecord, prepared: PreparedRun, performedBy: string): Promise<TransactionProcessingResult> {
   return processTransaction(companyId, transaction, prepared.activeRules, prepared.bankAccountsById, performedBy, {
     ruleEngineJournal: prepared.journalsByTransactionId.get(transaction.id) ?? null,
     postingContext: prepared.postingContext,
+    policy: prepared.policy,
+    hasBlockingException: prepared.blockedIds.has(transaction.id),
+    mayPost: prepared.mayPost,
   });
 }
 
@@ -555,6 +744,7 @@ export async function runRuleEngine(companyId: string, performedBy = "System", o
   const deadlineAtMs = options.deadlineAtMs ?? now() + DEFAULT_RULE_ENGINE_BUDGET_MS;
   const maxPostings = options.maxPostings ?? DEFAULT_RULE_ENGINE_MAX_POSTINGS;
   const pageSize = Math.max(1, Math.min(options.pageSize ?? DEFAULT_RULE_ENGINE_PAGE_SIZE, explorerRepo.RULE_ENGINE_WORKLIST_PAGE_MAX));
+  const policy = options.policy ?? DEFAULT_RULE_ENGINE_POSTING_POLICY;
 
   const [activeRules, totalUnprocessed, postingContext] = await Promise.all([
     ruleRepo.listActiveBankingRules(companyId, "Banking"),
@@ -577,8 +767,13 @@ export async function runRuleEngine(companyId: string, performedBy = "System", o
     if (postingAttempts >= maxPostings) postingLimitReached = true;
     return !postingLimitReached;
   };
-  const run = async (transaction: BankTransactionRecord, options: ProcessTransactionOptions) => {
-    const outcome = await processTransaction(companyId, transaction, activeRules, bankAccountsById, performedBy, { postingContext, ...options });
+  const run = async (transaction: BankTransactionRecord, passOptions: ProcessTransactionOptions) => {
+    const outcome = await processTransaction(companyId, transaction, activeRules, bankAccountsById, performedBy, {
+      postingContext,
+      policy,
+      today: options.today,
+      ...passOptions,
+    });
     handled.add(transaction.id);
     results.push(outcome);
     if (outcome.postingAttempted) postingAttempts++;
@@ -603,16 +798,17 @@ export async function runRuleEngine(companyId: string, performedBy = "System", o
     const page = await explorerRepo.listRuleEngineWorklistPage(companyId, { claimableOnly: true, after, limit: pageSize });
     const matched = page.filter((t) => !handled.has(t.id) && evaluateTransactionAgainstRules(toEvaluable(t), activeRules).matchedRules.length > 0);
     if (matched.length > 0) {
-      const [journals] = await Promise.all([
+      const [journals, , blockedIds] = await Promise.all([
         journalRepo.listRuleEngineJournalsForTransactions(companyId, matched.map((t) => t.id)),
         loadBankAccounts(companyId, matched, bankAccountsById, missingBankAccounts),
+        listTransactionIdsWithBlockingException(companyId, policy.blockingExceptionTypes, matched.map((t) => t.id)),
       ]);
       for (const transaction of matched) {
         // A Banking Rule journal already exists: recovery's business
         // (pass 1), or reported by pass 3 — never posted again here.
         if (journals.has(transaction.id)) continue;
         if (outOfTime() || !budgetLeft()) break claimable;
-        await run(transaction, { ruleEngineJournal: null });
+        await run(transaction, { ruleEngineJournal: null, hasBlockingException: blockedIds.has(transaction.id) });
       }
     }
     if (page.length < pageSize) break;
@@ -680,6 +876,7 @@ export async function runRuleEngine(companyId: string, performedBy = "System", o
     stoppedEarly: stopReason !== null,
     stopReason,
     intelligenceSkipped,
+    outcomes: countOutcomes(results),
     results,
   };
 }
@@ -697,18 +894,127 @@ export async function runRuleEngine(companyId: string, performedBy = "System", o
  * nothing when applied to the rest of its own batch. Never changes the
  * rule's stored active state, only widens which rules this one
  * evaluation run considers. */
-export async function applyRulesToTransactions(companyId: string, transactionIds: number[], performedBy: string, additionalRuleIds: number[] = []): Promise<TransactionProcessingResult[]> {
+export async function applyRulesToTransactions(
+  companyId: string,
+  transactionIds: number[],
+  performedBy: string,
+  additionalRuleIds: number[] = [],
+  options: { policy?: RuleEnginePostingPolicy; mayPost?: boolean } = {},
+): Promise<TransactionProcessingResult[]> {
+  // Unbounded, exactly as before: every selected transaction is processed.
+  const outcome = await applyRulesToTransactionsBounded(companyId, transactionIds, performedBy, additionalRuleIds, { policy: options.policy, mayPost: options.mayPost });
+  return outcome.results;
+}
+
+/** Phase 5C — the bounds for a rule pass that runs ATTACHED to another
+ * operation (a CSV/PDF import, a bank sync) rather than as a sweep of its
+ * own. Both are the sweep's own established defaults, reused deliberately
+ * rather than picking new numbers: this is the same work a sweep does, on
+ * a smaller, explicit set of transactions, and
+ * `DEFAULT_RULE_ENGINE_BUDGET_MS` is already documented as "well inside
+ * the 300-second platform limit".
+ *
+ * Reached only pathologically — an import or sync would have to resolve
+ * more than `DEFAULT_RULE_ENGINE_MAX_POSTINGS` postable transactions in
+ * one batch, or spend two minutes on them. When it IS reached the
+ * remaining transactions are left untouched and reported as
+ * `notAttempted` with a `stopReason`; the caller surfaces both (see
+ * `docs/RULE_ENGINE_HARDENING_5A.md` §5 for why they must never be
+ * silent). */
+export const ATTACHED_RULE_PASS_BUDGET_MS = DEFAULT_RULE_ENGINE_BUDGET_MS;
+export const ATTACHED_RULE_PASS_MAX_POSTINGS = DEFAULT_RULE_ENGINE_MAX_POSTINGS;
+
+/** Phase 5C — the bounds an import or bank sync passes, as a fresh object
+ * each call (`deadlineAtMs` is relative to now). */
+export function attachedRulePassBounds(now: () => number = Date.now): RuleProcessingBounds {
+  return { deadlineAtMs: now() + ATTACHED_RULE_PASS_BUDGET_MS, maxPostings: ATTACHED_RULE_PASS_MAX_POSTINGS, now };
+}
+
+/** Phase 5B — explicit limits for a rule pass over a fixed selection
+ * (import, bank sync, Apply Rule). Omitted = no limit (today's behaviour). */
+export type RuleProcessingBounds = {
+  /** Epoch ms after which no NEW transaction is started. */
+  deadlineAtMs?: number;
+  /** Most posting/recovery database calls; once reached, no NEW
+   * transaction is started (not even one that would only classify). */
+  maxPostings?: number;
+  /** Test seam for the clock. */
+  now?: () => number;
+};
+
+export type BoundedRuleProcessingOutcome = {
+  results: TransactionProcessingResult[];
+  outcomes: RuleEngineOutcomeCounts;
+  postingAttempts: number;
+  /** Selected transactions this pass did not start because a limit was
+   * reached — untouched, still open for a later pass. */
+  notAttempted: number;
+  notAttemptedTransactionIds: number[];
+  /** Why the pass stopped early; `null` = every selected transaction was
+   * processed. */
+  stopReason: "time-budget" | "posting-limit" | null;
+  /** Phase 5C — selected transactions the rules WOULD have posted, left
+   * untouched because this caller does not hold `Banking:Post`. Distinct
+   * from `notAttempted` (a limit was reached) and from `outcomes.classified`
+   * (work that was done): these are still open and still postable, and a
+   * caller should say so rather than report the import or sync as fully
+   * processed. Always 0 when `mayPost` is not `false`. */
+  notPermitted: number;
+  notPermittedTransactionIds: number[];
+};
+
+/** Phase 5B — the shared bounded mechanism. The limits are checked only
+ * BEFORE a transaction is started, so a posting call already running (one
+ * atomic database function) is never interrupted; the pass simply starts no
+ * further transaction and reports each one it left, and why. With no
+ * bounds it processes the whole selection, exactly like
+ * `applyRulesToTransactions` always did. */
+export async function applyRulesToTransactionsBounded(
+  companyId: string,
+  transactionIds: number[],
+  performedBy: string,
+  additionalRuleIds: number[] = [],
+  options: { policy?: RuleEnginePostingPolicy; bounds?: RuleProcessingBounds; mayPost?: boolean } = {},
+): Promise<BoundedRuleProcessingOutcome> {
   const [listedRules, transactions] = await Promise.all([ruleRepo.listActiveBankingRules(companyId, "Banking"), explorerRepo.getTransactionsByIds(companyId, transactionIds)]);
   const extraRules = additionalRuleIds.length > 0
     ? (await Promise.all(additionalRuleIds.map((id) => ruleRepo.getBankingRule(companyId, id)))).filter((r): r is NonNullable<typeof r> => r !== null && !listedRules.some((lr) => lr.id === r.id))
     : [];
-  const prepared = await prepareRun(companyId, transactions, [...listedRules, ...extraRules]);
+  const prepared = await prepareRun(companyId, transactions, [...listedRules, ...extraRules], options.policy ?? DEFAULT_RULE_ENGINE_POSTING_POLICY, options.mayPost !== false);
 
+  const bounds = options.bounds ?? {};
+  const now = bounds.now ?? Date.now;
   const results: TransactionProcessingResult[] = [];
+  let postingAttempts = 0;
+  let stopReason: BoundedRuleProcessingOutcome["stopReason"] = null;
+  const notAttemptedTransactionIds: number[] = [];
+
   for (const transaction of transactions) {
-    results.push(await processPrepared(companyId, transaction, prepared, performedBy));
+    if (stopReason === null) {
+      if (bounds.deadlineAtMs !== undefined && now() >= bounds.deadlineAtMs) stopReason = "time-budget";
+      else if (bounds.maxPostings !== undefined && postingAttempts >= bounds.maxPostings) stopReason = "posting-limit";
+    }
+    if (stopReason !== null) {
+      notAttemptedTransactionIds.push(transaction.id);
+      continue;
+    }
+    const result = await processPrepared(companyId, transaction, prepared, performedBy);
+    if (result.postingAttempted) postingAttempts++;
+    results.push(result);
   }
-  return results;
+
+  const notPermittedTransactionIds = results.filter((r) => r.outcome === "not-permitted").map((r) => r.transactionId);
+
+  return {
+    results,
+    outcomes: countOutcomes(results),
+    postingAttempts,
+    notAttempted: notAttemptedTransactionIds.length,
+    notAttemptedTransactionIds,
+    stopReason,
+    notPermitted: notPermittedTransactionIds.length,
+    notPermittedTransactionIds,
+  };
 }
 
 /** Returns false when `shouldContinue` stopped it before the end. */

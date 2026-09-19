@@ -262,6 +262,38 @@ export function IconChevronLeft(props: IconProps) {
   );
 }
 
+/** Phase 5G — the tablet/mobile navigation trigger. Below `lg` the
+ * sidebar is hidden, and until this existed there was no control of any
+ * kind to reach navigation at those widths. */
+export function IconMenu(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+    </svg>
+  );
+}
+
+export function IconX(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+/** Phase 5G — the Back control's leading glyph. */
+export function IconArrowLeft(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M19 12H5" />
+      <path d="m12 19-7-7 7-7" />
+    </svg>
+  );
+}
+
 export function IconCalendar(props: IconProps) {
   return (
     <svg {...base} {...props}>

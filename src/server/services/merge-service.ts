@@ -68,6 +68,10 @@ export type SupplierMergeCandidate = {
   status: "Active" | "Inactive";
   vatNumber: string;
   taxNumber: string;
+  /** Phase 5I — a registration number identifies the legal entity, so it is
+      one of the strongest signals that two supplier records are the same
+      company. The preview is read-only; the merge itself is unchanged. */
+  registrationNumber: string;
   paymentTermsDays: number;
   linkedRecordCount: number;
 };
@@ -92,6 +96,7 @@ export async function getSupplierMergePreview(companyId: string, supplierAId: nu
     status: s.status,
     vatNumber: s.vatNumber,
     taxNumber: s.taxNumber,
+    registrationNumber: s.registrationNumber,
     paymentTermsDays: s.paymentTermsDays,
     linkedRecordCount,
   });

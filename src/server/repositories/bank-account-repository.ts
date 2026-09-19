@@ -61,6 +61,8 @@ export type CreateBankAccountInput = {
   openingBalanceDate: string | null;
   openingBalanceReference: string;
   glAccount: string;
+  /** Phase 5I — opt in to printing on documents. */
+  showOnDocuments?: boolean;
 };
 
 export async function createBankAccount(companyId: string, input: CreateBankAccountInput): Promise<BankAccount> {
@@ -71,6 +73,7 @@ export async function createBankAccount(companyId: string, input: CreateBankAcco
       company_id: companyId,
       account_number: input.accountNumber,
       account_name: input.accountName,
+      show_on_documents: input.showOnDocuments ?? false,
       bank_name: input.bankName,
       account_type: input.accountType,
       branch: input.branch,

@@ -20,17 +20,17 @@ const SUPPLIERS: Supplier[] = [
   {
     id: 1, companyId: COMPANY_ID, name: "Fenwick Office Supplies", alternativeNames: ["Fenwick Supplies"], defaultGlAccount: "6100 — Office Supplies", defaultVatCode: "Standard", status: "Active",
     supplierCode: "SUPP-1000", supplierCategory: "Office Supplies", supplierType: "Company", bankName: "FirstRand Bank", bankAccountNumber: "62012345678", bankBranchCode: "250655",
-    vatNumber: "4123456780", taxNumber: "9012345678", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0,
+    vatNumber: "4123456780", taxNumber: "9012345678", registrationNumber: "", riskRating: "Low", paymentTermsDays: 30, spendingLimit: 0,
   },
   {
     id: 2, companyId: COMPANY_ID, name: "Netherfield Freight Ltd", alternativeNames: [], defaultGlAccount: "6200 — Distribution", defaultVatCode: "Standard", status: "Active",
     supplierCode: "SUPP-1001", supplierCategory: "Logistics", supplierType: "Company", bankName: "Standard Bank", bankAccountNumber: "011223344", bankBranchCode: "051001",
-    vatNumber: "4198765430", taxNumber: "9087654321", riskRating: "Medium", paymentTermsDays: 30, spendingLimit: 0,
+    vatNumber: "4198765430", taxNumber: "9087654321", registrationNumber: "", riskRating: "Medium", paymentTermsDays: 30, spendingLimit: 0,
   },
   {
     id: 3, companyId: COMPANY_ID, name: "Harrow Print & Design", alternativeNames: [], defaultGlAccount: null, defaultVatCode: null, status: "Active",
     supplierCode: "SUPP-1002", supplierCategory: "Marketing", supplierType: "Individual", bankName: "", bankAccountNumber: "", bankBranchCode: "",
-    vatNumber: "", taxNumber: "", riskRating: "Low", paymentTermsDays: 14, spendingLimit: 0,
+    vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low", paymentTermsDays: 14, spendingLimit: 0,
   },
 ];
 

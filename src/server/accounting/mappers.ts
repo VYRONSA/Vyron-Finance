@@ -36,6 +36,7 @@ export type SupplierRow = {
   bank_account_number: string;
   bank_branch_code: string;
   vat_number: string;
+  registration_number?: string | null;
   tax_number: string;
   risk_rating: string;
   payment_terms_days: number;
@@ -58,6 +59,7 @@ export function supplierFromRow(row: SupplierRow): Supplier {
     bankAccountNumber: row.bank_account_number ?? "",
     bankBranchCode: row.bank_branch_code ?? "",
     vatNumber: row.vat_number ?? "",
+    registrationNumber: row.registration_number ?? "",
     taxNumber: row.tax_number ?? "",
     riskRating: (row.risk_rating as Supplier["riskRating"]) ?? "Low",
     paymentTermsDays: row.payment_terms_days ?? 30,
@@ -433,6 +435,7 @@ export function hasAllocationResultChanged(
 }
 
 export type BankAccountRow = {
+  show_on_documents?: boolean | null;
   id: number;
   company_id: string;
   account_number: string;
@@ -458,6 +461,7 @@ export function bankAccountFromRow(row: BankAccountRow): BankAccount {
     companyId: row.company_id,
     accountNumber: row.account_number,
     accountName: row.account_name,
+    showOnDocuments: row.show_on_documents ?? false,
     bankName: row.bank_name,
     accountType: row.account_type,
     branch: row.branch,
@@ -526,6 +530,7 @@ export function importBatchFromRow(row: ImportBatchRow): ImportBatch {
  * identity. */
 export type BankAccountUpdatableFields = Partial<{
   account_name: string;
+  show_on_documents: boolean;
   bank_name: string;
   account_type: string;
   branch: string;

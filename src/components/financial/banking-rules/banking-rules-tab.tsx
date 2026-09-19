@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -8,7 +8,9 @@ import { Field } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmActionRow, useConfirmTarget } from "@/components/ui/confirm-action";
-import { IconArrowDown, IconArrowUp, IconPlus, IconSliders } from "@/components/ui/icons";
+import { IconArrowDown, IconArrowUp, IconChevronDown, IconPlus, IconSliders, IconX } from "@/components/ui/icons";
+import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import {
   CONDITION_OPERATORS,
   RULE_DOMAINS,
@@ -44,7 +46,48 @@ export function ruleMatchesSearch(rule: BankingRule, query: string): boolean {
   if (rule.description.toLowerCase().includes(q)) return true;
   if (rule.conditions.some((c) => c.value.toLowerCase().includes(q))) return true;
   if (rule.actions.some((a) => (a.targetText ?? "").toLowerCase().includes(q) || (a.targetId !== null && String(a.targetId).includes(q)))) return true;
+  // Phase 5G — the remaining fields the requirement names. A GL account
+  // and a VAT code are already covered above: both live in an action's
+  // `targetText`. These add the rest of what the list shows, so anything
+  // visible on a row can also be searched for — rule type, domain, the
+  // condition's field and operator, the action type, the priority, and
+  // the status as the words actually displayed. Underscores are matched
+  // both ways because `set_gl_account` is an implementation detail and
+  // nobody types it that way.
+  if (rule.ruleType.toLowerCase().includes(q)) return true;
+  if (rule.domain.toLowerCase().includes(q)) return true;
+  if (rule.conditions.some((c) => c.field.toLowerCase().includes(q) || c.field.replace(/_/g, " ").includes(q) || c.operator.toLowerCase().includes(q) || c.operator.replace(/_/g, " ").includes(q))) return true;
+  if (rule.actions.some((a) => a.actionType.toLowerCase().includes(q) || a.actionType.replace(/_/g, " ").includes(q))) return true;
+  if (String(rule.priority).includes(q)) return true;
+  if ((rule.isActive ? "enabled active" : "disabled inactive").includes(q)) return true;
   return false;
+}
+
+/** Phase 5G — the one-line summaries the compact list shows. Pure and
+ * exported so each column is testable without rendering the screen.
+ * A rule can carry several conditions; the row shows the first and says
+ * how many more there are rather than truncating silently. */
+export function summariseConditions(rule: BankingRule): string {
+  if (rule.conditions.length === 0) return "—";
+  const first = rule.conditions[0]!;
+  const readable = `${first.field.replace(/_/g, " ")} ${first.operator.replace(/_/g, " ")} ${first.value}`.trim();
+  return rule.conditions.length > 1 ? `${readable} +${rule.conditions.length - 1}` : readable;
+}
+
+/** The GL account an action sets, if any — one of the columns asked for. */
+export function ruleGlAccount(rule: BankingRule): string {
+  return rule.actions.find((a) => a.actionType === "set_gl_account")?.targetText ?? "—";
+}
+
+/** The VAT code an action sets, if any. */
+export function ruleVatCode(rule: BankingRule): string {
+  return rule.actions.find((a) => a.actionType === "set_vat_code")?.targetText ?? "—";
+}
+
+/** What the rule DOES, in words — every action type it carries. */
+export function summariseActions(rule: BankingRule): string {
+  if (rule.actions.length === 0) return "—";
+  return rule.actions.map((a) => a.actionType.replace(/_/g, " ")).join(", ");
 }
 
 // Finding #006 — of the 9 domains `RULE_DOMAINS` offers, only these have
@@ -634,10 +677,16 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
   // client-side text/status filter over the rules this page already has
   // — no new endpoint, no redesign, no pagination.
   const [searchQuery, setSearchQuery] = useState("");
+  // Phase 5G — which rule's editor is open in the list. One value,
+  // so opening a rule closes the previously open one and the page
+  // never returns to a wall of open forms.
+  const [openRuleId, setOpenRuleId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Inactive">("All");
   const [runningEngine, setRunningEngine] = useState(false);
   const [runOutcome, setRunOutcome] = useState<{ processed: number; autoPosted: number; exceptionsRaised: number; stoppedEarly?: boolean; remaining?: number } | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  // Phase 5A — the run needs Banking:Post; show a refusal instead of nothing.
+  const [runError, setRunError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<RuleConflict[]>([]);
   // Finding #150 — bulk Enable/Disable/Delete, mirroring the multi-select
   // + bulk-action-bar pattern Transaction Explorer already established
@@ -721,11 +770,15 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
   async function runEngine() {
     setRunningEngine(true);
     setRunOutcome(null);
+    setRunError(null);
     try {
       const res = await fetch(`${apiBase}/run`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) setRunOutcome(data.outcome);
+      else setRunError(typeof data.error === "string" ? data.error : `The Rule Engine could not run (HTTP ${res.status}).`);
       router.refresh();
+    } catch {
+      setRunError("Couldn't reach the API. Check the dev server is running.");
     } finally {
       setRunningEngine(false);
     }
@@ -763,13 +816,26 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
             <option value="Inactive">Inactive only</option>
           </Select>
         </div>
-        <div className="min-w-[220px] flex-1">
+        <div className="relative min-w-[220px] flex-1">
           <Input
             aria-label="Search rules"
-            placeholder="Search name, description, condition, or target…"
+            placeholder="Search name, type, condition, GL account, VAT, status…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            className={searchQuery ? "pr-9" : undefined}
           />
+          {/* Phase 5G — "clearable". A search you cannot clear in one
+              action leaves the list filtered and the reason off-screen. */}
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear search"
+              className="absolute top-1/2 right-2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-vf-sm text-vf-ink-faint transition-colors duration-150 ease-vf-out hover:bg-vf-paper-alt hover:text-vf-ink"
+            >
+              <IconX className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <Button variant="subtle" size="sm" disabled={previewMode} title={disabledTitle} onClick={() => window.open(`${apiBase}/export`, "_blank")}>
           <IconArrowDown className="h-4 w-4" /> Export CSV
@@ -805,6 +871,12 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
         <p role="status" className="text-sm text-vf-ink-soft">
           Processed {runOutcome.processed} transaction(s) — {runOutcome.autoPosted} automatically posted, {runOutcome.exceptionsRaised} exception(s) raised.
           {runOutcome.stoppedEarly && ` This run stopped at its time or posting limit; ${runOutcome.remaining ?? 0} transaction(s) are left for the next run.`}
+        </p>
+      )}
+
+      {runError && (
+        <p role="alert" className="text-sm text-vf-danger">
+          {runError}
         </p>
       )}
 
@@ -878,17 +950,112 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
             }
           />
         ) : (
-          visibleRules.map((rule) => (
-            <RuleCard
-              key={rule.id}
-              rule={rule}
-              companyId={companyId}
-              previewMode={previewMode}
-              conflictReasons={conflictReasonsFor(rule.id)}
-              selected={selectedIds.has(rule.id)}
-              onToggleSelect={toggleSelect}
-            />
-          ))
+          // Phase 5G — every rule, in one scrollable list.
+          //
+          // Before this each rule mounted a complete inline editor, so
+          // 100+ rules meant 100+ open forms: you could not see what
+          // rules existed, scan for one, or reach it without scrolling
+          // past everything above it. Now each rule is one row you can
+          // read at a glance, and opening a row renders THE SAME
+          // `RuleCard` editor underneath it — there is no second editor,
+          // and nothing about saving, deleting, permissions or conflicts
+          // changed.
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-vf-ink-faint" role="status">
+              {visibleRules.length === rules.length
+                ? `${rules.length} rule${rules.length === 1 ? "" : "s"}`
+                : `${visibleRules.length} of ${rules.length} rules`}
+            </p>
+            <Table>
+              <TableHead sticky>
+                <tr>
+                  {/* A header cell with no text is an axe violation
+                      (empty-table-header) and leaves screen-reader users
+                      without a name for the checkbox column. */}
+                  <TableHeadCell className="w-8">
+                    <span className="sr-only">Select</span>
+                  </TableHeadCell>
+                  <TableHeadCell>Rule</TableHeadCell>
+                  <TableHeadCell>Status</TableHeadCell>
+                  <TableHeadCell className="text-right">Priority</TableHeadCell>
+                  <TableHeadCell>Type</TableHeadCell>
+                  <TableHeadCell>Condition</TableHeadCell>
+                  <TableHeadCell>GL Account</TableHeadCell>
+                  <TableHeadCell>VAT</TableHeadCell>
+                  <TableHeadCell>Action</TableHeadCell>
+                </tr>
+              </TableHead>
+              <TableBody>
+                {visibleRules.map((rule) => {
+                  const open = openRuleId === rule.id;
+                  const conflicts = conflictReasonsFor(rule.id);
+                  return (
+                    <Fragment key={rule.id}>
+                      <TableRow>
+                        <TableCell className="align-middle">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select rule ${rule.name}`}
+                            checked={selectedIds.has(rule.id)}
+                            onChange={() => toggleSelect(rule.id)}
+                            className="h-4 w-4 accent-vf-red-600"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {/* The row itself is the control that opens the
+                              rule — a real button, so it is reachable and
+                              operable from the keyboard. */}
+                          <button
+                            type="button"
+                            onClick={() => setOpenRuleId(open ? null : rule.id)}
+                            aria-expanded={open}
+                            aria-controls={`rule-editor-${rule.id}`}
+                            className="flex items-start gap-2 text-left transition-colors duration-150 ease-vf-out hover:text-vf-red-600"
+                          >
+                            <IconChevronDown className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform duration-200", open ? "rotate-0" : "-rotate-90")} aria-hidden />
+                            <span>
+                              <span className="font-medium text-vf-ink">{rule.name}</span>
+                              {rule.description && <span className="block text-xs text-vf-ink-faint">{rule.description}</span>}
+                              {conflicts.length > 0 && <span className="block text-xs text-vf-warning">Conflict</span>}
+                            </span>
+                          </button>
+                        </TableCell>
+                        <TableCell>
+                          <Badge tone={rule.isActive ? "good" : "muted"}>{rule.isActive ? "Enabled" : "Disabled"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{rule.priority}</TableCell>
+                        <TableCell>
+                          <Badge tone="info">{rule.ruleType}</Badge>
+                        </TableCell>
+                        <TableCell className="text-vf-ink-soft">{summariseConditions(rule)}</TableCell>
+                        <TableCell className="font-mono tabular-nums">{ruleGlAccount(rule)}</TableCell>
+                        <TableCell>{ruleVatCode(rule)}</TableCell>
+                        <TableCell className="text-vf-ink-soft">{summariseActions(rule)}</TableCell>
+                      </TableRow>
+                      {open && (
+                        <tr id={`rule-editor-${rule.id}`}>
+                          <td colSpan={9} className="p-0">
+                            {/* THE existing editor — same component, same
+                                props, same save/delete/permissions. */}
+                            <div className="px-2 pt-1 pb-3">
+                              <RuleCard
+                                rule={rule}
+                                companyId={companyId}
+                                previewMode={previewMode}
+                                conflictReasons={conflicts}
+                                selected={selectedIds.has(rule.id)}
+                                onToggleSelect={toggleSelect}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         );
       })()}
     </div>

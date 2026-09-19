@@ -70,7 +70,19 @@ export type GeneratedDocument = {
   summary: string;
 };
 
-export type AutomationTaskType = "RecurringTemplate" | "RuleEngineRun" | "ReportRefresh" | "CommunicationQueue" | "Custom" | "SubscriptionLifecycleSweep" | "BankSync" | "AiClassificationSweep";
+export type AutomationTaskType =
+  | "RecurringTemplate"
+  | "RuleEngineRun"
+  | "ReportRefresh"
+  | "CommunicationQueue"
+  | "Custom"
+  | "SubscriptionLifecycleSweep"
+  | "BankSync"
+  | "AiClassificationSweep"
+  /** Phase 5L — VYRON AI Supplier Invoice Capture. Kept in step with the
+   * CHECK constraint on `automation_tasks.task_type` (migration 0108), so
+   * a value this union allows can always be stored. */
+  | "SupplierInvoiceExtraction";
 /** `Suspended` (migration 0099): the scheduler exhausted the task's
  * retries; it does not run again until a person resumes it. */
 export type AutomationTaskStatus = "Queued" | "Running" | "Success" | "Failed" | "Paused" | "Disabled" | "Suspended";

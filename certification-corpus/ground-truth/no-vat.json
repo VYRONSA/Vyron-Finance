@@ -1,0 +1,64 @@
+{
+  "caseId": "no-vat",
+  "documentId": "no-vat.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Loskop Handyman Services",
+    "vatNumber": null,
+    "registrationNumber": null
+  },
+  "invoiceNumber": "LH-0431",
+  "invoiceDate": "2026-06-15",
+  "dueDate": null,
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Repairs to loading bay door",
+      "supplierSku": null,
+      "quantity": 1,
+      "uom": null,
+      "unitPrice": 750,
+      "discount": 0,
+      "vatRatePercent": null,
+      "vatAmount": null,
+      "lineTotal": 750
+    }
+  ],
+  "printedTotals": {
+    "total": 750
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      750
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 750,
+    "vat": null,
+    "total": 750
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "correctly-absent",
+    "supplierRegistrationNumber": "correctly-absent",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "correctly-absent",
+    "currency": "present",
+    "orderReference": "correctly-absent",
+    "vatAmount": "not-applicable",
+    "vatRatePercent": "not-applicable",
+    "supplierSku": "correctly-absent",
+    "uom": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "notes": "Headed INVOICE, not TAX INVOICE — the legally correct heading for a non-vendor, and the strongest visible signal. No VAT number, no VAT column, no VAT total. Absent VAT here is CORRECTLY ABSENT and must never be scored as missing, nor reported as a finding."
+}

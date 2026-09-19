@@ -1,0 +1,64 @@
+{
+  "caseId": "credit-note",
+  "documentId": "credit-note.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Credit Note",
+  "supplier": {
+    "name": "Karoo Wholesale Supplies",
+    "vatNumber": "4111222333",
+    "registrationNumber": "2015/445566/07"
+  },
+  "invoiceNumber": "KW-CN-0007",
+  "invoiceDate": "2026-07-09",
+  "dueDate": null,
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Returned stock — maize meal 10kg",
+      "supplierSku": "MM10",
+      "quantity": 5,
+      "uom": "bag",
+      "unitPrice": 100,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 75,
+      "lineTotal": 500
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 500,
+    "vatAmount": 75,
+    "total": 575
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      500
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 500,
+    "vat": 75,
+    "total": 575
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "correctly-absent",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [
+      "not-an-invoice"
+    ],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "not-supported-credit-note"
+  },
+  "notes": "Visibly headed CREDIT NOTE, referencing KW-10041, with a stated reason. The amounts are POSITIVE on the page — a credit note states what is being credited, it does not print negatives. Expected outcome is classification plus refusal: it must NOT become a Bill, because a Bill would increase what is owed when this document reduces it."
+}

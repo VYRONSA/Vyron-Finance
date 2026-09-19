@@ -24,14 +24,14 @@ vi.mock("@/lib/csv-export", () => ({ downloadCsv: downloadCsvMock }));
 
 describe("SupplierWorkspace — Download Template (Phase 32)", () => {
   it("shows a Download Template button in the Suppliers toolbar, next to Import CSV", () => {
-    render(<SupplierWorkspace companyId="co_1" suppliers={MOCK_SUPPLIERS} previewMode={false} />);
+    render(<SupplierWorkspace companyId="co_1" suppliers={MOCK_SUPPLIERS} chartOfAccounts={[]} vatTreatments={[]} previewMode={false} />);
     expect(screen.getByRole("button", { name: /download template/i })).toBeInTheDocument();
     expect(screen.getByText(/import csv/i)).toBeInTheDocument();
   });
 
   it("downloads a template using the parser's OWN exported header contract — Name included, in a real .csv file", () => {
     downloadCsvMock.mockClear();
-    render(<SupplierWorkspace companyId="co_1" suppliers={MOCK_SUPPLIERS} previewMode={false} />);
+    render(<SupplierWorkspace companyId="co_1" suppliers={MOCK_SUPPLIERS} chartOfAccounts={[]} vatTreatments={[]} previewMode={false} />);
     fireEvent.click(screen.getByRole("button", { name: /download template/i }));
 
     expect(downloadCsvMock).toHaveBeenCalledTimes(1);
@@ -43,7 +43,7 @@ describe("SupplierWorkspace — Download Template (Phase 32)", () => {
   });
 
   it("tells the user to download the template, complete it, and upload it here", () => {
-    render(<SupplierWorkspace companyId="co_1" suppliers={MOCK_SUPPLIERS} previewMode={false} />);
+    render(<SupplierWorkspace companyId="co_1" suppliers={MOCK_SUPPLIERS} chartOfAccounts={[]} vatTreatments={[]} previewMode={false} />);
     expect(screen.getByText(/download the template, complete it, and upload it here/i)).toBeInTheDocument();
   });
 });

@@ -44,7 +44,7 @@ function supplier(overrides: Partial<Supplier> = {}): Supplier {
   return {
     id: 1, companyId: "co_1", name: "Acme Supplies", alternativeNames: [], defaultGlAccount: null, defaultVatCode: null,
     status: "Active", supplierCode: "", supplierCategory: "", supplierType: "Company", bankName: "", bankAccountNumber: "",
-    bankBranchCode: "", vatNumber: "", taxNumber: "", riskRating: "Low", paymentTermsDays: 0, spendingLimit: 0,
+    bankBranchCode: "", vatNumber: "", taxNumber: "", registrationNumber: "", riskRating: "Low", paymentTermsDays: 0, spendingLimit: 0,
     ...overrides,
   };
 }

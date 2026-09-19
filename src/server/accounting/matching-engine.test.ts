@@ -26,7 +26,7 @@ function supplier(id: number, name: string, alternativeNames: string[] = []): Su
     bankAccountNumber: "",
     bankBranchCode: "",
     vatNumber: "",
-    taxNumber: "",
+    taxNumber: "", registrationNumber: "",
     riskRating: "Low",
     paymentTermsDays: 30, spendingLimit: 0,
   };

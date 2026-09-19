@@ -9,7 +9,8 @@
  */
 import { DocumentBrandingBlock } from "@/components/documents/print/branding-block";
 import { chooseCustomerAddress, formatCustomerAddress } from "@/components/documents/print/customer-address";
-import { INVOICE_DOCUMENT_TITLE, InvoiceDocumentBody } from "@/components/documents/print/invoice-body";
+import { listBankAccounts } from "@/server/repositories/bank-account-repository";
+import { INVOICE_DOCUMENT_TITLE, InvoiceDocumentBody, type InvoicePaymentDetails } from "@/components/documents/print/invoice-body";
 import { StatementDocumentBody } from "@/components/documents/print/statement-body";
 import { BusinessDocumentBody } from "@/components/documents/print/business-document-body";
 import { ReportDocument } from "@/components/financial/reporting/report-document";
@@ -42,21 +43,57 @@ async function pdfLetterhead(companyId: string): Promise<Letterhead> {
   return { ...letterhead, logoUrl: logo };
 }
 
+/** Phase 5I — assembles the document's payment block from data that
+ * already exists: the one bank account the company ticked for documents,
+ * and its own footer/instruction text. Returns `undefined` when nothing
+ * is configured, so a company that has set none of this prints exactly
+ * the document it prints today. */
+export function invoicePaymentDetails(
+  company: { paymentInstructions?: string; invoiceFooter?: string } | null,
+  bankAccounts: { showOnDocuments: boolean; bankName: string; accountName: string; accountNumber: string; branch: string; status?: string }[],
+): InvoicePaymentDetails | undefined {
+  const chosen = bankAccounts.find((a) => a.showOnDocuments) ?? null;
+  const paymentInstructions = company?.paymentInstructions?.trim() || "";
+  const footer = company?.invoiceFooter?.trim() || "";
+  if (!chosen && !paymentInstructions && !footer) return undefined;
+  return {
+    bankAccount: chosen
+      ? { bankName: chosen.bankName, accountName: chosen.accountName, accountNumber: chosen.accountNumber, branch: chosen.branch }
+      : null,
+    paymentInstructions,
+    footer,
+  };
+}
+
 export async function invoicePdfHtml(companyId: string, invoiceId: number): Promise<string | null> {
   const invoice = await getSalesInvoice(companyId, invoiceId);
   if (!invoice) return null;
-  const [customer, addressLine, company, logo] = await Promise.all([
+  const [customer, addressLine, company, logo, bankAccounts] = await Promise.all([
     getCustomer(companyId, invoice.customerId),
     customerAddressLine(companyId, invoice.customerId),
     getCompany(companyId),
     logoDataUri(companyId),
+    // Phase 5I — only an account the company explicitly opted in to is
+    // ever printed (`show_on_documents`), never "whichever came first".
+    listBankAccounts(companyId).catch(() => []),
   ]);
+  /* Phase 5J — a credit/debit note must identify the transaction it
+   * adjusts (VAT Act s21(3)(a)(vii)/(b)(vii)). `original_invoice_id` has
+   * been stored since Finding #114 but was never resolved or printed, so
+   * no note this system produced carried that particular. Fetched only
+   * for a note that names one; an Invoice does no extra work. */
+  const originalInvoice = invoice.originalInvoiceId
+    ? await getSalesInvoice(companyId, invoice.originalInvoiceId).catch(() => null)
+    : null;
   return renderPrintHtml(
     <InvoiceDocumentBody
       invoice={invoice}
       customer={customer ?? undefined}
       addressLine={addressLine}
       letterhead={<DocumentBrandingBlock company={company} logoSrc={logo} />}
+      currencyCode={company?.baseCurrencyCode || undefined}
+      paymentDetails={invoicePaymentDetails(company, bankAccounts)}
+      originalInvoice={originalInvoice}
     />,
     `${INVOICE_DOCUMENT_TITLE[invoice.documentType]} ${invoice.invoiceNumber}`,
   );

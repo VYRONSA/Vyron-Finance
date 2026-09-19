@@ -60,13 +60,27 @@ function summaryText(summary: Record<string, unknown>): string | null {
 function TaskRow({ task, companyId, previewMode, lastRun }: { task: AutomationTask; companyId: string; previewMode: boolean; lastRun: AutomationTaskRun | undefined }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  // Phase 5D — a refused action (a suspended task, or a Rule Engine /
+  // BankSync run by someone without Banking:Post) used to be swallowed:
+  // the response was ignored and `router.refresh()` ran anyway, so a
+  // refusal looked exactly like a run that had happened. The server is
+  // the enforcement point either way — this is so the person is told.
+  const [error, setError] = useState<string | null>(null);
   const disabledTitle = previewMode ? "Available once a production Supabase project is connected" : undefined;
 
   async function act(action: string) {
     setLoading(true);
+    setError(null);
     try {
-      await fetch(`/api/companies/${companyId}/automation-tasks/${task.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const res = await fetch(`/api/companies/${companyId}/automation-tasks/${task.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(typeof data.error === "string" ? data.error : `That didn't work (HTTP ${res.status}).`);
+        return;
+      }
       router.refresh();
+    } catch {
+      setError("Couldn't reach the API. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -102,6 +116,11 @@ function TaskRow({ task, companyId, previewMode, lastRun }: { task: AutomationTa
           )}
           <Button variant="subtle" size="sm" disabled={previewMode || loading || task.status === "Disabled"} title={disabledTitle} onClick={() => act("disable")}>Disable</Button>
         </div>
+        {error && (
+          <p role="alert" className="mt-1.5 text-right text-xs text-vf-danger">
+            {error}
+          </p>
+        )}
       </TableCell>
     </TableRow>
   );
@@ -132,17 +151,35 @@ export function AutomationDashboardTab({
     if (!existing || run.startedAt > existing.startedAt) lastRunByTaskId.set(run.taskId, run);
   }
   const [running, setRunning] = useState(false);
-  const [outcome, setOutcome] = useState<{ processed: number; succeeded: number; failed: number } | null>(null);
+  // Phase 5E — `refused` carries the due tasks the scheduler deliberately
+  // did not run (posting tasks, without Banking:Post). Reporting only
+  // "processed / succeeded / failed" would omit them silently, which is
+  // precisely what must not happen.
+  const [outcome, setOutcome] = useState<{
+    processed: number;
+    succeeded: number;
+    failed: number;
+    refused?: number;
+    refusedTasks?: { taskId: number; taskType: string; name: string; reason: string }[];
+  } | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
   const disabledTitle = previewMode ? "Available once a production Supabase project is connected" : undefined;
 
   async function runSchedulerNow() {
     setRunning(true);
     setOutcome(null);
+    setRunError(null);
     try {
       const res = await fetch(`/api/companies/${companyId}/automation-tasks`, { method: "POST" });
-      const data = await res.json();
-      if (res.ok) setOutcome(data.outcome);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRunError(typeof data.error === "string" ? data.error : `The scheduler could not run (HTTP ${res.status}).`);
+        return;
+      }
+      setOutcome(data.outcome);
       router.refresh();
+    } catch {
+      setRunError("Couldn't reach the API. Check your connection and try again.");
     } finally {
       setRunning(false);
     }
@@ -159,7 +196,22 @@ export function AutomationDashboardTab({
             Processed {outcome.processed} task(s) — {outcome.succeeded} succeeded, {outcome.failed} failed.
           </span>
         )}
+        {runError && (
+          <span role="alert" className="text-sm text-vf-danger">
+            {runError}
+          </span>
+        )}
       </div>
+
+      {outcome?.refusedTasks && outcome.refusedTasks.length > 0 && (
+        <p role="status" className="text-sm text-vf-warning">
+          {outcome.refusedTasks.length === 1 ? "1 due task was" : `${outcome.refusedTasks.length} due tasks were`} not run because
+          {outcome.refusedTasks.length === 1 ? " it posts" : " they post"} accounting journals, which needs the &ldquo;Banking:Post&rdquo;
+          permission: {outcome.refusedTasks.map((t) => `${t.name} (${t.taskType})`).join(", ")}.{" "}
+          {outcome.refusedTasks.length === 1 ? "It is" : "They are"} unchanged and still due — the scheduled run, or someone with that
+          permission, will still process {outcome.refusedTasks.length === 1 ? "it" : "them"}.
+        </p>
+      )}
 
       <Card>
         <CardHeader>

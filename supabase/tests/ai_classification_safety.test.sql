@@ -52,8 +52,17 @@ returns jsonb language sql as $$
     p_source, p_now, p_cap, 'transaction-classification')
 $$;
 
-create function pg_temp.reserved(p_company uuid, p_day date) returns integer language sql as $$
-  select coalesce((select reserved_requests from ai_provider_daily_usage where company_id = p_company and usage_day = p_day), 0)
+-- Phase 5L — the counter is now keyed (company_id, scope, usage_day), so
+-- this reads the classification scope explicitly. Left unscoped it
+-- returned one row per scope and every assertion below aborted with "more
+-- than one row returned by a subquery used as an expression" — which is
+-- exactly the regression this suite exists to catch. The application
+-- itself never reads this table directly; it goes through the gate and
+-- record-attempt functions, which are scope-aware.
+create function pg_temp.reserved(p_company uuid, p_day date, p_scope text default 'transaction-classification')
+returns integer language sql as $$
+  select coalesce((select reserved_requests from ai_provider_daily_usage
+    where company_id = p_company and usage_day = p_day and scope = p_scope), 0)
 $$;
 
 create function pg_temp.cands(p_company uuid, p_now timestamptz, p_limit integer default 20) returns bigint[] language sql as $$

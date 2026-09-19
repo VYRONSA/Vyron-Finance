@@ -5,7 +5,11 @@ import { SupplierWorkspace } from "@/components/financial/suppliers/supplier-wor
 import { IconAlertTriangle, IconImport, IconShieldCheck, IconUsers } from "@/components/ui/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { listSuppliers } from "@/server/services/supplier-management-service";
+import { listChartOfAccounts } from "@/server/services/chart-of-accounts-service";
+import { listVatTreatments } from "@/server/services/vat-treatment-service";
 import { MOCK_SUPPLIERS } from "@/lib/mock/supplier-reconciliation-data";
+import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
+import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 
 export const metadata: Metadata = {
   title: "Suppliers — VYRON FINANCE",
@@ -15,7 +19,13 @@ export default async function SuppliersPage({ params }: { params: Promise<{ comp
   const { companyId } = await params;
   const previewMode = !isSupabaseConfigured();
 
-  const suppliers = previewMode ? MOCK_SUPPLIERS : await listSuppliers(companyId);
+  // Phase 5I — the create form now offers the supplier's default GL
+  // account and VAT code (the two fields the Allocation Engine reads), so
+  // this page needs the same option lists the supplier DETAIL page
+  // already loads. Same services, same mock fallbacks.
+  const [suppliers, chartOfAccounts, vatTreatments] = previewMode
+    ? [MOCK_SUPPLIERS, MOCK_CHART_OF_ACCOUNTS, MOCK_VAT_TREATMENTS]
+    : await Promise.all([listSuppliers(companyId), listChartOfAccounts(companyId), listVatTreatments(companyId)]);
 
   const activeSuppliers = suppliers.filter((s) => s.status === "Active").length;
   const highRiskSuppliers = suppliers.filter((s) => s.riskRating === "High").length;
@@ -59,7 +69,7 @@ export default async function SuppliersPage({ params }: { params: Promise<{ comp
 
       <Card>
         <CardContent className="pt-5">
-          <SupplierWorkspace companyId={companyId} suppliers={suppliers} previewMode={previewMode} />
+          <SupplierWorkspace companyId={companyId} suppliers={suppliers} chartOfAccounts={chartOfAccounts} vatTreatments={vatTreatments} previewMode={previewMode} />
         </CardContent>
       </Card>
     </div>

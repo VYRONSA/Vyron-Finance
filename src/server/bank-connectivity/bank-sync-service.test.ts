@@ -10,7 +10,11 @@ vi.mock("@/server/repositories/bank-connectivity-repository", () => ({
 }));
 vi.mock("@/server/repositories/import-repository", () => ({ ingestBankTransactionIdempotent: vi.fn() }));
 vi.mock("@/server/repositories/bank-account-repository", () => ({ getBankAccount: vi.fn() }));
-vi.mock("@/server/services/rule-processing-service", () => ({ applyRulesToTransactions: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/server/services/rule-processing-service", () => ({
+  // Phase 5C — the sync now runs the BOUNDED rule pass.
+  applyRulesToTransactionsBounded: vi.fn().mockResolvedValue({ results: [], outcomes: {}, postingAttempts: 0, notAttempted: 0, notAttemptedTransactionIds: [], stopReason: null, notPermitted: 0, notPermittedTransactionIds: [] }),
+  attachedRulePassBounds: vi.fn(() => ({ deadlineAtMs: 9_999_999_999_999, maxPostings: 150, now: Date.now })),
+}));
 vi.mock("@/server/billing-platform/engine/usage-metering-engine", () => ({ recordUsageEvent: vi.fn() }));
 vi.mock("@/server/services/transaction-classification-service", () => ({ classifyUnallocatedTransactionsWithAi: vi.fn().mockResolvedValue({ classified: 0, skipped: 0, failed: 0 }) }));
 vi.mock("./bank-connectivity-service", () => ({ getAuthorizedSession: vi.fn().mockResolvedValue({ accessToken: "the-access-token" }) }));
@@ -21,7 +25,7 @@ import * as connectivityRepo from "@/server/repositories/bank-connectivity-repos
 import * as importRepo from "@/server/repositories/import-repository";
 import { getBankAccount } from "@/server/repositories/bank-account-repository";
 import type { BankAccount } from "@/server/accounting/types";
-import { applyRulesToTransactions } from "@/server/services/rule-processing-service";
+import { applyRulesToTransactionsBounded } from "@/server/services/rule-processing-service";
 import { classifyUnallocatedTransactionsWithAi } from "@/server/services/transaction-classification-service";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
 import { getAuthorizedSession } from "./bank-connectivity-service";
@@ -73,7 +77,7 @@ function bankAccount(overrides: Partial<BankAccount> = {}): BankAccount {
     id: 55,
     companyId: "co_1",
     accountNumber: "62050837304",
-    accountName: "Business Cheque Account",
+    accountName: "Business Cheque Account", showOnDocuments: false,
     bankName: "First National Bank",
     accountType: "Cheque",
     branch: "250655",
@@ -162,7 +166,7 @@ describe("syncBankConnectionAccount — first sync", () => {
 
     await syncBankConnectionAccount("co_1", linkedAccount(), connection(), NOW);
 
-    expect(applyRulesToTransactions).toHaveBeenCalledWith("co_1", [777], "System");
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("co_1", [777], "System", [], expect.objectContaining({ mayPost: true }));
   });
 
   it("a transient usage-metering failure does not fail the sync, skip AI classification, or block the cursor from advancing (Phase 25I)", async () => {
@@ -216,7 +220,7 @@ describe("syncBankConnectionAccount — repeated sync does not duplicate", () =>
     expect(outcome.transactionsDuplicate).toBe(2);
     // No newly-created rows -> Banking Rules never re-runs against
     // already-processed transactions.
-    expect(applyRulesToTransactions).not.toHaveBeenCalled();
+    expect(applyRulesToTransactionsBounded).not.toHaveBeenCalled();
   });
 
   it("re-requesting the exact same range twice never moves transactionsImported into positive on the second call", async () => {
@@ -344,7 +348,7 @@ describe("syncAllConnectedAccounts — partial failure", () => {
 
     const summary = await syncAllConnectedAccounts("co_1", NOW);
 
-    expect(summary).toEqual({ attempted: 2, succeeded: 1, failed: 1 });
+    expect(summary).toEqual({ attempted: 2, succeeded: 1, failed: 1, notPermitted: 0, notAttempted: 0, stopReason: null });
   });
 
   it("only attempts Active linked accounts, skipping Disconnected ones", async () => {
@@ -360,7 +364,74 @@ describe("syncAllConnectedAccounts — partial failure", () => {
   it("returns a trivial zero summary for a company with no connected banks (empty data)", async () => {
     vi.mocked(connectivityRepo.listConnectedBankConnections).mockResolvedValue([]);
     const summary = await syncAllConnectedAccounts("co_1", NOW);
-    expect(summary).toEqual({ attempted: 0, succeeded: 0, failed: 0 });
+    expect(summary).toEqual({ attempted: 0, succeeded: 0, failed: 0, notPermitted: 0, notAttempted: 0, stopReason: null });
+  });
+});
+
+describe("Phase 5C — syncing is Banking:Edit, posting what was synced is Banking:Post", () => {
+  function oneNewTransaction() {
+    vi.mocked(createFnbProvider).mockReturnValue(mockProvider(vi.fn().mockResolvedValue([fnbTransaction("t1", "2026-08-01", 100)])));
+    vi.mocked(importRepo.ingestBankTransactionIdempotent).mockResolvedValue({ transaction: { id: 777 } as never, created: true });
+  }
+
+  it("a caller without Banking:Post still SYNCS — the fetch, the ingest and the cursor all happen", async () => {
+    oneNewTransaction();
+    const outcome = await syncBankConnectionAccount("co_1", linkedAccount(), connection(), NOW, "editor", { mayPost: false });
+
+    expect(outcome.transactionsImported).toBe(1);
+    expect(importRepo.ingestBankTransactionIdempotent).toHaveBeenCalled();
+    expect(connectivityRepo.recordSuccessfulSyncCursor).toHaveBeenCalled();
+  });
+
+  it("mayPost false reaches the rule pass; omitting it means may-post (the scheduler's path)", async () => {
+    oneNewTransaction();
+    await syncBankConnectionAccount("co_1", linkedAccount(), connection(), NOW, "editor", { mayPost: false });
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("co_1", [777], "editor", [], expect.objectContaining({ mayPost: false }));
+
+    vi.mocked(applyRulesToTransactionsBounded).mockClear();
+    await syncBankConnectionAccount("co_1", linkedAccount(), connection(), NOW, "scheduler");
+    expect(applyRulesToTransactionsBounded).toHaveBeenCalledWith("co_1", [777], "scheduler", [], expect.objectContaining({ mayPost: true }));
+  });
+
+  it("the sync reports what its rule pass left, per account and in the company summary", async () => {
+    oneNewTransaction();
+    vi.mocked(applyRulesToTransactionsBounded).mockResolvedValue({
+      results: [], outcomes: {}, postingAttempts: 0, notAttempted: 2, notAttemptedTransactionIds: [8, 9],
+      stopReason: "posting-limit", notPermitted: 5, notPermittedTransactionIds: [1, 2, 3, 4, 5],
+    } as never);
+
+    const outcome = await syncBankConnectionAccount("co_1", linkedAccount(), connection(), NOW, "editor", { mayPost: false });
+    expect(outcome.rulePass).toEqual({ notPermitted: 5, notAttempted: 2, stopReason: "posting-limit" });
+
+    vi.mocked(connectivityRepo.listConnectedBankConnections).mockResolvedValue([connection({ id: 1 })]);
+    vi.mocked(connectivityRepo.listBankConnectionAccounts).mockResolvedValue([linkedAccount({ id: 10, status: "Active" })]);
+    const summary = await syncAllConnectedAccounts("co_1", NOW, "editor", { mayPost: false });
+    expect(summary).toMatchObject({ notPermitted: 5, notAttempted: 2, stopReason: "posting-limit" });
+  });
+
+  it("a sync with nothing new to ingest reports a clean rule pass and runs none", async () => {
+    vi.mocked(createFnbProvider).mockReturnValue(mockProvider(vi.fn().mockResolvedValue([])));
+    const outcome = await syncBankConnectionAccount("co_1", linkedAccount(), connection(), NOW);
+    expect(outcome.rulePass).toEqual({ notPermitted: 0, notAttempted: 0, stopReason: null });
+    expect(applyRulesToTransactionsBounded).not.toHaveBeenCalled();
+  });
+
+  it("a caller's deadline only ever SHORTENS the attached pass, never extends it", async () => {
+    oneNewTransaction();
+    // Far in the past: it must win over the attached pass's own budget.
+    await syncBankConnectionAccount("co_1", linkedAccount(), connection(), NOW, "cron", { deadlineAtMs: 1 });
+    expect(vi.mocked(applyRulesToTransactionsBounded).mock.calls[0]![4]!.bounds!.deadlineAtMs).toBe(1);
+
+    vi.mocked(applyRulesToTransactionsBounded).mockClear();
+    // Far in the future: the attached pass's own, smaller budget wins.
+    await syncBankConnectionAccount("co_1", linkedAccount(), connection(), NOW, "cron", { deadlineAtMs: Number.MAX_SAFE_INTEGER });
+    expect(vi.mocked(applyRulesToTransactionsBounded).mock.calls[0]![4]!.bounds!.deadlineAtMs).toBe(9_999_999_999_999);
+  });
+
+  it("tenant isolation: the rule pass is scoped to the company that owns the connection", async () => {
+    oneNewTransaction();
+    await syncBankConnectionAccount("co_2", linkedAccount(), connection(), NOW, "editor", { mayPost: false });
+    expect(vi.mocked(applyRulesToTransactionsBounded).mock.calls[0]![0]).toBe("co_2");
   });
 });
 
@@ -379,9 +450,9 @@ describe("syncBankConnectionAccount — AI classification (Phase 25E)", () => {
     vi.mocked(importRepo.ingestBankTransactionIdempotent).mockResolvedValue({ transaction: { id: 1 } as never, created: true });
 
     const order: string[] = [];
-    vi.mocked(applyRulesToTransactions).mockImplementation(async () => {
+    vi.mocked(applyRulesToTransactionsBounded).mockImplementation(async () => {
       order.push("rules");
-      return [];
+      return { results: [], outcomes: {}, postingAttempts: 0, notAttempted: 0, notAttemptedTransactionIds: [], stopReason: null, notPermitted: 0, notPermittedTransactionIds: [] } as never;
     });
     vi.mocked(classifyUnallocatedTransactionsWithAi).mockImplementation(async () => {
       order.push("ai");

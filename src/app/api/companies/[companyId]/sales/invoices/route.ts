@@ -18,6 +18,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ comp
   if (!session.ok) return session.response;
 
   const { companyId } = await params;
+
+  // Phase 5I — reading invoices is a Sales capability, not merely a
+  // signed-in one. The PDF route for this same data already required
+  // `Sales:View`, so a caller refused the PDF could still read every
+  // invoice's customer, amounts and status as JSON. Row-level security
+  // still enforces the tenant boundary underneath; this adds the module
+  // permission the rest of Sales already uses.
+  const check = await requirePermission(companyId, "Sales:View");
+  if (!check.ok) return check.response;
+
   const url = new URL(request.url);
   const documentTypeParam = url.searchParams.get("documentType");
   const customerIdParam = url.searchParams.get("customerId");

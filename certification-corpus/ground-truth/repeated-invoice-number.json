@@ -1,0 +1,63 @@
+{
+  "caseId": "repeated-invoice-number",
+  "documentId": "repeated-invoice-number.pdf",
+  "verifiedBy": "Authored by Claude (Opus 5) for VYRON on 2026-09-19, read from the rendered page at certification-corpus/documents/. Typed independently of the extraction schema, prompt and provider. Not yet countersigned by a second reader.",
+  "verifiedOn": "2026-09-19",
+  "documentType": "Invoice",
+  "supplier": {
+    "name": "Highveld Fasteners",
+    "vatNumber": "4778899001",
+    "registrationNumber": "2013/667788/07"
+  },
+  "invoiceNumber": "KW-10041",
+  "invoiceDate": "2026-07-04",
+  "dueDate": "2026-08-03",
+  "orderReference": null,
+  "currency": "ZAR",
+  "lines": [
+    {
+      "description": "Washer M12 galvanised",
+      "supplierSku": "WM12G",
+      "quantity": 500,
+      "uom": "each",
+      "unitPrice": 1.15,
+      "discount": 0,
+      "vatRatePercent": 15,
+      "vatAmount": 86.25,
+      "lineTotal": 575
+    }
+  ],
+  "printedTotals": {
+    "subtotal": 575,
+    "vatAmount": 86.25,
+    "total": 661.25
+  },
+  "independentArithmetic": {
+    "lineExtensions": [
+      575
+    ],
+    "discountTotal": 0,
+    "taxableAmount": 575,
+    "vat": 86.25,
+    "total": 661.25
+  },
+  "documentIsArithmeticallyWrong": false,
+  "fieldStatus": {
+    "supplierName": "present",
+    "supplierVatNumber": "present",
+    "supplierRegistrationNumber": "present",
+    "invoiceNumber": "present",
+    "invoiceDate": "present",
+    "dueDate": "present",
+    "currency": "present",
+    "orderReference": "correctly-absent"
+  },
+  "expected": {
+    "validationFindings": [],
+    "supplierResolution": "resolved-exact",
+    "duplicate": "none",
+    "conversion": "draft-bill"
+  },
+  "duplicateScenario": "Same invoice NUMBER as clean-pdf and duplicate, but a DIFFERENT supplier. The correct answer is 'not a duplicate'.",
+  "notes": "The false-positive guard for duplicate detection. An invoice number is unique per supplier, never globally."
+}
