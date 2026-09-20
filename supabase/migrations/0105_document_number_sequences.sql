@@ -70,8 +70,38 @@ drop policy if exists "members can access their company's document number sequen
 create policy "members can access their company's document number sequences"
   on document_number_sequences for all using (user_can_access_company(company_id));
 
--- Prefixes match `PREFIX_BY_TYPE` in sales-invoice-repository.ts and the
--- `INV`/`CN`/`DN` + 6 digits format every existing document already uses.
+-- THE PRINTED FORMAT IS `<PREFIX>-<number>`, AND THE NUMBER IS NOT PADDED.
+--
+-- An earlier draft of this migration asserted the opposite -- `INV`/`CN`/`DN`
+-- followed by six zero-padded digits, matching the application's own
+-- `COUNT(*)+1` generator. That assertion was never true of the live data.
+-- Every Sales document on the production system is hyphenated and
+-- unpadded: 333 invoices INV-3440 .. INV-3495 and 9 credit notes from
+-- CN-3369, with no zero-padded value anywhere. Those numbers were imported,
+-- not generated here, which is why the generator's format and the data's
+-- format were free to disagree.
+--
+-- The consequence of believing the draft was concrete: `^INV[0-9]+$` matches
+-- no hyphenated number, so the backfill below would have seeded NOTHING, and
+-- the first document issued afterwards would have been INV-1 formatted as
+-- INV000001 while the live series stood at INV-3495. Not a duplicate -- a
+-- second, incompatible series in the same VAT record.
+--
+-- So the series is continued as printed: INV-3495 -> INV-3496.
+--
+-- RECOGNITION IS DELIBERATELY WIDER THAN GENERATION. The pattern below
+-- accepts an OPTIONAL hyphen, so a company holding `INV000012` from the old
+-- generator still seeds its counter from 12 rather than being ignored and
+-- colliding later. Generation always emits the hyphenated form.
+--
+-- The digit run is bounded at 18 so a malformed 20-digit value cannot
+-- overflow bigint and abort the claim; such a value simply does not
+-- participate in the maximum.
+--
+-- This pattern appears twice -- once in the claim below and once in the
+-- backfill at the foot of this file. They MUST stay identical; a value the
+-- backfill counts but the claim ignores (or the reverse) is how a series
+-- silently forks.
 create or replace function document_number_prefix(p_document_type text)
 returns text
 language sql
@@ -106,6 +136,7 @@ set search_path = public
 as $$
 declare
   v_prefix text;
+  v_pattern text;
   v_number bigint;
   v_candidate text;
 begin
@@ -113,6 +144,8 @@ begin
   if v_prefix is null then
     raise exception 'VYRON_DOCNUM_UNKNOWN_TYPE: "%" is not a Sales document type', p_document_type;
   end if;
+  -- Keep identical to the backfill's pattern at the foot of this file.
+  v_pattern := '^' || v_prefix || '-?([0-9]{1,18})$';
 
   for _attempt in 1..25 loop
     -- One statement, therefore one row lock, therefore no two callers
@@ -127,18 +160,19 @@ begin
       p_document_type,
       v_prefix,
       coalesce(
-        max((regexp_replace(i.invoice_number, '^' || v_prefix, ''))::bigint),
+        max(substring(i.invoice_number from v_pattern)::bigint),
         0
       ) + 2
     from sales_invoices i
     where i.company_id = p_company_id
       and i.document_type = p_document_type
-      and i.invoice_number ~ ('^' || v_prefix || '[0-9]+$')
+      and i.invoice_number ~ v_pattern
     on conflict (company_id, document_type)
     do update set next_number = seq.next_number + 1, updated_at = now()
     returning seq.next_number - 1 into v_number;
 
-    v_candidate := v_prefix || lpad(v_number::text, 6, '0');
+    -- As printed on every existing document: prefix, hyphen, unpadded.
+    v_candidate := v_prefix || '-' || v_number::text;
 
     if not exists (
       select 1 from sales_invoices
@@ -157,14 +191,15 @@ $$;
 -- migration never rewinds a counter that has since moved on. Reads
 -- `sales_invoices`; writes only the new table.
 -- ---------------------------------------------------------------------
+-- The pattern here MUST match the one the claim builds above.
 insert into document_number_sequences (company_id, document_type, prefix, next_number)
 select
   i.company_id,
   i.document_type,
   document_number_prefix(i.document_type),
-  max((regexp_replace(i.invoice_number, '^' || document_number_prefix(i.document_type), ''))::bigint) + 1
+  max(substring(i.invoice_number from '^' || document_number_prefix(i.document_type) || '-?([0-9]{1,18})$')::bigint) + 1
 from sales_invoices i
 where document_number_prefix(i.document_type) is not null
-  and i.invoice_number ~ ('^' || document_number_prefix(i.document_type) || '[0-9]+$')
+  and i.invoice_number ~ ('^' || document_number_prefix(i.document_type) || '-?([0-9]{1,18})$')
 group by i.company_id, i.document_type
 on conflict (company_id, document_type) do nothing;
