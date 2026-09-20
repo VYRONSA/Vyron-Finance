@@ -90,20 +90,34 @@ begin
       and conrelid = 'ai_provider_daily_usage'::regclass
       and array_length(conkey, 1) = 2
   ) then
-    -- Derive the emergency-fuse rows from what has already been used,
-    -- BEFORE the key widens, so the sum is taken over scoped rows only.
-    insert into ai_provider_daily_usage (company_id, usage_day, scope, reserved_requests)
-    select company_id, usage_day, '__provider__', sum(reserved_requests)
-    from ai_provider_daily_usage
-    where scope <> '__provider__'
-    group by company_id, usage_day
-    on conflict do nothing;
-
     alter table ai_provider_daily_usage drop constraint ai_provider_daily_usage_pkey;
     alter table ai_provider_daily_usage add primary key (company_id, scope, usage_day);
   end if;
 end;
 $$;
+
+-- Derive the emergency-fuse rows from what has already been used. This MUST
+-- run AFTER the key widens, and the ordering is the whole point.
+--
+-- While the key is still (company_id, usage_day) a derived '__provider__' row
+-- carries the SAME key as the row it was summed from. It therefore conflicts
+-- with its own source and `on conflict do nothing` silently discards it,
+-- leaving the fuse at zero on a database that has already made requests --
+-- the one outcome this backfill exists to prevent. Nothing fails and nothing
+-- is lost, which is exactly why it went unnoticed. Reproduced and proven by
+-- the migration-time regression in supabase/tests/ai_scope_budgets.test.sql.
+--
+-- `where scope <> '__provider__'` stops a re-run folding the fuse into
+-- itself; `on conflict do nothing` keeps an existing fuse row authoritative
+-- rather than overwriting it. Reading and writing one table in a single
+-- statement is safe here: the SELECT reads the statement's snapshot, so the
+-- rows this INSERT adds are invisible to it.
+insert into ai_provider_daily_usage (company_id, usage_day, scope, reserved_requests)
+select company_id, usage_day, '__provider__', sum(reserved_requests)
+from ai_provider_daily_usage
+where scope <> '__provider__'
+group by company_id, usage_day
+on conflict do nothing;
 
 -- ---------------------------------------------------------------------
 -- 3. Budget resolution: company override, else scope default, else 0.
