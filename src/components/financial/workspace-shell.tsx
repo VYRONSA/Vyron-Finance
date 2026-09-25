@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn, getInitials } from "@/lib/utils";
-import { BrandMark } from "@/components/ui/brand-mark";
+import { PrecisiaWordmark, VyronsoftAttribution } from "@/components/ui/precisia-wordmark";
 import { NAV_GROUPS, activeNavGroup, isNavItemActive } from "./workspace-nav";
 import { WorkspaceNavSections } from "./workspace-nav-sections";
 import { NotificationBell } from "@/components/financial/notification-bell";
@@ -16,6 +16,19 @@ import { IconChevronDown, IconChevronLeft, IconHelpCircle, IconMenu, IconSearch,
 // now live in `workspace-nav.ts` so the desktop sidebar and the
 // tablet/mobile drawer render from one model. Nothing about the list
 // itself changed in the move.
+
+/** "jane.smith@…" → "Jane Smith" — the account name shown beside
+ * the avatar, as in the PRECISIA "Software Page" reference. Derived from
+ * the signed-in user's own email; nothing is invented. */
+function displayNameFromEmail(email: string | undefined): string | null {
+  const local = email?.split("@")[0];
+  if (!local) return null;
+  return local
+    .split(/[._\-\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
 
 export function FinancialWorkspaceShell({
   children,
@@ -95,6 +108,21 @@ export function FinancialWorkspaceShell({
   }, []);
   const isActive = (href?: string, exact = false) => isNavItemActive(pathname, companyId, href, exact);
   const initials = getInitials(userEmail, companyName);
+  const displayName = displayNameFromEmail(userEmail);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+  // The dashboard is the one company screen the PRECISIA "Software Page"
+  // reference defines — it renders on the dark PRECISIA canvas. Every
+  // other module page keeps the light operational canvas its white
+  // "paper" cards and ink text were designed for.
+  const isDashboardRoute = pathname === `/company/${companyId}/dashboard` || pathname === `/company/${companyId}`;
 
   // UI-005 — "the sidebar must never visually move... full-height blue
   // application frame." A `sticky` sidebar (last round's fix) still
@@ -158,10 +186,10 @@ export function FinancialWorkspaceShell({
     // time — both are the same underlying fix, a real fixed frame
     // instead of relying on sticky/overflow tricks layered on top of
     // ordinary document scroll.
-    <div className="flex h-screen flex-col overflow-hidden bg-vf-workspace-bg">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#050c18]">
       {!previewMode && <SessionExpiryGuard />}
       {previewMode && (
-        <div className="shrink-0 border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-600">
+        <div className="shrink-0 border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-300">
           Preview Mode — no Supabase project is configured yet, so this workspace is showing mock
           data with authentication disabled. See ARCHITECTURE.md.
         </div>
@@ -186,7 +214,7 @@ export function FinancialWorkspaceShell({
             role="dialog"
             aria-modal="true"
             aria-label="Navigation menu"
-            className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-gradient-to-b from-vf-red-600 to-vf-red-900 px-3 py-5 shadow-vf-paper-xl outline-none"
+            className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-[#0f2238] bg-gradient-to-b from-[#020a16] via-[#010711] to-[#01060f] px-3 py-5 shadow-vf-paper-xl outline-none"
           >
             <div className="mb-3 flex items-center justify-between px-1">
               <span className="text-sm font-semibold text-vf-on-dark">{companyName}</span>
@@ -220,39 +248,21 @@ export function FinancialWorkspaceShell({
         <aside
           onClick={expandSidebarIfProcessing}
           className={cn(
-            "hidden h-full shrink-0 flex-col bg-gradient-to-b from-vf-red-600 to-vf-red-900 px-3 py-5 transition-[width] duration-300 ease-vf-out lg:flex",
+            "hidden h-full shrink-0 flex-col border-r border-[#0f2238] bg-gradient-to-b from-[#020a16] via-[#010711] to-[#01060f] px-3 py-6 transition-[width] duration-300 ease-vf-out lg:flex",
             collapsed ? "w-[72px]" : "w-64",
           )}
         >
-          {/* UI-006 — restrained on purpose: one flat icon frame, a
-              stacked two-weight wordmark, and a precise tagline.
-              `BrandMark` (src/components/ui/brand-mark.tsx) renders the
-              official VYRON brand mark — the same self-contained icon
-              every future VYRON product shares, not something invented
-              independently here. It's a complete tile on its own now
-              (background, glow, and glass edge all baked in), so it's
-              rendered directly at its full outer size rather than
-              wrapped in a separate background container. */}
-          <Link href="/" className="group mb-1 flex flex-col items-start gap-3 px-1 pt-1" title="PRECISIA — Financial Workspace">
-            <BrandMark
-              className={cn(
-                "shrink-0 transition-transform duration-200 group-hover:scale-[1.03]",
-                collapsed ? "h-10 w-10" : "h-12 w-12",
-              )}
-            />
-            {!collapsed && (
-              <div className="flex flex-col">
-                <span className="font-display text-xl leading-[1.1] font-semibold tracking-tight text-vf-on-dark">PRECISIA</span>
-                <span className="font-display text-xl leading-[1.1] font-light tracking-[0.06em] text-vf-red-300">FINANCIAL INTELLIGENCE</span>
-                <span className="mt-2.5 text-[0.6rem] leading-tight font-medium tracking-[0.16em] text-vf-on-dark-faint uppercase">
-                  Enterprise Financial
-                  <br />
-                  Intelligence Platform
-                </span>
-              </div>
+          {/* PRECISIA wordmark, as in the "Software Page" reference. In
+              icons-only mode there is room for the "PA" monogram only. */}
+          <Link href="/platform" className="mb-5 flex px-4" title="PRECISIA — back to Platform Workspace" aria-label="PRECISIA — back to Platform Workspace">
+            {collapsed ? (
+              <span className="font-[family-name:var(--font-brand)] text-2xl text-white">
+                P<span className="text-[#1d8dff]">A</span>
+              </span>
+            ) : (
+              <PrecisiaWordmark size="md" subtitleTone="blue" />
             )}
           </Link>
-          <div className={cn("mt-5 mb-2 h-px bg-white/10", collapsed && "mx-1")} />
 
           {/* Phase 5G — grouped when the sidebar is at full width. In
               icons-only mode (Transaction Explorer's focus mode) there is
@@ -266,10 +276,8 @@ export function FinancialWorkspaceShell({
                 const Icon = item.icon;
                 const active = isActive(item.href, item.exact);
                 const itemClass = cn(
-                  "flex items-center justify-center gap-2.5 rounded-vf-sm px-3 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-150 ease-vf-out",
-                  active
-                    ? "bg-white/16 text-vf-on-dark shadow-[inset_3px_0_0_var(--color-vf-red-300)]"
-                    : "text-vf-on-dark-soft hover:bg-white/8 hover:text-vf-on-dark hover:shadow-[inset_2px_0_0_rgba(255,255,255,0.2)]",
+                  "flex items-center justify-center gap-2.5 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-150 ease-vf-out",
+                  active ? "pc-nav-active" : "text-[#c9d4e3] hover:bg-white/5 hover:text-white",
                 );
                 return item.href ? (
                   <Link key={item.label} href={`/company/${companyId}/${item.href}`} className={itemClass} title={item.label} aria-current={active ? "page" : undefined}>
@@ -278,7 +286,7 @@ export function FinancialWorkspaceShell({
                 ) : (
                   <span
                     key={item.label}
-                    className="flex cursor-not-allowed items-center justify-center gap-2.5 rounded-vf-sm px-3 py-2.5 text-sm font-medium text-vf-on-dark-faint/50"
+                    className="flex cursor-not-allowed items-center justify-center gap-2.5 rounded-[10px] px-3 py-2.5 text-sm font-medium text-white/30"
                     aria-disabled
                     title={`${item.label} — not available yet`}
                   >
@@ -303,7 +311,7 @@ export function FinancialWorkspaceShell({
             aria-expanded={!collapsed}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className={cn(
-              "mt-4 flex items-center gap-2 rounded-vf-sm px-3 py-2 text-xs font-medium text-vf-on-dark-faint transition-colors duration-150 ease-vf-out hover:bg-white/8 hover:text-vf-on-dark",
+              "mt-4 flex items-center gap-2 rounded-[10px] px-3 py-2 text-xs font-medium text-[#7f8da6] transition-colors duration-150 ease-vf-out hover:bg-white/5 hover:text-white",
               collapsed && "justify-center",
             )}
           >
@@ -327,7 +335,7 @@ export function FinancialWorkspaceShell({
             needed now that `<main>` below has its own bounded scroll
             (UI-005) instead of the document scrolling. */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="z-10 flex shrink-0 items-center justify-between gap-4 border-b border-vf-paper-border bg-vf-paper px-6 py-3.5 shadow-vf-paper-sm">
+          <header className="z-10 flex h-[70px] shrink-0 items-center justify-between gap-4 border-b border-[#16304d] bg-[#0b1a2a] px-4 font-sans sm:px-6">
             {/* Phase 5G — below `lg` the sidebar is hidden, so this is
                 the only way into navigation at tablet and phone widths.
                 Hidden at `lg` and up, where the real sidebar is back. */}
@@ -338,7 +346,7 @@ export function FinancialWorkspaceShell({
               aria-expanded={mobileNavOpen}
               aria-controls="workspace-mobile-nav"
               aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
-              className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-vf-sm text-vf-ink-soft transition-colors duration-150 ease-vf-out hover:bg-vf-paper-alt hover:text-vf-ink lg:hidden"
+              className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#dbe4f1] transition-colors duration-150 ease-vf-out hover:bg-white/8 hover:text-white lg:hidden"
             >
               {mobileNavOpen ? <IconX className="h-5 w-5" /> : <IconMenu className="h-5 w-5" />}
             </button>
@@ -356,14 +364,13 @@ export function FinancialWorkspaceShell({
                   type="button"
                   onClick={() => setSwitcherOpen((v) => !v)}
                   aria-expanded={switcherOpen}
-                  className="flex items-center gap-1.5 text-sm transition hover:text-vf-red-600"
+                  className="flex min-w-0 items-center gap-2.5 text-[0.95rem] font-medium text-white transition hover:text-[#8cc8ff]"
                 >
-                  <span className="font-medium text-vf-ink">{companyName}</span>
-                  <IconChevronDown className="h-3.5 w-3.5 text-vf-ink-faint" />
-                  <span className="ml-1 hidden text-vf-ink-faint sm:inline">/ Financial Workspace</span>
+                  <span className="truncate">{companyName}</span>
+                  <IconChevronDown className="h-4 w-4 shrink-0 text-[#c9d4e3]" />
                 </button>
                 {switcherOpen && (
-                  <div role="menu" className="absolute top-full left-0 z-20 mt-2 w-64 rounded-vf-md border border-vf-paper-border bg-vf-paper py-1.5 shadow-vf-paper-xl">
+                  <div role="menu" className="absolute top-full left-0 z-20 mt-2 w-64 rounded-[12px] border border-[#29405c] bg-[#0b1a2b] py-1.5 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.8)]">
                     {companies.map((c) => (
                       <Link
                         key={c.id}
@@ -371,15 +378,15 @@ export function FinancialWorkspaceShell({
                         role="menuitem"
                         onClick={() => setSwitcherOpen(false)}
                         className={cn(
-                          "block truncate px-3 py-1.5 text-sm transition hover:bg-vf-paper-alt",
-                          c.id === companyId ? "font-medium text-vf-red-600" : "text-vf-ink-soft",
+                          "block truncate px-3.5 py-2 text-sm transition hover:bg-white/6",
+                          c.id === companyId ? "font-medium text-[#5cb3ff]" : "text-[#dbe4f1]",
                         )}
                       >
                         {c.name}
                       </Link>
                     ))}
-                    <div className="mt-1 border-t border-vf-paper-border pt-1">
-                      <Link href="/platform" onClick={() => setSwitcherOpen(false)} className="block px-3 py-1.5 text-sm text-vf-ink-faint transition hover:bg-vf-paper-alt">
+                    <div className="mt-1 border-t border-white/10 pt-1">
+                      <Link href="/platform" onClick={() => setSwitcherOpen(false)} className="block px-3.5 py-2 text-sm text-[#9fb0c6] transition hover:bg-white/6">
                         Platform Overview →
                       </Link>
                     </div>
@@ -389,40 +396,67 @@ export function FinancialWorkspaceShell({
             ) : (
               <Link
                 href="/platform"
-                className="flex items-center gap-1.5 text-sm transition hover:text-vf-red-600"
+                className="flex min-w-0 items-center gap-2.5 text-[0.95rem] font-medium text-white transition hover:text-[#8cc8ff]"
                 title="Back to Platform Overview"
               >
-                <span className="font-medium text-vf-ink">{companyName}</span>
-                <span className="ml-1 hidden text-vf-ink-faint sm:inline">/ Financial Workspace</span>
+                <span className="truncate">{companyName}</span>
               </Link>
             )}
 
-            <div className="flex flex-1 items-center justify-end gap-3">
-              <div className="relative hidden max-w-xs flex-1 sm:block">
-                <IconSearch className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-vf-ink-faint" />
-                <input
-                  type="search"
-                  placeholder="Search — coming soon"
-                  disabled
-                  title="Workspace-wide search is not available yet"
-                  className="w-full rounded-full border border-vf-paper-border bg-vf-paper-alt py-1.5 pr-3 pl-9 text-sm text-vf-ink-faint outline-none disabled:cursor-not-allowed"
-                />
-              </div>
+            {/* Workspace-wide search is not built yet, so the field stays
+                disabled and says so. */}
+            <div className="relative hidden w-full max-w-[600px] flex-1 md:block">
+              <IconSearch className="pointer-events-none absolute top-1/2 left-4 h-4.5 w-4.5 -translate-y-1/2 text-[#9fb0c6]" />
+              <input
+                type="search"
+                placeholder="Search — coming soon"
+                disabled
+                title="Workspace-wide search is not available yet"
+                className="h-11 w-full cursor-not-allowed rounded-[12px] border border-[#243a55] bg-[#102133] pr-4 pl-11 text-sm text-[#9fb0c6] outline-none placeholder:text-[#9fb0c6]"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-[#dbe4f1] [&_button]:text-[#dbe4f1] [&_button:hover]:bg-white/8">
               <NotificationBell companyId={companyId} previewMode={previewMode} />
               <span
-                className="flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-full text-vf-ink-faint"
+                className="flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-full text-[#dbe4f1]"
                 role="img"
                 aria-label="Help — documentation coming soon"
                 title="Help documentation is coming soon"
               >
-                <IconHelpCircle className="h-4.5 w-4.5" />
+                <IconHelpCircle className="h-5 w-5" />
               </span>
-              <span className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-vf-red-500 to-vf-red-800 text-xs font-semibold text-vf-on-dark">
-                  {initials}
-                </span>
-                {userEmail && <SignOutButton className="text-xs font-medium text-vf-ink-soft transition hover:text-vf-red-600" />}
-              </span>
+              <div ref={userMenuRef} className="relative ml-2 sm:ml-3">
+                <button
+                  type="button"
+                  onClick={() => setUserMenuOpen((v) => !v)}
+                  aria-expanded={userMenuOpen}
+                  aria-label="Account menu"
+                  className="flex items-center gap-3 rounded-full py-0.5 pr-1 pl-0.5 hover:!bg-transparent"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-b from-[#1b7cff] to-[#0b4fc4] text-sm font-semibold text-white shadow-[0_0_0_2px_rgba(47,155,255,0.3)]">
+                    {initials}
+                  </span>
+                  {displayName && <span className="hidden text-[0.92rem] font-medium text-white sm:inline">{displayName}</span>}
+                  <IconChevronDown className="h-4 w-4 text-[#c9d4e3]" />
+                </button>
+                {userMenuOpen && (
+                  <div role="menu" className="absolute top-full right-0 z-20 mt-2 w-60 rounded-[12px] border border-[#29405c] bg-[#0b1a2b] py-1.5 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.8)]">
+                    {userEmail && <p className="truncate border-b border-white/10 px-3.5 pt-1.5 pb-2.5 text-xs text-[#9fb0c6]">{userEmail}</p>}
+                    <Link href="/platform" role="menuitem" onClick={() => setUserMenuOpen(false)} className="block px-3.5 py-2 text-sm text-[#dbe4f1] hover:bg-white/6">
+                      Platform Workspace
+                    </Link>
+                    <Link href="/platform/account" role="menuitem" onClick={() => setUserMenuOpen(false)} className="block px-3.5 py-2 text-sm text-[#dbe4f1] hover:bg-white/6">
+                      Change Password
+                    </Link>
+                    {userEmail && (
+                      <div className="mt-1 border-t border-white/10 px-3.5 pt-2 pb-1">
+                        <SignOutButton className="text-sm font-medium text-[#dbe4f1] transition hover:text-white" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </header>
 
@@ -430,11 +464,23 @@ export function FinancialWorkspaceShell({
             ref={mainRef}
             onClick={refocusExplorerIfProcessing}
             className={cn(
-              "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto",
-              isProcessingRoute ? "px-4 py-3 sm:px-6" : "px-4 py-6 sm:px-6 lg:px-8 2xl:px-10",
+              "flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto",
+              isDashboardRoute ? "pc-canvas" : "bg-vf-workspace-bg",
+              isProcessingRoute ? "px-4 py-3 sm:px-6" : isDashboardRoute ? "px-4 pt-4 pb-3 sm:px-5" : "px-4 py-6 sm:px-6 lg:px-8 2xl:px-10",
             )}
           >
-            {children}
+            <div className="flex-1">{children}</div>
+            {/* The reference's footer line. Only links to pages that exist
+                are shown — there is no Privacy or Terms page yet. */}
+            <footer
+              className={cn(
+                "mt-6 flex shrink-0 flex-wrap items-center justify-between gap-3 pt-3 font-sans text-[0.82rem]",
+                isDashboardRoute ? "text-[#c2cedd]" : "border-t border-vf-paper-border text-vf-ink-faint",
+              )}
+            >
+              <VyronsoftAttribution className="text-[0.82rem] [&_span]:font-medium" />
+              <Link href="/platform#support" className="hover:underline">Support</Link>
+            </footer>
           </main>
         </div>
       </div>

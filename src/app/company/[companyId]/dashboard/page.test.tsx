@@ -9,7 +9,7 @@
  * page (Sales/Purchasing/Inventory/General Ledger/Copilot) already shows
  * in more detail, plus a "Quick Launch" nav grid fully redundant with the
  * sidebar. This proves that block is gone and the genuinely useful
- * sections (compact hero, trimmed KPIs, VYRON Intelligence/Needs
+ * sections (compact hero, trimmed KPIs, PRECISIA Intelligence/Needs
  * Attention, Business Setup Progress, one Recent Activity feed) remain —
  * using this codebase's own established pattern for testing an async
  * Server Component page directly (see `transactions/page.test.tsx`):
@@ -76,7 +76,7 @@ describe("Dashboard page — Phase 26G compaction", () => {
     expect(screen.queryByText("Quick Launch")).not.toBeInTheDocument();
   });
 
-  it("no longer renders a 'Recovery Alerts' card as a separate element (Needs Attention/PRECISIA Intelligence covers this)", async () => {
+  it("no longer renders a 'Recovery Alerts' card as a separate element (Needs Attention/VYRON Intelligence covers this)", async () => {
     await renderPage();
     expect(screen.queryByText("Recovery Alerts")).not.toBeInTheDocument();
   });
@@ -90,13 +90,13 @@ describe("Dashboard page — Phase 26G compaction", () => {
     expect(screen.getByRole("link", { name: "AI Assistant" })).toBeInTheDocument();
   });
 
-  it("Executive KPIs are trimmed to 5 genuinely distinct tiles — no 'Coming Soon' placeholders, no redundant Bank Accounts count", async () => {
+  it("Executive KPIs (relabelled to the PRECISIA reference) are trimmed to 5 genuinely distinct tiles — no 'Coming Soon' placeholders, no redundant Bank Accounts count", async () => {
     await renderPage();
-    expect(screen.getByText("Cash Balance")).toBeInTheDocument();
+    expect(screen.getByText("Cash at Bank")).toBeInTheDocument();
     expect(screen.getByText("Outstanding Customers")).toBeInTheDocument();
     expect(screen.getByText("Outstanding Suppliers")).toBeInTheDocument();
     expect(screen.getByText("Profit This Month")).toBeInTheDocument();
-    expect(screen.getByText("VAT Due")).toBeInTheDocument();
+    expect(screen.getByText("VAT Liability")).toBeInTheDocument();
     expect(screen.queryByText("Coming Soon")).not.toBeInTheDocument();
     expect(screen.queryByText("Bank Accounts")).not.toBeInTheDocument();
   });

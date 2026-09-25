@@ -70,11 +70,9 @@ export function SiteFooter() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-7 text-xs text-[#8b94a3]">
           <span>&copy; {new Date().getFullYear()} Precisia. All rights reserved.</span>
-          <span className="flex gap-9">
-            <Link href="/" className="hover:text-white">Privacy</Link>
-            <Link href="/" className="hover:text-white">Terms</Link>
-            <Link href="/" className="hover:text-white">Security</Link>
-          </span>
+          {/* The reference also lists Privacy, Terms and Security. Those pages
+              do not exist yet, so no link is shown rather than one that goes
+              nowhere. */}
         </div>
       </div>
     </footer>

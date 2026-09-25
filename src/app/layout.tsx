@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Source_Serif_4, Inter, IBM_Plex_Mono, Montserrat } from "next/font/google";
+import { Source_Serif_4, Inter, IBM_Plex_Mono, Montserrat, Allura } from "next/font/google";
 import "./globals.css";
 
 // Executive serif (the login card's "Welcome back" and legacy headings) /
@@ -29,6 +29,14 @@ const montserrat = Montserrat({
   weight: ["400", "500", "600", "700"],
 });
 
+// The hand-lettered "Clarity Creates Opportunity" line in the PRECISIA
+// Landing and Software Page references, set as real text.
+const allura = Allura({
+  variable: "--font-script",
+  subsets: ["latin"],
+  weight: ["400"],
+});
+
 export const metadata: Metadata = {
   title: "PRECISIA — Financial Intelligence",
   description:
@@ -43,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${sourceSerif.variable} ${inter.variable} ${plexMono.variable} ${montserrat.variable}`}
+      className={`${sourceSerif.variable} ${inter.variable} ${plexMono.variable} ${montserrat.variable} ${allura.variable}`}
     >
       <body className="min-h-full font-sans antialiased">{children}</body>
     </html>

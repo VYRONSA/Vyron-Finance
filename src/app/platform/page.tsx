@@ -1,30 +1,30 @@
 import type { Metadata } from "next";
 import type { ComponentType } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { StatTile } from "@/components/ui/stat-tile";
-import { Table, TableBody, TableCell, TableHead, TableHeadCell, TableRow } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
+import { cn } from "@/lib/utils";
 import { formatLongDate } from "@/lib/format";
 import {
   IconAlertTriangle,
-  IconArchive,
   IconBank,
-  IconBarChart,
-  IconBell,
   IconBuilding,
-  IconCalendar,
   IconClock,
-  IconFileText,
-  IconImport,
   IconRefresh,
   IconShieldCheck,
   IconSparkles,
   IconTarget,
-  IconUsers,
 } from "@/components/ui/icons";
+import {
+  PIconBuildingColumns,
+  PIconChevronRight,
+  PIconDatabase,
+  PIconDownload,
+  PIconInvoice,
+  PIconOffice,
+  PIconSliders,
+  PIconUserPlus,
+  PIconUsers,
+} from "@/components/ui/precisia-icons";
+import { CompanyTable, type CompanyRow } from "@/components/platform/company-table";
 import { MOCK_ACTIVITY, MOCK_NOTIFICATIONS } from "@/lib/mock/platform-data";
 import { MOCK_COMPANIES_FULL } from "@/lib/mock/company-management-data";
 import { MOCK_SUBSCRIPTION as MOCK_BILLING_SUBSCRIPTION, MOCK_BILLING_PLANS } from "@/lib/mock/billing-data";
@@ -98,12 +98,19 @@ const STATUS_TONE: Record<CompanyStatus, "good" | "warn" | "info"> = {
 
 const NOTIFICATION_TONE = { good: "good", warn: "warn", info: "info" } as const;
 
+const NOTIFICATION_CLASS: Record<"good" | "warn" | "info" | "danger" | "muted", string> = {
+  good: "bg-[#25d380]/15 text-[#5ee6a5]",
+  warn: "bg-[#f5a524]/15 text-[#f7c16a]",
+  info: "bg-[#2f9bff]/15 text-[#8cc8ff]",
+  danger: "bg-[#f0474f]/15 text-[#ff9aa0]",
+  muted: "bg-white/8 text-[#b4c1d6]",
+};
+
 export default async function PlatformOverviewPage() {
   const previewMode = !isSupabaseConfigured();
   const companies = previewMode ? MOCK_COMPANIES_FULL : await listCompaniesForUser(await getCurrentUserId());
-  const activeCompanies = companies.filter((c) => c.status === "active").length;
   const onboardingCompanies = companies.filter((c) => c.status === "onboarding").length;
-  const userEmail = previewMode ? "preview@vyron.finance" : await getCurrentUserEmail();
+  const userEmail = previewMode ? "preview@precisia.app" : await getCurrentUserEmail();
 
   // Real per-company billing lookups — retired MOCK_SUBSCRIPTION's
   // single fabricated plan/seats figure in favour of each company's own
@@ -222,6 +229,10 @@ export default async function PlatformOverviewPage() {
   // Phase 4 — everything below this line is presentation only, derived
   // entirely from the real values already computed above. Nothing here
   // adds a query, changes a route, or touches auth/permissions.
+  // PRECISIA rebrand — the layout below reproduces the approved
+  // "Precisia Platform Workspace" reference (hero banner, Quick Actions,
+  // Workspace Health, My Companies), followed by this page's existing
+  // sections restyled into the same dark surface language.
   const now = new Date();
   const greeting = greetingForHour(now.getHours());
   const firstName = friendlyFirstName(userEmail);
@@ -235,61 +246,59 @@ export default async function PlatformOverviewPage() {
     icon: ComponentType<{ className?: string }>;
     href: string | undefined;
   }[] = [
-    { title: "Create Company", description: "Set up a new company or client workspace.", icon: IconBuilding, href: "/platform/new-company" },
+    { title: "Create Company", description: "Set up a new company or client workspace", icon: PIconOffice, href: "/platform/new-company" },
     {
       title: "Import Opening Balances",
-      description: "Bring in a starting trial balance for a company.",
-      icon: IconFileText,
+      description: "Bring in a starting trial balance for a company",
+      icon: PIconInvoice,
       href: primaryCompany ? `/company/${primaryCompany.id}/opening-balances` : undefined,
     },
     {
       title: "Import Bank Statement",
-      description: "Upload a CSV, OFX, QIF, or PDF statement.",
-      icon: IconImport,
+      description: "Upload a CSV, OFX, QIF or PDF statement",
+      icon: PIconDownload,
       href: primaryCompany ? `/company/${primaryCompany.id}/import-centre` : undefined,
     },
     {
       title: "Invite User",
       description: primaryCompany ? `Grant a colleague access to ${primaryCompany.name}.` : "Create a company first, then invite your team.",
-      icon: IconUsers,
+      icon: PIconUsers,
       href: primaryCompany ? `/company/${primaryCompany.id}/settings?tab=roles-permissions` : undefined,
     },
     {
       title: "Connect Bank",
       description: "Add and manage the accounts you reconcile against.",
-      icon: IconBank,
+      icon: PIconBuildingColumns,
       href: primaryCompany ? `/company/${primaryCompany.id}/bank-accounts` : undefined,
     },
     {
       title: "View AI Assistant",
       description: "Ask Copilot about any company's numbers.",
-      icon: IconSparkles,
+      icon: PIconSliders,
       href: primaryCompany ? `/company/${primaryCompany.id}/copilot` : undefined,
     },
   ];
 
   // "Pending Imports" and "Storage Used" still have no real metric wired
-  // up anywhere in the platform — shown honestly as "Coming soon" rather
-  // than a fabricated number, matching this codebase's own "honesty over
+  // up anywhere in the platform — shown honestly as "—" rather than a
+  // fabricated number, matching this codebase's own "honesty over
   // fabrication" standard (see ARCHITECTURE.md). "Connected Banks" (Phase
-  // 25K) is no longer one of these — it's now the real, live count of
-  // Active FNB Direct Bank Connectivity accounts computed above.
-  // Everything else on this panel is the same real, already-computed
-  // data used elsewhere on this page.
-  const HEALTH_METRICS: { label: string; value: string; caption?: string; icon: ComponentType<{ className?: string }> }[] = [
-    { label: "Companies", value: String(companies.length), icon: IconBuilding },
-    { label: "Clients", value: String(activeCompanies), caption: "Active status", icon: IconUsers },
-    { label: "Connected Banks", value: String(connectedBankAccountCount), caption: "Active FNB feeds", icon: IconBank },
-    { label: "Pending Imports", value: "—", caption: "Coming soon", icon: IconImport },
-    { label: "Storage Used", value: "—", caption: "Coming soon", icon: IconArchive },
-    { label: "Workspace Status", value: workspaceStatusLabel, icon: IconShieldCheck },
+  // 25K) is the real, live count of Active FNB Direct Bank Connectivity
+  // accounts computed above. "Active users" is the real seat count.
+  const workspaceStatusValue = companies.length === 0 ? "—" : onboardingCompanies > 0 ? String(onboardingCompanies) : String(companies.length);
+  const workspaceStatusTitle = companies.length === 0 ? "Getting Started" : onboardingCompanies > 0 ? "Onboarding" : "All Active";
+  const HEALTH_METRICS: { label: string; value: string; caption?: string; icon: ComponentType<{ className?: string }>; stacked?: boolean }[] = [
+    { label: "Companies", value: String(companies.length), icon: PIconOffice, stacked: true },
+    { label: "Active users", value: String(seatsUsed), icon: PIconUsers, stacked: true },
+    { label: "Connected Banks", value: String(connectedBankAccountCount), caption: connectedBankAccountCount > 0 ? "Active FNB feeds" : "Last sync: No data", icon: PIconBuildingColumns },
+    { label: "Pending imports", value: "—", caption: "Coming soon", icon: PIconDownload },
+    { label: "Storage Used", value: "—", caption: "Coming soon", icon: PIconDatabase },
   ];
 
   // Three of these are genuinely derived from the real counts already on
   // this page (unread notifications, onboarding companies, whether a
   // company exists at all). The fourth is a general platform tip, not a
-  // claim about this workspace's actual bank connections — there's no
-  // real bank-connection tracking to derive it from yet.
+  // claim about this workspace's actual bank connections.
   const AI_INSIGHTS: { tone: "good" | "warn" | "info"; icon: ComponentType<{ className?: string }>; title: string; description: string }[] = [
     notifications.length === 0
       ? { tone: "good", icon: IconShieldCheck, title: "No financial risks detected", description: "Every company you manage has a clean notification queue right now." }
@@ -303,92 +312,113 @@ export default async function PlatformOverviewPage() {
     { tone: "info", icon: IconBank, title: "Bank connections recommended", description: "Companies with connected bank accounts recover their books fastest." },
   ];
 
+  const companyRows: CompanyRow[] = companies.map((company) => ({
+    id: company.id,
+    name: company.name,
+    industry: company.industry || null,
+    statusLabel: STATUS_LABEL[company.status],
+    statusTone: STATUS_TONE[company.status],
+    registrationNumber: company.registrationNumber || null,
+    baseCurrencyCode: company.baseCurrencyCode,
+  }));
+
   return (
-    <div className="flex w-full flex-col gap-10">
-      {/* Executive Hero */}
-      <Card tone="hero" className="relative overflow-hidden">
+    <div className="flex w-full min-w-0 flex-col gap-5 font-sans">
+      {/* Hero banner */}
+      <section className="pc-panel pc-panel-glow relative overflow-hidden rounded-[16px] bg-[#041630]">
+        {/* The reference's glowing city/chart photograph is not available
+            as a standalone image, so none is shown; only a lighting wash in
+            the reference's blues sits behind the copy. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -top-1/3 -right-1/4 h-[80%] w-[60%] rounded-full opacity-40"
-          style={{ background: "radial-gradient(circle, rgba(255,255,255,0.18), transparent 70%)" }}
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(420px 260px at 66% 30%, rgba(80,160,255,0.28), transparent 70%), radial-gradient(900px 300px at 75% 120%, rgba(22,90,190,0.4), transparent 70%)",
+          }}
         />
-        <CardContent className="relative flex flex-col gap-8 p-8 lg:p-10">
-          <div className="flex flex-wrap items-start justify-between gap-6">
-            <div>
-              <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-vf-on-dark-soft">
-                <IconCalendar className="h-3.5 w-3.5" />
-                {formattedDate}
-              </span>
-              <h1 className="mt-3 text-3xl font-medium text-vf-on-dark sm:text-4xl">
-                {greeting}, {firstName}
-              </h1>
-              <p className="mt-2 max-w-[52ch] text-sm text-vf-on-dark-soft sm:text-base">
-                Your financial intelligence platform is ready.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {/* Finding #134/#135 (RC-6/E13) — this used to always link to
-                  companies[0]'s Settings with no indication which company
-                  that was, ambiguous the moment a user has more than one.
-                  The label now names the actual target explicitly. */}
-              {primaryCompany ? (
-                <Button
-                  href={`/company/${primaryCompany.id}/settings?tab=roles-permissions`}
-                  variant="ghostDark"
-                  title={companies.length > 1 ? `Invites a user to ${primaryCompany.name} — open a specific company's Settings to invite to another` : undefined}
-                >
-                  Invite User to {primaryCompany.name}
-                </Button>
-              ) : (
-                <Button variant="ghostDark" disabled title="Create a company first">Invite User</Button>
-              )}
-              <Button href="/platform/new-company" variant="ghostDark">Create Company</Button>
+        <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-[#031a36] via-[#031a36]/75 to-transparent" />
+        <div className="relative flex flex-col gap-6 p-6 lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-6">
+          <div>
+            <p className="flex items-center gap-2.5 text-[0.8rem] font-semibold tracking-[0.12em] text-[#8cc8ff] uppercase">
+              <span aria-hidden className="h-4 w-[3px] rounded-full bg-[#2f9bff]" />
+              {formattedDate}
+            </p>
+            <h1 className="pc-heading mt-2.5 text-[1.9rem] leading-tight font-bold text-white sm:text-[2.35rem]">
+              {greeting}, <span className="text-[#2f9bff]">{firstName}</span>
+            </h1>
+            <p className="mt-1.5 text-[1.02rem] text-[#dbe4f1]">Your financial intelligence platform is ready.</p>
+
+            {/* Status chips — all real values already computed above. */}
+            <div className="mt-6 flex flex-wrap gap-2.5">
+              {[
+                { label: "Companies", value: String(companies.length) },
+                { label: "Users", value: String(seatsUsed) },
+                { label: "Workspace Status", value: workspaceStatusLabel },
+                { label: "Subscription", value: planSummaryLabel },
+              ].map((chip) => (
+                <span key={chip.label} className="flex items-center rounded-full border border-[#3e6fa8]/70 bg-[#041a36]/70 text-[0.8rem]">
+                  <span className="px-3.5 py-1.5 text-[#dbe4f1]">{chip.label}</span>
+                  <span className="border-l border-[#3e6fa8]/70 px-3.5 py-1.5 font-semibold text-white">{chip.value}</span>
+                </span>
+              ))}
             </div>
           </div>
 
-          {/* Status chips — Companies / Users / Workspace Status /
-              Subscription, all real values already computed above.
-              "Users" and "Seats" are the same real metric in this
-              platform's data model (a seat is a user), so rather than
-              show one figure twice under two labels, they're shown once. */}
-          <div className="flex flex-wrap gap-2.5">
-            {[
-              { label: "Companies", value: String(companies.length) },
-              { label: "Users", value: String(seatsUsed) },
-              { label: "Workspace Status", value: workspaceStatusLabel },
-              { label: "Subscription", value: planSummaryLabel },
-            ].map((chip) => (
-              <span
-                key={chip.label}
-                className="flex items-center gap-2 rounded-full border border-white/14 bg-white/6 px-3.5 py-1.5 text-xs font-medium text-vf-on-dark"
-              >
-                <span className="text-vf-on-dark-faint">{chip.label}</span>
-                <span className="h-1 w-1 rounded-full bg-white/30" aria-hidden />
-                {chip.value}
-              </span>
-            ))}
+          <div className="flex min-w-0 flex-col items-start gap-6 lg:items-end">
+            <div className="flex max-w-full flex-wrap gap-3">
+              {/* Finding #134/#135 (RC-6/E13) — the label names the actual
+                  target company explicitly. */}
+              {primaryCompany ? (
+                <Link
+                  href={`/company/${primaryCompany.id}/settings?tab=roles-permissions`}
+                  title={companies.length > 1 ? `Invites a user to ${primaryCompany.name} — open a specific company's Settings to invite to another` : undefined}
+                  className="pc-btn pc-btn-outline h-11 max-w-full px-5 text-[0.8rem]"
+                >
+                  <PIconUserPlus className="h-5 w-5" />
+                  Invite User to {primaryCompany.name}
+                </Link>
+              ) : (
+                <span className="pc-btn pc-btn-outline h-11 px-5 text-[0.8rem] opacity-55" aria-disabled="true" title="Create a company first">
+                  <PIconUserPlus className="h-5 w-5" />
+                  Invite User
+                </span>
+              )}
+              <Link href="/platform/new-company" className="pc-btn pc-btn-outline h-11 px-5 text-[0.8rem]">
+                <PIconOffice className="h-5 w-5" />
+                Create Company
+              </Link>
+            </div>
+            <p className="hidden border-l border-[#9fb0c6]/50 pl-5 text-[0.72rem] leading-[2.2] tracking-[0.24em] text-[#c9d4e3] uppercase lg:block">
+              Accurate Data.
+              <br />
+              Clearer Insights.
+              <br />
+              Stronger Businesses.
+            </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {/* Quick Actions */}
-      <div>
-        <h2 className="mb-4 text-sm font-semibold tracking-[-0.01em] text-vf-on-dark">Quick Actions</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section>
+        <h2 className="pc-heading mb-3 text-[1rem] font-semibold text-white">Quick Actions</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {QUICK_ACTIONS.map((action) => {
             const Icon = action.icon;
             const body = (
-              <Card className="h-full">
-                <CardContent className="flex h-full flex-col gap-4 p-5">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-vf-sm bg-vf-red-500/10 text-vf-red-600">
-                    <Icon className="h-5.5 w-5.5" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-vf-ink">{action.title}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-vf-ink-faint">{action.description}</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="pc-panel flex h-full items-center gap-4 px-4 py-3.5 transition-[border-color,transform] duration-150 hover:-translate-y-px hover:border-[#3a92ff]/60">
+                <span className="pc-icon-tile h-[52px] w-[52px] shrink-0">
+                  <Icon className="h-6 w-6" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[0.9rem] font-semibold text-white">{action.title}</span>
+                  <span className="mt-0.5 block text-[0.76rem] leading-snug text-[#c2cedd]">{action.description}</span>
+                </span>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-white">
+                  <PIconChevronRight className="h-4.5 w-4.5" />
+                </span>
+              </div>
             );
             return action.href ? (
               <Link key={action.title} href={action.href} className="block">
@@ -401,111 +431,98 @@ export default async function PlatformOverviewPage() {
             );
           })}
         </div>
-      </div>
+      </section>
 
       {/* Workspace Health */}
-      <Card tone="dark">
-        <CardHeader>
-          <CardTitle className="text-vf-on-dark">Workspace Health</CardTitle>
-          <CardDescription className="text-vf-on-dark-faint">A snapshot of your platform, updated live where the data exists today.</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
-            {HEALTH_METRICS.map((metric) => {
-              const Icon = metric.icon;
-              return (
-                <div key={metric.label} className="flex flex-col gap-2.5">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-vf-on-dark">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <StatTile tone="dark" value={metric.value} label={metric.label} />
-                  {metric.caption && <span className="-mt-2 text-[0.65rem] text-vf-on-dark-faint/70">{metric.caption}</span>}
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Primary Workspace */}
-      <Card id="companies">
-        <CardHeader className="flex flex-row items-center justify-between">
+      <section className="pc-panel pc-panel-glow relative overflow-hidden rounded-[16px] bg-gradient-to-r from-[#062646] via-[#082a4c] to-[#06294d] px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <CardTitle>My Companies</CardTitle>
-            <CardDescription>Every company and client you have access to.</CardDescription>
+            <h2 className="pc-heading text-[1.05rem] font-semibold text-white">Workspace Health</h2>
+            <p className="mt-1 text-[0.84rem] text-[#c2cedd]">A snapshot of your platform, updated live where the data exists today.</p>
           </div>
-          <Button href="/platform/new-company" variant="outline" size="sm">Create Company</Button>
-        </CardHeader>
-        <CardContent className="pt-0">
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-y-5 sm:grid-cols-3 xl:grid-cols-6">
+          {HEALTH_METRICS.map((metric, i) => {
+            const Icon = metric.icon;
+            return (
+              <div key={metric.label} className={cn("flex flex-col gap-3 px-2 xl:px-6", i > 0 && "xl:border-l xl:border-white/12")}>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#3a92ff]/50 bg-[#0b3566] text-[#8cc8ff]">
+                  <Icon className="h-5 w-5" />
+                </span>
+                {metric.stacked ? (
+                  <div>
+                    <p className="font-sans text-[1.85rem] leading-none font-semibold text-[#1cbbf6]">{metric.value}</p>
+                    <p className="mt-1.5 text-[0.9rem] text-[#e6ecf5]">{metric.label}</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <p className="font-sans text-[1.85rem] leading-none font-semibold text-[#1cbbf6]">{metric.value}</p>
+                    <div>
+                      <p className="text-[0.86rem] text-[#e6ecf5]">{metric.label}</p>
+                      {metric.caption && <p className="mt-0.5 text-[0.72rem] text-[#9fb0c6]">{metric.caption}</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div className="flex flex-col gap-3 px-2 xl:border-l xl:border-white/12 xl:px-6">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#3a92ff]/50 bg-[#0b3566] text-[#8cc8ff]">
+              <IconShieldCheck className="h-5 w-5" />
+            </span>
+            <div className="flex items-center gap-4">
+              <p className="font-sans text-[1.85rem] leading-none font-semibold text-[#1cbbf6]">{workspaceStatusValue}</p>
+              <div>
+                <p className="text-[1.05rem] font-semibold text-[#2f9bff]">{workspaceStatusTitle}</p>
+                <p className="text-[0.84rem] text-[#e6ecf5]">Workspace Status</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* My Companies */}
+      <section id="companies" className="pc-panel rounded-[16px] px-5 py-4">
+        <h2 className="pc-heading text-[1.05rem] font-semibold text-white">My Companies</h2>
+        <p className="mt-1 text-[0.84rem] text-[#c2cedd]">Every company and client you have access to.</p>
+        <div className="mt-4">
           {companies.length === 0 ? (
-            <EmptyState
-              icon={<IconBuilding className="h-5 w-5" />}
-              title="No companies yet"
-              description="Create your first company to start recovering and managing its books."
-              action={<Button href="/platform/new-company" variant="subtle" size="sm">Create Company</Button>}
-            />
+            <div className="flex flex-col items-center gap-3 rounded-[12px] border border-dashed border-[#29405c] px-6 py-10 text-center">
+              <PIconOffice className="h-6 w-6 text-[#3f9bff]" />
+              <p className="font-semibold text-white">No companies yet</p>
+              <p className="text-sm text-[#c2cedd]">Create your first company to start recovering and managing its books.</p>
+              <Link href="/platform/new-company" className="pc-btn pc-btn-primary mt-2 h-10 px-5">Create Company</Link>
+            </div>
           ) : (
-            <Table>
-              <TableHead>
-                <tr>
-                  <TableHeadCell>Company</TableHeadCell>
-                  <TableHeadCell>Industry</TableHeadCell>
-                  <TableHeadCell>Status</TableHeadCell>
-                  <TableHeadCell>Registration No.</TableHeadCell>
-                  <TableHeadCell>Base Currency</TableHeadCell>
-                  <TableHeadCell className="text-right">
-                    <span className="sr-only">Actions</span>
-                  </TableHeadCell>
-                </tr>
-              </TableHead>
-              <TableBody>
-                {companies.map((company) => (
-                  <TableRow key={company.id}>
-                    <TableCell className="font-medium text-vf-ink">{company.name}</TableCell>
-                    <TableCell>{company.industry || "—"}</TableCell>
-                    <TableCell>
-                      <Badge tone={STATUS_TONE[company.status]}>{STATUS_LABEL[company.status]}</Badge>
-                    </TableCell>
-                    <TableCell>{company.registrationNumber || "—"}</TableCell>
-                    <TableCell className="font-mono">{company.baseCurrencyCode}</TableCell>
-                    <TableCell className="text-right">
-                      <Button href={`/company/${company.id}/dashboard`} variant="subtle" size="sm">
-                        Open →
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <CompanyTable companies={companyRows} />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {/* Recent Activity + Notifications */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Billing events across every company in your workspace.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
+        <section className="pc-panel rounded-[16px] p-6">
+          <h2 className="pc-heading text-[1.05rem] font-semibold text-white">Recent Activity</h2>
+          <p className="mt-1 text-[0.84rem] text-[#c2cedd]">Billing events across every company in your workspace.</p>
+          <div className="mt-5">
             {recentActivity.length === 0 ? (
-              <EmptyState
-                icon={<IconBarChart className="h-5 w-5" />}
-                title="No activity yet"
-                description="Subscription changes, payments, and other billing events will show up here as they happen."
-                action={primaryCompany ? <Button href={`/company/${primaryCompany.id}/billing`} variant="subtle" size="sm">View Billing</Button> : undefined}
-              />
+              <div className="flex flex-col items-start gap-2 text-sm text-[#c2cedd]">
+                <p className="font-semibold text-white">No activity yet</p>
+                <p>Subscription changes, payments, and other billing events will show up here as they happen.</p>
+                {primaryCompany && (
+                  <Link href={`/company/${primaryCompany.id}/billing`} className="pc-btn pc-btn-outline mt-2 h-9 px-4 text-xs">View Billing</Link>
+                )}
+              </div>
             ) : (
-              <ol className="relative flex flex-col gap-5 border-l border-vf-paper-border pl-5">
+              <ol className="relative flex flex-col gap-5 border-l border-white/12 pl-5">
                 {recentActivity.map((item) => (
                   <li key={item.id} className="relative">
-                    <span className="absolute top-1 -left-[1.65rem] flex h-2.5 w-2.5 items-center justify-center rounded-full border-2 border-vf-paper bg-vf-red-500" aria-hidden />
-                    <p className="text-sm text-vf-ink-soft">
-                      <span className="font-medium text-vf-ink">{item.actor}</span> {item.action}{" "}
-                      <span className="font-medium text-vf-ink">{item.target}</span>
+                    <span className="absolute top-1 -left-[1.65rem] h-2.5 w-2.5 rounded-full border-2 border-[#081926] bg-[#2f9bff]" aria-hidden />
+                    <p className="text-sm text-[#c2cedd]">
+                      <span className="font-medium text-white">{item.actor}</span> {item.action}{" "}
+                      <span className="font-medium text-white">{item.target}</span>
                     </p>
-                    <span className="mt-0.5 flex items-center gap-1 text-xs text-vf-ink-faint">
+                    <span className="mt-0.5 flex items-center gap-1 text-xs text-[#9fb0c6]">
                       <IconClock className="h-3 w-3" />
                       {item.timestamp}
                     </span>
@@ -513,147 +530,121 @@ export default async function PlatformOverviewPage() {
                 ))}
               </ol>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Notifications</CardTitle>
-            <CardDescription>Unread items across every company that may need your attention.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
+        <section className="pc-panel rounded-[16px] p-6">
+          <h2 className="pc-heading text-[1.05rem] font-semibold text-white">Notifications</h2>
+          <p className="mt-1 text-[0.84rem] text-[#c2cedd]">Unread items across every company that may need your attention.</p>
+          <div className="mt-5">
             {notifications.length === 0 ? (
-              <EmptyState
-                icon={<IconBell className="h-5 w-5" />}
-                title="You're all caught up"
-                description="No unread notifications across any company you have access to."
-              />
+              <div className="text-sm text-[#c2cedd]">
+                <p className="font-semibold text-white">You&rsquo;re all caught up</p>
+                <p className="mt-1">No unread notifications across any company you have access to.</p>
+              </div>
             ) : (
               <div className="flex flex-col gap-3">
                 {notifications.map((note) => (
-                  <div key={note.id} className="flex items-start gap-3 rounded-vf-sm border border-vf-paper-border p-3 text-sm">
-                    <Badge tone={NOTIFICATION_TONE[note.tone]} className="mt-0.5 shrink-0">
+                  <div key={note.id} className="pc-row flex items-start gap-3 p-3 text-sm">
+                    <span className={cn("mt-0.5 shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold", NOTIFICATION_CLASS[NOTIFICATION_TONE[note.tone]])}>
                       {note.tone === "warn" ? "Alert" : note.tone === "good" ? "Update" : "Info"}
-                    </Badge>
+                    </span>
                     <div>
-                      <p className="text-vf-ink-soft">{note.message}</p>
-                      <span className="text-xs text-vf-ink-faint">{note.timestamp}</span>
+                      <p className="text-[#dbe4f1]">{note.message}</p>
+                      <span className="text-xs text-[#9fb0c6]">{note.timestamp}</span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       </div>
 
       {/* AI Insights */}
-      <div>
-        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold tracking-[-0.01em] text-vf-on-dark">
-          <IconSparkles className="h-4 w-4 text-vf-red-300" />
+      <section>
+        <h2 className="pc-heading mb-4 flex items-center gap-2 text-[1.05rem] font-semibold text-white">
+          <IconSparkles className="h-4 w-4 text-[#2f9bff]" />
           AI Insights
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {AI_INSIGHTS.map((insight) => {
             const Icon = insight.icon;
             return (
-              <Card key={insight.title}>
-                <CardContent className="flex flex-col gap-3 p-5">
-                  <span
-                    className={
-                      insight.tone === "good"
-                        ? "flex h-9 w-9 items-center justify-center rounded-full bg-vf-success/12 text-vf-success"
-                        : insight.tone === "warn"
-                          ? "flex h-9 w-9 items-center justify-center rounded-full bg-vf-warning/14 text-[#93601f]"
-                          : "flex h-9 w-9 items-center justify-center rounded-full bg-vf-info/12 text-vf-info"
-                    }
-                  >
-                    <Icon className="h-4.5 w-4.5" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-vf-ink">{insight.title}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-vf-ink-faint">{insight.description}</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div key={insight.title} className="pc-panel flex flex-col gap-3 p-5">
+                <span
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-full",
+                    insight.tone === "good" ? "bg-[#25d380]/14 text-[#25d380]" : insight.tone === "warn" ? "bg-[#f5a524]/14 text-[#f5a524]" : "bg-[#2f9bff]/14 text-[#2f9bff]",
+                  )}
+                >
+                  <Icon className="h-4.5 w-4.5" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-white">{insight.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-[#c2cedd]">{insight.description}</p>
+                </div>
+              </div>
             );
           })}
         </div>
-      </div>
+      </section>
 
       <div id="subscription" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Subscription &amp; Billing</CardTitle>
-            <CardDescription>{planSummaryLabel}{primaryCompany ? ` · manage under any company's Billing tab` : ""}</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <p className="text-sm text-vf-ink-soft">{seatsUsed} seat{seatsUsed === 1 ? "" : "s"} in use across {companies.length} company{companies.length === 1 ? "" : "companies"}.</p>
-            {primaryCompany && (
-              <Button href={`/company/${primaryCompany.id}/billing`} variant="subtle" size="sm" className="mt-4">
-                Manage Billing
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+        <section className="pc-panel rounded-[16px] p-6">
+          <h2 className="pc-heading text-[1.05rem] font-semibold text-white">Subscription &amp; Billing</h2>
+          <p className="mt-1 text-[0.84rem] text-[#c2cedd]">{planSummaryLabel}{primaryCompany ? ` · manage under any company's Billing tab` : ""}</p>
+          <p className="mt-4 text-sm text-[#dbe4f1]">{seatsUsed} seat{seatsUsed === 1 ? "" : "s"} in use across {companies.length} compan{companies.length === 1 ? "y" : "ies"}.</p>
+          {primaryCompany && (
+            <Link href={`/company/${primaryCompany.id}/billing`} className="pc-btn pc-btn-outline mt-4 h-10 px-5">
+              Manage Billing
+            </Link>
+          )}
+        </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Licences</CardTitle>
-            <CardDescription>One real subscription lookup per company.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
+        <section className="pc-panel rounded-[16px] p-6">
+          <h2 className="pc-heading text-[1.05rem] font-semibold text-white">Licences</h2>
+          <p className="mt-1 text-[0.84rem] text-[#c2cedd]">One real subscription lookup per company.</p>
+          <div className="mt-4">
             {licences.length === 0 ? (
-              <EmptyState
-                icon={<IconBuilding className="h-5 w-5" />}
-                title="No companies yet"
-                description="Add a company to see its subscription and licence status here."
-                action={<Button href="/platform/new-company" variant="subtle" size="sm">Create Company</Button>}
-              />
+              <p className="text-sm text-[#c2cedd]">Add a company to see its subscription and licence status here.</p>
             ) : (
               <div className="flex flex-col gap-2.5">
                 {licences.map((licence) => (
                   <div key={licence.id} className="flex items-center justify-between text-sm">
-                    <span className="text-vf-ink">{licence.company}</span>
+                    <span className="text-white">{licence.company}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-vf-ink-faint">{licence.tier}</span>
-                      {licence.status ? <Badge tone={LIFECYCLE_BADGE_TONE[licence.status]}>{licence.status}</Badge> : <Badge tone="muted">No subscription</Badge>}
+                      <span className="text-[#9fb0c6]">{licence.tier}</span>
+                      <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", NOTIFICATION_CLASS[licence.status ? LIFECYCLE_BADGE_TONE[licence.status] : "muted"])}>
+                        {licence.status ?? "No subscription"}
+                      </span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       </div>
 
       {/* Profile & Support */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card id="profile">
-          <CardHeader>
-            <CardTitle>Profile &amp; Platform Settings</CardTitle>
-            <CardDescription>Your account, security, and workspace preferences.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <Button href="/platform/account" variant="subtle" size="sm">Change Password</Button>
-          </CardContent>
-        </Card>
+        <section id="profile" className="pc-panel rounded-[16px] p-6">
+          <h2 className="pc-heading text-[1.05rem] font-semibold text-white">Profile &amp; Platform Settings</h2>
+          <p className="mt-1 text-[0.84rem] text-[#c2cedd]">Your account, security, and workspace preferences.</p>
+          <Link href="/platform/account" className="pc-btn pc-btn-outline mt-4 h-10 px-5">Change Password</Link>
+        </section>
 
-        <Card id="support">
-          <CardHeader>
-            <CardTitle>Support</CardTitle>
-            <CardDescription>Reach the PRECISIA team directly.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <Button variant="subtle" size="sm" disabled title="A direct support contact channel is not configured yet — an honest 'not available' rather than a dead button.">
-              Contact Support
-            </Button>
-          </CardContent>
-        </Card>
+        <section id="support" className="pc-panel rounded-[16px] p-6">
+          <h2 className="pc-heading text-[1.05rem] font-semibold text-white">Support</h2>
+          {/* No direct support channel is configured yet, so no contact
+              button is shown — a control that does nothing would mislead. */}
+          <p className="mt-1 text-[0.84rem] text-[#c2cedd]">A direct support channel is not configured in this workspace yet.</p>
+        </section>
       </div>
 
       {/* Footer Status */}
-      <p className="flex items-center gap-2 border-t border-vf-dark-border pt-4 text-xs text-vf-on-dark-faint">
+      <p className="flex items-center gap-2 border-t border-white/10 pt-4 text-xs text-[#9fb0c6]">
         <IconRefresh className="h-3 w-3" />
         {companies.length} companies · {planSummaryLabel} · {seatsUsed} seat{seatsUsed === 1 ? "" : "s"} in use
       </p>

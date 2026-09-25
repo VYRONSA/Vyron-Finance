@@ -17,8 +17,9 @@ import { NAV_GROUPS, isNavItemActive, type NavGroup } from "./workspace-nav";
  *   - the group containing the open page is opened automatically (the
  *     shell derives that with `activeNavGroup`).
  *
- * Nothing about the visual identity changed: the same tokens, spacing,
- * icons and active treatment the flat list already used.
+ * Visual treatment follows the PRECISIA "Software Page" reference: blue
+ * letter-spaced section labels, light item text, and a blue gradient
+ * pill with a bright left edge on the current page.
  */
 export function WorkspaceNavSections({
   companyId,
@@ -56,34 +57,32 @@ export function WorkspaceNavSections({
               aria-expanded={expanded}
               aria-controls={panelId}
               className={cn(
-                "flex w-full items-center gap-2 rounded-vf-sm px-3 py-2 text-[0.65rem] font-semibold tracking-[0.14em] uppercase transition-colors duration-150 ease-vf-out",
-                expanded || containsActive ? "text-vf-on-dark" : "text-vf-on-dark-faint/80",
-                "hover:bg-white/8 hover:text-vf-on-dark",
+                "flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-[0.68rem] font-semibold tracking-[0.14em] uppercase transition-colors duration-150 ease-vf-out",
+                expanded || containsActive ? "text-[#2f8fe8]" : "text-[#6f8fb5]",
+                "hover:bg-white/5 hover:text-[#5cb3ff]",
               )}
             >
               <IconChevronDown
                 className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200 ease-vf-out", expanded ? "rotate-0" : "-rotate-90")}
               />
               <span className="flex-1 text-left">{group.label}</span>
-              {!expanded && containsActive && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-vf-red-300" />}
+              {!expanded && containsActive && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#2f9bff]" />}
             </button>
 
             {expanded && (
-              <div id={panelId} className="mt-1 flex flex-col gap-1 pb-2">
+              <div id={panelId} className="mt-0.5 flex flex-col gap-0.5 pb-2">
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const active = isNavItemActive(pathname, companyId, item.href, item.exact);
                   const content = (
                     <>
-                      <Icon className="h-4 w-4 shrink-0" />
+                      <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-[#5cb3ff]" : "text-[#c9d4e3]")} />
                       {item.label}
                     </>
                   );
                   const itemClass = cn(
-                    "flex items-center gap-2.5 rounded-vf-sm py-2.5 pr-3 pl-6 text-sm font-medium transition-[background-color,color,box-shadow] duration-150 ease-vf-out",
-                    active
-                      ? "bg-white/16 text-vf-on-dark shadow-[inset_3px_0_0_var(--color-vf-red-300)]"
-                      : "text-vf-on-dark-soft hover:bg-white/8 hover:text-vf-on-dark hover:shadow-[inset_2px_0_0_rgba(255,255,255,0.2)]",
+                    "flex items-center gap-3 rounded-r-[12px] py-[7px] pr-3 pl-6 text-[0.82rem] font-medium transition-[background-color,color] duration-150 ease-vf-out",
+                    active ? "pc-nav-active" : "text-[#d5dde8] hover:bg-white/5 hover:text-white",
                   );
 
                   return item.href ? (
@@ -103,7 +102,7 @@ export function WorkspaceNavSections({
                     // no hover state and a "Soon" label.
                     <span
                       key={item.label}
-                      className="flex cursor-not-allowed items-center gap-2.5 rounded-vf-sm py-2.5 pr-3 pl-6 text-sm font-medium text-vf-on-dark-faint/50"
+                      className="flex cursor-not-allowed items-center gap-3 py-[7px] pr-3 pl-6 text-[0.82rem] font-medium text-white/30"
                       aria-disabled
                       title={`${item.label} — not available yet`}
                     >

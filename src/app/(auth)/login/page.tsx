@@ -22,10 +22,19 @@ const FEATURES: { icon: ComponentType<SVGProps<SVGSVGElement>>; title: string; b
 export default function LoginPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#05080d] font-sans text-white">
-      {/* EXACT SOURCE IMAGE UNAVAILABLE — the reference's background
-          photograph is not available as a standalone image, so none is
-          shown; only the page's own dark treatment remains. */}
-      <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-[#03070d]/70 via-[#03070d]/30 to-transparent" />
+      {/* The reference's office-at-dusk photograph is not available as a
+          standalone image, so none is shown. Only its lighting is echoed:
+          a warm dusk glow top-right and cool city-blue low on the right,
+          fading to the dark brand column on the left. */}
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(640px 420px at 100% 18%, rgba(255,170,80,0.30), transparent 70%), radial-gradient(760px 520px at 88% 82%, rgba(30,110,230,0.28), transparent 70%), radial-gradient(900px 700px at 60% 40%, rgba(20,60,120,0.25), transparent 70%)",
+        }}
+      />
+      <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-[#03070d]/80 via-[#03070d]/35 to-transparent" />
 
       <div className="relative grid min-h-screen w-full grid-cols-1 items-center gap-12 px-5 py-12 sm:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:gap-10 lg:px-12 lg:py-16 xl:grid-cols-[508px_524px] xl:gap-[62px] xl:py-[72px] xl:pl-[9.2vw]">
         {/* Brand column */}

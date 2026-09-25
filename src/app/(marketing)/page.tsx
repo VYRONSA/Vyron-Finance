@@ -17,15 +17,20 @@ import {
   PIconSparkles,
   PIconTrendUp,
 } from "@/components/ui/precisia-icons";
-import { IconBarChart, IconFileText, IconShieldCheck } from "@/components/ui/icons";
+import { IconArchive, IconBarChart, IconFileText, IconReceipt, IconShieldCheck } from "@/components/ui/icons";
+import { MonitorPreview, LaptopPreview } from "@/components/marketing/product-preview";
+import { ClarityScript } from "@/components/ui/precisia-script";
 
 // PRECISIA Landing Page — reproduces the approved "Precisia Landing Page"
 // reference section by section, in its order: hero, feature strip, More
 // Than Accounting Software, Built For Your Business, The Platform, Real
 // Results, Take The Next Step, footer (in the marketing layout). Copy is
-// taken verbatim from the reference. The reference's photographs are not
-// available as standalone source images, so no photograph is shown in any
-// image area (EXACT SOURCE IMAGE UNAVAILABLE) — nothing is substituted.
+// taken verbatim from the reference. The product screens on the monitor
+// and laptop are rebuilt in HTML/CSS (see product-preview.tsx) and are
+// captioned as illustrations. The reference's PHOTOGRAPHS (the man at
+// the monitor, the plant, the industry scenes, the mountains) are not
+// available as standalone source images, so no photograph is shown and
+// none is substituted — those areas carry lighting and icons only.
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -38,14 +43,14 @@ const FEATURE_STRIP: { icon: Icon; title: string; body: string }[] = [
   { icon: PIconTrendUp, title: "Built for\nGrowing Businesses", body: "From 1 entity to multi-company." },
 ];
 
-const INDUSTRIES = [
-  { label: "Retail\n& Franchises" },
-  { label: "Hospitality\n& Restaurants" },
-  { label: "Food\nManufacturing" },
-  { label: "Wholesale\n& Distribution" },
-  { label: "Professional\nServices" },
-  { label: "Construction\n& Contracting" },
-  { label: "Multi-Company\nGroups" },
+const INDUSTRIES: { label: string; icon: Icon }[] = [
+  { label: "Retail\n& Franchises", icon: PIconCart },
+  { label: "Hospitality\n& Restaurants", icon: IconReceipt },
+  { label: "Food\nManufacturing", icon: PIconGear },
+  { label: "Wholesale\n& Distribution", icon: IconArchive },
+  { label: "Professional\nServices", icon: PIconBadgeInfo },
+  { label: "Construction\n& Contracting", icon: PIconBuildingColumns },
+  { label: "Multi-Company\nGroups", icon: PIconOffice },
 ];
 
 const PLATFORM_FEATURES: { icon: Icon; label: string }[] = [
@@ -88,15 +93,24 @@ export default function HomePage() {
   return (
     <div className="font-sans">
       {/* HERO — pulled up under the translucent sticky header, as in the
-          reference. EXACT SOURCE IMAGE UNAVAILABLE for the hero photograph
-          and product visual, so neither is shown. */}
+          reference: copy on the left, the product on a monitor on the
+          right. The reference's office photograph behind the monitor is
+          not available as a standalone image, so only its lighting is
+          echoed. */}
       <section className="relative -mt-[84px] overflow-hidden bg-[#030a14] pt-[84px] text-white">
-        <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-[#030a14] via-[#030a14]/85 to-transparent lg:via-[#030a14]/0 lg:via-45%" />
+        <div
+          aria-hidden
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(700px 420px at 72% 38%, rgba(30,110,230,0.28), transparent 70%), radial-gradient(380px 300px at 92% 12%, rgba(255,190,110,0.10), transparent 70%), linear-gradient(180deg, #06101d 0%, #030a14 100%)",
+          }}
+        />
         <div aria-hidden className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#030a14] to-transparent" />
 
-        <div className="relative mx-auto w-full max-w-[1320px] px-5 pt-4 pb-36 sm:px-8 lg:px-12 lg:pb-40">
-          <div aria-hidden className="mb-9 h-px w-56 bg-gradient-to-r from-[#2f9bff] to-transparent" />
+        <div className="relative mx-auto grid w-full max-w-[1320px] grid-cols-1 items-center gap-12 px-5 pt-4 pb-36 sm:px-8 lg:grid-cols-[minmax(0,540px)_minmax(0,1fr)] lg:px-12 lg:pb-40">
           <div className="max-w-[600px]">
+            <div aria-hidden className="mb-9 h-px w-56 bg-gradient-to-r from-[#2f9bff] to-transparent" />
             <Eyebrow className="text-[#1fb5f5]">Real Data. Clearer Insights. Stronger Businesses.</Eyebrow>
             <h1 className="pc-brand-heading mt-8 text-[2.8rem] leading-[1.02] font-bold text-white sm:text-[3.9rem] lg:text-[4.35rem]">
               Financial
@@ -119,6 +133,7 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
+          <MonitorPreview className="hidden lg:block" />
         </div>
       </section>
 
@@ -159,6 +174,11 @@ export default function HomePage() {
               <PIconArrowRight className="h-4.5 w-4.5" />
             </Link>
           </div>
+          {/* The reference's hand-lettered line, as real text. The plant
+              photograph beside it is not available as a standalone image. */}
+          <div aria-hidden className="pointer-events-none absolute top-1/2 right-[16%] hidden -translate-y-1/3 lg:block">
+            <ClarityScript tone="onLight" className="text-[4.6rem]" />
+          </div>
         </div>
       </section>
 
@@ -179,28 +199,34 @@ export default function HomePage() {
           </div>
 
           <ul className="mt-12 grid grid-cols-2 gap-3.5 sm:grid-cols-4 lg:grid-cols-7">
-            {INDUSTRIES.map((industry) => (
-              <li key={industry.label} className="overflow-hidden rounded-[10px] border border-[#2d6fc0]/45 bg-[#07152a] shadow-[0_18px_40px_-24px_rgba(22,112,255,0.6)]">
-                {/* EXACT SOURCE IMAGE UNAVAILABLE — the tile keeps the reference's
-                    photo area; no substitute photograph is shown. */}
-                <div aria-hidden className="aspect-[1.25] w-full bg-gradient-to-b from-[#0d2442] to-[#081a31]" />
-                <div className="flex items-center gap-2.5 px-3 py-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#1d8dff]/70 text-[#2f9bff]">
-                    <PIconOffice className="h-4 w-4" />
-                  </span>
-                  <span className="text-[0.74rem] leading-tight font-medium text-white">
-                    <Lines text={industry.label} />
-                  </span>
-                </div>
-              </li>
-            ))}
+            {INDUSTRIES.map((industry) => {
+              const Icon = industry.icon;
+              return (
+                <li key={industry.label} className="overflow-hidden rounded-[10px] border border-[#2d6fc0]/45 bg-[#07152a] shadow-[0_18px_40px_-24px_rgba(22,112,255,0.6)]">
+                  {/* The reference's industry photograph is not available as
+                      a standalone image, so the picture area carries the
+                      industry's icon on a lit panel instead of a photo. */}
+                  <div aria-hidden className="flex aspect-[1.25] w-full items-center justify-center bg-[radial-gradient(circle_at_50%_40%,rgba(47,155,255,0.22),transparent_65%),linear-gradient(180deg,#0d2442,#081a31)]">
+                    <Icon className="h-12 w-12 text-[#2f9bff]/80" strokeWidth={1.3} />
+                  </div>
+                  <div className="flex items-center gap-2.5 px-3 py-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#1d8dff]/70 text-[#2f9bff]">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="text-[0.74rem] leading-tight font-medium text-white">
+                      <Lines text={industry.label} />
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </section>
 
       {/* THE PLATFORM */}
       <section id="platform" className="relative overflow-hidden bg-gradient-to-r from-[#f5f8fc] via-[#eef3fa] to-[#dfe7f1] py-16 lg:py-20">
-        <div className="relative mx-auto w-full max-w-[1320px] px-5 sm:px-8 lg:px-12">
+        <div className="relative mx-auto grid w-full max-w-[1320px] grid-cols-1 items-center gap-12 px-5 sm:px-8 lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)] lg:px-12">
           <div className="max-w-[560px]">
             <Eyebrow className="text-[#1e57b5]">The Platform</Eyebrow>
             <h2 className="pc-brand-heading mt-5 text-[2rem] leading-[1.12] font-bold text-[#0a1640] sm:text-[2.55rem]">
@@ -229,6 +255,7 @@ export default function HomePage() {
               <PIconArrowRight className="h-4.5 w-4.5" />
             </Link>
           </div>
+          <LaptopPreview className="hidden lg:block" />
         </div>
       </section>
 
@@ -265,7 +292,16 @@ export default function HomePage() {
 
       {/* TAKE THE NEXT STEP */}
       <section id="contact" className="relative overflow-hidden bg-[#051f44] py-16 text-center text-white lg:py-20">
-        <div aria-hidden className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(5,31,68,0.85),rgba(5,31,68,0.35)_70%)]" />
+        {/* The reference's mountain-sunrise photograph is not available as
+            a standalone image; only its dawn lighting is echoed. */}
+        <div
+          aria-hidden
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(420px 220px at 86% 30%, rgba(255,176,80,0.22), transparent 70%), radial-gradient(900px 360px at 50% 120%, rgba(22,90,190,0.45), transparent 70%), linear-gradient(180deg, #0a2a55 0%, #051f44 55%, #03152f 100%)",
+          }}
+        />
         <div className="relative mx-auto w-full max-w-[960px] px-5">
           <Eyebrow className="text-[#1fb5f5]">Take The Next Step</Eyebrow>
           <h2 className="pc-brand-heading mt-5 text-[1.9rem] leading-tight font-bold sm:text-[2.35rem]">See What PRECISIA Can Do for Your Business.</h2>
