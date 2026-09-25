@@ -11,17 +11,19 @@ export function ClarityScript({ tone = "onDark", className }: { tone?: "onDark" 
   return (
     <p
       className={cn(
-        "relative inline-block -rotate-[8deg] font-[family-name:var(--font-script)] leading-none whitespace-nowrap",
+        "relative inline-block -rotate-[9deg] font-[family-name:var(--font-script)] whitespace-nowrap",
         tone === "onDark" ? "text-white" : "text-[#0a1640]",
         className,
       )}
+      // Inline, not a `leading-*` class: callers size this with a text-*
+      // class, and class merging would drop a line-height utility.
+      style={{ lineHeight: 0.74 }}
     >
       <span className="block">Clarity</span>
-      <span className="-mt-[0.32em] block pl-[0.55em]">Creates</span>
-      <span className="-mt-[0.32em] block">Opportunity</span>
-      <svg aria-hidden viewBox="0 0 220 30" className="absolute -bottom-[0.1em] left-[0.35em] h-[0.42em] w-[3.1em]" fill="none">
-        <path d="M4 22 C 60 12, 140 6, 216 4" stroke="#1d7dff" strokeWidth="6" strokeLinecap="round" />
-        <path d="M30 27 C 80 20, 130 16, 170 14" stroke="#1d7dff" strokeWidth="3" strokeLinecap="round" opacity="0.8" />
+      <span className="block pl-[0.3em]">Creates</span>
+      <span className="block pl-[0.42em]">Opportunity</span>
+      <svg aria-hidden viewBox="0 0 200 24" className="absolute -bottom-[0.26em] left-[0.95em] h-[0.3em] w-[2.9em]" fill="none">
+        <path d="M2 21 C 60 15, 130 8, 198 3 L 198 5 C 130 11, 62 18, 4 23 Z" fill="#1d7dff" />
       </svg>
     </p>
   );

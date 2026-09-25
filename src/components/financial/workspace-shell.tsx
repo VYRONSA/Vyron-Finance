@@ -249,7 +249,7 @@ export function FinancialWorkspaceShell({
           onClick={expandSidebarIfProcessing}
           className={cn(
             "hidden h-full shrink-0 flex-col border-r border-[#0f2238] bg-gradient-to-b from-[#020a16] via-[#010711] to-[#01060f] px-3 py-6 transition-[width] duration-300 ease-vf-out lg:flex",
-            collapsed ? "w-[72px]" : "w-64",
+            collapsed ? "w-[72px]" : "w-[230px]",
           )}
         >
           {/* PRECISIA wordmark, as in the "Software Page" reference. In
@@ -466,7 +466,7 @@ export function FinancialWorkspaceShell({
             className={cn(
               "flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto",
               isDashboardRoute ? "pc-canvas" : "bg-vf-workspace-bg",
-              isProcessingRoute ? "px-4 py-3 sm:px-6" : isDashboardRoute ? "px-4 pt-4 pb-3 sm:px-5" : "px-4 py-6 sm:px-6 lg:px-8 2xl:px-10",
+              isProcessingRoute ? "px-4 py-3 sm:px-6" : isDashboardRoute ? "px-4 pt-[19px] pb-3 sm:px-[17px]" : "px-4 py-6 sm:px-6 lg:px-8 2xl:px-10",
             )}
           >
             <div className="flex-1">{children}</div>

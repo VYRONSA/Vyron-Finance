@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Source_Serif_4, Inter, IBM_Plex_Mono, Montserrat, Allura } from "next/font/google";
+import { Source_Serif_4, Inter, IBM_Plex_Mono, Montserrat, Mrs_Saint_Delafield } from "next/font/google";
 import "./globals.css";
 
 // Executive serif (the login card's "Welcome back" and legacy headings) /
@@ -31,7 +31,7 @@ const montserrat = Montserrat({
 
 // The hand-lettered "Clarity Creates Opportunity" line in the PRECISIA
 // Landing and Software Page references, set as real text.
-const allura = Allura({
+const script = Mrs_Saint_Delafield({
   variable: "--font-script",
   subsets: ["latin"],
   weight: ["400"],
@@ -51,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${sourceSerif.variable} ${inter.variable} ${plexMono.variable} ${montserrat.variable} ${allura.variable}`}
+      className={`${sourceSerif.variable} ${inter.variable} ${plexMono.variable} ${montserrat.variable} ${script.variable}`}
     >
       <body className="min-h-full font-sans antialiased">{children}</body>
     </html>

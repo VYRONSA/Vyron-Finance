@@ -94,7 +94,7 @@ export function AccountOverviewChart({ data }: { data: AccountOverviewPoint[] })
 
   return (
     <div className="flex h-full flex-col">
-      <ul className="mb-3 flex items-center justify-center gap-6 text-[0.78rem] text-[#dbe4f1]" aria-label="Legend">
+      <ul className="mb-1.5 flex items-center justify-center gap-6 text-[0.78rem] text-[#dbe4f1]" aria-label="Legend">
         {SERIES.map((s) => (
           <li key={s.key} className="flex items-center gap-2">
             <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
@@ -103,7 +103,7 @@ export function AccountOverviewChart({ data }: { data: AccountOverviewPoint[] })
         ))}
       </ul>
 
-      <div className="relative flex min-h-[170px] flex-1 pl-[52px]">
+      <div className="relative flex min-h-[100px] flex-1 pl-[52px]">
         {/* y-axis labels */}
         <div aria-hidden className="absolute inset-y-0 left-0 w-[46px]">
           {ticks.map((t) => (
@@ -193,7 +193,7 @@ export function AccountOverviewChart({ data }: { data: AccountOverviewPoint[] })
         </div>
       </div>
 
-      <div aria-hidden className="mt-2 flex pl-[52px] text-[0.75rem] text-[#c9d4e3]">
+      <div aria-hidden className="mt-1 flex pl-[52px] text-[0.75rem] text-[#c9d4e3]">
         {data.map((p, i) => (
           <span key={p.label} className={cn("flex-1", i === 0 ? "text-left" : i === data.length - 1 ? "text-right" : "text-center")}>
             {p.label}

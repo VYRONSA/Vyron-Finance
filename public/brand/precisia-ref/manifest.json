@@ -1,0 +1,493 @@
+{
+ "sources": {
+  "landing": {
+   "file": "Precisia Landing Page.png",
+   "sha256": "fe90d7d3fa3bb60b695b509afe096d94f7fcc72ee2df45efe754abba6c1dbb26",
+   "size": [
+    801,
+    1962
+   ]
+  },
+  "login": {
+   "file": "Precisia Login Page.png",
+   "sha256": "942a05658236109692c506387d83f446d9ff1e8f02c871f3aed020fa69754445",
+   "size": [
+    1536,
+    1024
+   ]
+  },
+  "platform": {
+   "file": "Precisia Platform Workspace.png",
+   "sha256": "44bda4685c721722b61236048c73de86df53a5596b5af44675d410e35b00e543",
+   "size": [
+    1774,
+    887
+   ]
+  },
+  "dashboard": {
+   "file": "Precisia Software Page.png",
+   "sha256": "74ad6d70d878aaa8c6979c0f00c79c0f8637a734242d9f15cf0f1c1180197230",
+   "size": [
+    1774,
+    887
+   ]
+  }
+ },
+ "crops": {
+  "landing-hero-top": {
+   "source": "landing",
+   "box": [
+    330,
+    48,
+    801,
+    95
+   ],
+   "size": [
+    471,
+    47
+   ]
+  },
+  "landing-hero-main": {
+   "source": "landing",
+   "box": [
+    305,
+    95,
+    801,
+    335
+   ],
+   "size": [
+    496,
+    240
+   ]
+  },
+  "landing-hero-bottom": {
+   "source": "landing",
+   "box": [
+    330,
+    335,
+    801,
+    396
+   ],
+   "size": [
+    471,
+    61
+   ]
+  },
+  "landing-hero-left": {
+   "source": "landing",
+   "box": [
+    0,
+    48,
+    52,
+    396
+   ],
+   "size": [
+    52,
+    348
+   ]
+  },
+  "landing-plant": {
+   "source": "landing",
+   "box": [
+    548,
+    506,
+    801,
+    720
+   ],
+   "size": [
+    253,
+    214
+   ]
+  },
+  "landing-industries-bg": {
+   "source": "landing",
+   "box": [
+    350,
+    720,
+    801,
+    868
+   ],
+   "size": [
+    451,
+    148
+   ]
+  },
+  "landing-platform-laptop-top": {
+   "source": "landing",
+   "box": [
+    345,
+    1000,
+    801,
+    1138
+   ],
+   "size": [
+    456,
+    138
+   ]
+  },
+  "landing-platform-laptop": {
+   "source": "landing",
+   "box": [
+    345,
+    1138,
+    801,
+    1466
+   ],
+   "size": [
+    456,
+    328
+   ]
+  },
+  "landing-platform-laptop-left": {
+   "source": "landing",
+   "box": [
+    200,
+    1138,
+    345,
+    1466
+   ],
+   "size": [
+    145,
+    328
+   ]
+  },
+  "landing-cta-left": {
+   "source": "landing",
+   "box": [
+    0,
+    1614,
+    195,
+    1775
+   ],
+   "size": [
+    195,
+    161
+   ]
+  },
+  "landing-cta-right": {
+   "source": "landing",
+   "box": [
+    606,
+    1614,
+    801,
+    1775
+   ],
+   "size": [
+    195,
+    161
+   ]
+  },
+  "landing-cta-top": {
+   "source": "landing",
+   "box": [
+    0,
+    1614,
+    801,
+    1633
+   ],
+   "size": [
+    801,
+    19
+   ]
+  },
+  "landing-cta-bottom": {
+   "source": "landing",
+   "box": [
+    0,
+    1757,
+    801,
+    1775
+   ],
+   "size": [
+    801,
+    18
+   ]
+  },
+  "login-right": {
+   "source": "login",
+   "box": [
+    1206,
+    0,
+    1536,
+    1024
+   ],
+   "size": [
+    330,
+    1024
+   ]
+  },
+  "login-top": {
+   "source": "login",
+   "box": [
+    0,
+    0,
+    1240,
+    74
+   ],
+   "size": [
+    1240,
+    74
+   ]
+  },
+  "login-above-card": {
+   "source": "login",
+   "box": [
+    652,
+    74,
+    1240,
+    174
+   ],
+   "size": [
+    588,
+    100
+   ]
+  },
+  "login-gap": {
+   "source": "login",
+   "box": [
+    652,
+    144,
+    740,
+    910
+   ],
+   "size": [
+    88,
+    766
+   ]
+  },
+  "login-left-strip": {
+   "source": "login",
+   "box": [
+    0,
+    74,
+    138,
+    952
+   ],
+   "size": [
+    138,
+    878
+   ]
+  },
+  "login-below-card": {
+   "source": "login",
+   "box": [
+    440,
+    878,
+    1240,
+    952
+   ],
+   "size": [
+    800,
+    74
+   ]
+  },
+  "login-bottom": {
+   "source": "login",
+   "box": [
+    0,
+    952,
+    1240,
+    1024
+   ],
+   "size": [
+    1240,
+    72
+   ]
+  },
+  "platform-hero-a": {
+   "source": "platform",
+   "box": [
+    720,
+    92,
+    1248,
+    240
+   ],
+   "size": [
+    528,
+    148
+   ]
+  },
+  "platform-hero-b": {
+   "source": "platform",
+   "box": [
+    955,
+    240,
+    1248,
+    303
+   ],
+   "size": [
+    293,
+    63
+   ]
+  },
+  "platform-hero-c": {
+   "source": "platform",
+   "box": [
+    1248,
+    160,
+    1545,
+    303
+   ],
+   "size": [
+    297,
+    143
+   ]
+  },
+  "platform-sidebar-waves": {
+   "source": "platform",
+   "box": [
+    0,
+    540,
+    222,
+    805
+   ],
+   "size": [
+    222,
+    265
+   ]
+  },
+  "dashboard-hero-a": {
+   "source": "dashboard",
+   "box": [
+    760,
+    89,
+    978,
+    176
+   ],
+   "size": [
+    218,
+    87
+   ]
+  },
+  "dashboard-hero-b": {
+   "source": "dashboard",
+   "box": [
+    978,
+    89,
+    1128,
+    214
+   ],
+   "size": [
+    150,
+    125
+   ]
+  },
+  "dashboard-hero-c": {
+   "source": "dashboard",
+   "box": [
+    1128,
+    89,
+    1747,
+    281
+   ],
+   "size": [
+    619,
+    192
+   ]
+  },
+  "dashboard-robot": {
+   "source": "dashboard",
+   "box": [
+    1575,
+    675,
+    1745,
+    836
+   ],
+   "size": [
+    170,
+    161
+   ]
+  },
+  "landing-industry-1": {
+   "source": "landing",
+   "box": [
+    28,
+    873,
+    121,
+    946
+   ],
+   "size": [
+    93,
+    73
+   ]
+  },
+  "landing-industry-2": {
+   "source": "landing",
+   "box": [
+    136,
+    873,
+    229,
+    946
+   ],
+   "size": [
+    93,
+    73
+   ]
+  },
+  "landing-industry-3": {
+   "source": "landing",
+   "box": [
+    244,
+    873,
+    337,
+    946
+   ],
+   "size": [
+    93,
+    73
+   ]
+  },
+  "landing-industry-4": {
+   "source": "landing",
+   "box": [
+    353,
+    873,
+    445,
+    946
+   ],
+   "size": [
+    92,
+    73
+   ]
+  },
+  "landing-industry-5": {
+   "source": "landing",
+   "box": [
+    461,
+    873,
+    554,
+    946
+   ],
+   "size": [
+    93,
+    73
+   ]
+  },
+  "landing-industry-6": {
+   "source": "landing",
+   "box": [
+    569,
+    873,
+    662,
+    946
+   ],
+   "size": [
+    93,
+    73
+   ]
+  },
+  "landing-industry-7": {
+   "source": "landing",
+   "box": [
+    678,
+    873,
+    770,
+    946
+   ],
+   "size": [
+    92,
+    73
+   ]
+  }
+ }
+}

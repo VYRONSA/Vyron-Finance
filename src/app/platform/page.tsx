@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ComponentType } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { RefPiece } from "@/components/ui/ref-piece";
 import { formatLongDate } from "@/lib/format";
 import {
   IconAlertTriangle,
@@ -325,19 +326,17 @@ export default async function PlatformOverviewPage() {
   return (
     <div className="flex w-full min-w-0 flex-col gap-5 font-sans">
       {/* Hero banner */}
-      <section className="pc-panel pc-panel-glow relative overflow-hidden rounded-[16px] bg-[#041630]">
-        {/* The reference's glowing city/chart photograph is not available
-            as a standalone image, so none is shown; only a lighting wash in
-            the reference's blues sits behind the copy. */}
-        <div
-          aria-hidden
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(420px 260px at 66% 30%, rgba(80,160,255,0.28), transparent 70%), radial-gradient(900px 300px at 75% 120%, rgba(22,90,190,0.4), transparent 70%)",
-          }}
-        />
-        <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-[#031a36] via-[#031a36]/75 to-transparent" />
+      <section className="pc-panel pc-panel-glow relative overflow-hidden rounded-[16px] bg-[#001325] lg:min-h-[211px]">
+        {/* The reference's glowing city/chart visual — its own pixels, placed
+            where it sits in the "Precisia Platform Workspace" reference,
+            measured from the panel's right edge so it stays behind the
+            right-aligned actions at every width. Split where the reference
+            has baked-in buttons and captions; those are real controls here. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 hidden lg:block">
+          <RefPiece name="platform-hero-a" right={505} top={0} w={528} h={148} fade={[{ edge: "left", size: 110 }]} />
+          <RefPiece name="platform-hero-b" right={505} top={148} w={293} h={63} fade={[{ edge: "left", size: 50 }]} />
+          <RefPiece name="platform-hero-c" right={208} top={68} w={297} h={143} fade={[{ edge: "top", size: 18 }, { edge: "right", size: 60 }]} />
+        </div>
         <div className="relative flex flex-col gap-6 p-6 lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-6">
           <div>
             <p className="flex items-center gap-2.5 text-[0.8rem] font-semibold tracking-[0.12em] text-[#8cc8ff] uppercase">
@@ -402,8 +401,8 @@ export default async function PlatformOverviewPage() {
 
       {/* Quick Actions */}
       <section>
-        <h2 className="pc-heading mb-3 text-[1rem] font-semibold text-white">Quick Actions</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <h2 className="pc-heading mb-2 text-[1rem] leading-none font-semibold text-white">Quick Actions</h2>
+        <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
           {QUICK_ACTIONS.map((action) => {
             const Icon = action.icon;
             const body = (
@@ -434,25 +433,25 @@ export default async function PlatformOverviewPage() {
       </section>
 
       {/* Workspace Health */}
-      <section className="pc-panel pc-panel-glow relative overflow-hidden rounded-[16px] bg-gradient-to-r from-[#062646] via-[#082a4c] to-[#06294d] px-5 py-4">
+      <section className="pc-panel pc-panel-glow relative overflow-hidden rounded-[16px] bg-gradient-to-r from-[#062646] via-[#082a4c] to-[#06294d] px-5 pt-3 pb-2">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="pc-heading text-[1.05rem] font-semibold text-white">Workspace Health</h2>
-            <p className="mt-1 text-[0.84rem] text-[#c2cedd]">A snapshot of your platform, updated live where the data exists today.</p>
+            <h2 className="pc-heading text-[1.05rem] leading-tight font-semibold text-white">Workspace Health</h2>
+            <p className="mt-0.5 text-[0.8rem] leading-tight text-[#c2cedd]">A snapshot of your platform, updated live where the data exists today.</p>
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-y-5 sm:grid-cols-3 xl:grid-cols-6">
+        <div className="mt-2.5 grid grid-cols-2 gap-y-5 sm:grid-cols-3 xl:grid-cols-6">
           {HEALTH_METRICS.map((metric, i) => {
             const Icon = metric.icon;
             return (
-              <div key={metric.label} className={cn("flex flex-col gap-3 px-2 xl:px-6", i > 0 && "xl:border-l xl:border-white/12")}>
-                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#3a92ff]/50 bg-[#0b3566] text-[#8cc8ff]">
+              <div key={metric.label} className={cn("flex flex-col gap-1.5 px-2 xl:px-6", i > 0 && "xl:border-l xl:border-white/12")}>
+                <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a92ff]/50 bg-[#0b3566] text-[#8cc8ff]">
                   <Icon className="h-5 w-5" />
                 </span>
                 {metric.stacked ? (
                   <div>
                     <p className="font-sans text-[1.85rem] leading-none font-semibold text-[#1cbbf6]">{metric.value}</p>
-                    <p className="mt-1.5 text-[0.9rem] text-[#e6ecf5]">{metric.label}</p>
+                    <p className="mt-0.5 text-[0.9rem] leading-tight text-[#e6ecf5]">{metric.label}</p>
                   </div>
                 ) : (
                   <div className="flex items-center gap-4">
@@ -466,8 +465,8 @@ export default async function PlatformOverviewPage() {
               </div>
             );
           })}
-          <div className="flex flex-col gap-3 px-2 xl:border-l xl:border-white/12 xl:px-6">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#3a92ff]/50 bg-[#0b3566] text-[#8cc8ff]">
+          <div className="flex flex-col gap-1.5 px-2 xl:border-l xl:border-white/12 xl:px-6">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a92ff]/50 bg-[#0b3566] text-[#8cc8ff]">
               <IconShieldCheck className="h-5 w-5" />
             </span>
             <div className="flex items-center gap-4">

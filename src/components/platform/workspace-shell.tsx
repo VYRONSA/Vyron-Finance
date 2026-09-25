@@ -62,19 +62,28 @@ export function WorkspaceShell({
       )}
 
       <div className="flex min-h-screen">
-        <aside className="sticky top-0 hidden h-screen w-[222px] shrink-0 flex-col overflow-hidden border-r border-[#12325a]/60 bg-gradient-to-b from-[#031428] via-[#021a36] to-[#011a3a] lg:flex">
-          {/* EXACT SOURCE IMAGE UNAVAILABLE — the reference's light-wave
-              detail at the bottom of the rail is not shown. */}
+        <aside className="sticky top-0 hidden h-screen w-[222px] shrink-0 flex-col overflow-hidden border-r border-[#12325a]/60 bg-gradient-to-b from-[#03101f] via-[#020c19] to-[#000912] lg:flex">
+          {/* The reference's light-wave detail at the foot of the rail —
+              its own pixels (public/brand/precisia-ref). */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
+          <img
+            src="/brand/precisia-ref/platform-sidebar-waves.png"
+            alt=""
+            aria-hidden
+            width={222}
+            height={265}
+            className="pointer-events-none absolute bottom-[82px] left-0 h-[265px] w-[222px] [mask-image:linear-gradient(to_bottom,transparent,#000_40px,#000_calc(100%-30px),transparent)]"
+          />
           <Link href="/" className="relative px-6 pt-6 pb-5" aria-label="PRECISIA — home">
             <PrecisiaWordmark size="md" />
           </Link>
 
           <nav className="relative flex flex-1 flex-col gap-2 overflow-y-auto pb-6">
             {NAV_SECTIONS.map((section, i) => (
-              <div key={section.label} className="pt-2 pb-1.5">
-                {i > 0 && <div aria-hidden className="mx-6 mb-5 h-px bg-white/10" />}
-                <p className="px-6 pb-2 text-[0.66rem] font-semibold tracking-[0.14em] text-[#a9b8cc] uppercase">{section.label}</p>
-                <ul className="flex flex-col gap-1">
+              <div key={section.label}>
+                {i > 0 && <div aria-hidden className="mx-6 mt-1 mb-3 h-px bg-white/10" />}
+                <p className="px-6 pb-3 text-[0.66rem] font-semibold tracking-[0.14em] text-[#a9b8cc] uppercase">{section.label}</p>
+                <ul className="flex flex-col gap-[5.5px]">
                   {section.items.map((item) => {
                     const Icon = item.icon;
                     const active = !item.href.includes("#") && pathname === item.href;
@@ -118,7 +127,7 @@ export function WorkspaceShell({
             </div>
           </header>
 
-          <main className="min-w-0 flex-1 px-4 py-5 sm:px-5">{children}</main>
+          <main className="min-w-0 flex-1 px-4 pt-7 pb-5 sm:px-5">{children}</main>
         </div>
       </div>
     </div>

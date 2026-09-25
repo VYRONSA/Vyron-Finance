@@ -18,19 +18,16 @@ import {
   PIconTrendUp,
 } from "@/components/ui/precisia-icons";
 import { IconArchive, IconBarChart, IconFileText, IconReceipt, IconShieldCheck } from "@/components/ui/icons";
-import { MonitorPreview, LaptopPreview } from "@/components/marketing/product-preview";
-import { ClarityScript } from "@/components/ui/precisia-script";
+import { LandingArtboard } from "@/components/marketing/landing-artboard";
 
-// PRECISIA Landing Page — reproduces the approved "Precisia Landing Page"
-// reference section by section, in its order: hero, feature strip, More
-// Than Accounting Software, Built For Your Business, The Platform, Real
-// Results, Take The Next Step, footer (in the marketing layout). Copy is
-// taken verbatim from the reference. The product screens on the monitor
-// and laptop are rebuilt in HTML/CSS (see product-preview.tsx) and are
-// captioned as illustrations. The reference's PHOTOGRAPHS (the man at
-// the monitor, the plant, the industry scenes, the mountains) are not
-// available as standalone source images, so no photograph is shown and
-// none is substituted — those areas carry lighting and icons only.
+// PRECISIA Landing Page, built to the owner-supplied "Precisia Landing
+// Page" reference. From 1024px wide the page is `LandingArtboard` — the
+// reference composition itself, scaled to the window. Narrower screens get
+// this single-column version of the same sections and copy, using the same
+// reference imagery (public/brand/precisia-ref). Copy is verbatim from the
+// reference.
+
+const REF = "/brand/precisia-ref/";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -43,14 +40,14 @@ const FEATURE_STRIP: { icon: Icon; title: string; body: string }[] = [
   { icon: PIconTrendUp, title: "Built for\nGrowing Businesses", body: "From 1 entity to multi-company." },
 ];
 
-const INDUSTRIES: { label: string; icon: Icon }[] = [
-  { label: "Retail\n& Franchises", icon: PIconCart },
-  { label: "Hospitality\n& Restaurants", icon: IconReceipt },
-  { label: "Food\nManufacturing", icon: PIconGear },
-  { label: "Wholesale\n& Distribution", icon: IconArchive },
-  { label: "Professional\nServices", icon: PIconBadgeInfo },
-  { label: "Construction\n& Contracting", icon: PIconBuildingColumns },
-  { label: "Multi-Company\nGroups", icon: PIconOffice },
+const INDUSTRIES: { label: string; icon: Icon; photo: string }[] = [
+  { label: "Retail\n& Franchises", icon: PIconCart, photo: "landing-industry-1" },
+  { label: "Hospitality\n& Restaurants", icon: IconReceipt, photo: "landing-industry-2" },
+  { label: "Food\nManufacturing", icon: PIconGear, photo: "landing-industry-3" },
+  { label: "Wholesale\n& Distribution", icon: IconArchive, photo: "landing-industry-4" },
+  { label: "Professional\nServices", icon: PIconBadgeInfo, photo: "landing-industry-5" },
+  { label: "Construction\n& Contracting", icon: PIconBuildingColumns, photo: "landing-industry-6" },
+  { label: "Multi-Company\nGroups", icon: PIconOffice, photo: "landing-industry-7" },
 ];
 
 const PLATFORM_FEATURES: { icon: Icon; label: string }[] = [
@@ -91,7 +88,9 @@ function Lines({ text }: { text: string }) {
 
 export default function HomePage() {
   return (
-    <div className="font-sans">
+    <>
+    <LandingArtboard />
+    <div className="font-sans lg:hidden">
       {/* HERO — pulled up under the translucent sticky header, as in the
           reference: copy on the left, the product on a monitor on the
           right. The reference's office photograph behind the monitor is
@@ -133,7 +132,11 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
-          <MonitorPreview className="hidden lg:block" />
+          <figure>
+            {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
+            <img src={`${REF}landing-hero-main.png`} alt="" aria-hidden className="w-full rounded-[12px]" />
+            <figcaption className="mt-2 text-center text-[0.65rem] text-[#7f8da6]">Illustrative product preview — sample figures, not live data.</figcaption>
+          </figure>
         </div>
       </section>
 
@@ -174,11 +177,8 @@ export default function HomePage() {
               <PIconArrowRight className="h-4.5 w-4.5" />
             </Link>
           </div>
-          {/* The reference's hand-lettered line, as real text. The plant
-              photograph beside it is not available as a standalone image. */}
-          <div aria-hidden className="pointer-events-none absolute top-1/2 right-[16%] hidden -translate-y-1/3 lg:block">
-            <ClarityScript tone="onLight" className="text-[4.6rem]" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
+          <img src={`${REF}landing-plant.png`} alt="" aria-hidden className="mt-10 w-full max-w-[420px] rounded-[12px]" />
         </div>
       </section>
 
@@ -203,12 +203,8 @@ export default function HomePage() {
               const Icon = industry.icon;
               return (
                 <li key={industry.label} className="overflow-hidden rounded-[10px] border border-[#2d6fc0]/45 bg-[#07152a] shadow-[0_18px_40px_-24px_rgba(22,112,255,0.6)]">
-                  {/* The reference's industry photograph is not available as
-                      a standalone image, so the picture area carries the
-                      industry's icon on a lit panel instead of a photo. */}
-                  <div aria-hidden className="flex aspect-[1.25] w-full items-center justify-center bg-[radial-gradient(circle_at_50%_40%,rgba(47,155,255,0.22),transparent_65%),linear-gradient(180deg,#0d2442,#081a31)]">
-                    <Icon className="h-12 w-12 text-[#2f9bff]/80" strokeWidth={1.3} />
-                  </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
+                  <img src={`${REF}${industry.photo}.png`} alt="" aria-hidden className="aspect-[1.25] w-full object-cover" />
                   <div className="flex items-center gap-2.5 px-3 py-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#1d8dff]/70 text-[#2f9bff]">
                       <Icon className="h-4 w-4" />
@@ -255,7 +251,15 @@ export default function HomePage() {
               <PIconArrowRight className="h-4.5 w-4.5" />
             </Link>
           </div>
-          <LaptopPreview className="hidden lg:block" />
+          <figure>
+            <div className="overflow-hidden rounded-[12px]">
+              {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
+              <img src={`${REF}landing-platform-laptop-top.png`} alt="" aria-hidden className="block w-full" />
+              {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
+              <img src={`${REF}landing-platform-laptop.png`} alt="" aria-hidden className="block w-full" />
+            </div>
+            <figcaption className="mt-2 text-center text-[0.65rem] text-[#5d6a82]">Illustrative product preview — sample figures, not live data.</figcaption>
+          </figure>
         </div>
       </section>
 
@@ -318,5 +322,6 @@ export default function HomePage() {
       </section>
 
     </div>
+    </>
   );
 }

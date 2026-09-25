@@ -83,7 +83,7 @@ import { MOCK_AUDIT_FINDINGS } from "@/lib/mock/audit-data";
 import { MOCK_ASSET_FINDINGS } from "@/lib/mock/asset-data";
 import type { JournalStatus } from "@/server/accounting/types";
 import { formatAmount, formatLongDate } from "@/lib/format";
-import { ClarityScript } from "@/components/ui/precisia-script";
+import { RefPiece } from "@/components/ui/ref-piece";
 import { AccountOverviewChart, KpiSparkline, type AccountOverviewPoint } from "@/components/financial/dashboard/account-overview-chart";
 
 export const metadata: Metadata = {
@@ -502,40 +502,36 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
   return (
     <div className="flex w-full flex-col gap-4 font-sans text-white">
       {/* Greeting hero */}
-      <section className="pc-panel pc-panel-glow relative overflow-hidden rounded-[16px] bg-[#040d19]">
-        {/* The reference's mountain-sunrise photograph is not available as
-            a standalone image, so none is shown; only a lighting wash in
-            the reference's colours sits behind the copy. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(520px 220px at 72% 18%, rgba(255,170,70,0.16), transparent 70%), radial-gradient(900px 320px at 80% 110%, rgba(22,90,190,0.35), transparent 70%), linear-gradient(90deg, #040d19 0%, rgba(4,13,25,0.85) 45%, rgba(8,26,52,0.9) 100%)",
-          }}
-        />
-        <div aria-hidden className="pointer-events-none absolute top-1/2 right-10 hidden -translate-y-1/2 xl:block">
-          <ClarityScript className="text-[3.4rem]" />
+      <section className="pc-panel pc-panel-glow relative overflow-hidden rounded-[16px] bg-[#000e1e] lg:min-h-[192px]">
+        {/* The reference's mountain-sunrise photograph with its "Clarity
+            Creates Opportunity" lettering — the "Precisia Software Page"
+            reference's own pixels, measured from the panel's right edge.
+            Split around the greeting and action buttons, which are real
+            here. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 hidden lg:block">
+          <RefPiece name="dashboard-hero-a" right={769} top={0} w={218} h={87} fade={[{ edge: "left", size: 90 }, { edge: "bottom", size: 22 }]} />
+          <RefPiece name="dashboard-hero-b" right={619} top={0} w={150} h={125} fade={[{ edge: "bottom", size: 18 }]} />
+          <RefPiece name="dashboard-hero-c" right={0} top={0} w={619} h={192} />
         </div>
-        <div className="relative px-6 py-5">
+        <div className="relative px-6 pt-3 pb-[19px]">
           <div className="flex flex-wrap items-center gap-3">
-            <p className="text-[0.78rem] font-semibold tracking-[0.08em] text-[#9cc9f5] uppercase">{formatLongDate(now)}</p>
-            {previewMode && <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[0.7rem] font-medium text-[#dbe4f1]">Preview Mode</span>}
+            <p className="text-[0.78rem] leading-4 font-semibold tracking-[0.08em] text-[#9cc9f5] uppercase">{formatLongDate(now)}</p>
+            {previewMode && <span className="rounded-full bg-white/10 px-2.5 text-[0.7rem] leading-4 font-medium text-[#dbe4f1]">Preview Mode</span>}
           </div>
-          <h1 className="pc-heading mt-1.5 text-[2rem] leading-tight font-bold text-white sm:text-[2.6rem]">
+          <h1 className="pc-heading text-[2rem] leading-tight font-bold text-white sm:text-[2.6rem]">
             {greeting}, <span className="text-[#1d7dff]">{firstName}.</span>
           </h1>
-          <p className="mt-1.5 max-w-[760px] text-[1.02rem] text-[#dbe4f1]">
+          <p className="mt-2 max-w-[760px] text-[1.02rem] text-[#dbe4f1]">
             Your financial intelligence platform is ready — real data, clearer insights, stronger decisions.
           </p>
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             {HERO_ACTIONS.map((action) => {
               const Icon = action.icon;
               return (
                 <Link
                   key={action.label}
                   href={action.href}
-                  className={cn("pc-btn h-10 px-5 text-[0.82rem] font-medium", action.primary ? "pc-btn-primary" : "pc-btn-outline")}
+                  className={cn("pc-btn h-11 px-5 text-[0.82rem] font-medium", action.primary ? "pc-btn-primary" : "pc-btn-outline")}
                 >
                   <Icon className="h-4.5 w-4.5" />
                   {action.label}
@@ -553,7 +549,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
           {EXECUTIVE_KPIS.map((kpi) => {
             const Icon = kpi.icon;
             return (
-              <div key={kpi.label} className="pc-panel flex items-center gap-3.5 rounded-[14px] py-3.5 pr-3 pl-3">
+              <div key={kpi.label} className="pc-panel flex items-center gap-3.5 rounded-[14px] py-3 pr-3 pl-3">
                 <span className="pc-icon-tile h-12 w-12 shrink-0">
                   <Icon className="h-6 w-6" />
                 </span>
@@ -586,10 +582,15 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
         {/* PRECISIA Intelligence — Phase 10. Every finding here is a real,
             normalized signal from `financial-intelligence-engine.ts`; see
             FINDINGS_INVENTORY.md. Never a fabricated conclusion. */}
-        <section className="pc-panel rounded-[14px] px-4 py-4">
+        <section className="pc-panel rounded-[14px] px-4 py-3.5">
           <div className="flex items-center gap-2.5">
             <h2 className="pc-heading text-[1.1rem] font-semibold text-white">PRECISIA Intelligence</h2>
             <span className="rounded-md border border-[#3a92ff]/60 bg-[#0c2b57] px-2 py-0.5 text-[0.68rem] font-semibold text-[#8cc8ff]">AI</span>
+            {findings.length > 5 && (
+              <Link href={`/company/${companyId}/intelligence`} className="ml-auto text-[0.8rem] font-medium text-[#2f9bff] hover:underline">
+                +{findings.length - 5} more →
+              </Link>
+            )}
           </div>
           <p className="mt-1 text-[0.84rem] text-[#9fb0c6]">
             {findings.length === 0 ? "Nothing requires attention right now" : "Issues requiring your attention"}
@@ -611,8 +612,8 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
                       {FINDING_SEVERITY_LABEL[finding.severity]}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="line-clamp-1 text-[0.86rem] font-semibold text-white" title={finding.title}>{finding.title}</span>
-                      <span className="mt-0.5 line-clamp-2 text-[0.74rem] leading-snug text-[#b4c1d6]">{finding.evidence}</span>
+                      <span className="line-clamp-1 text-[0.86rem] leading-tight font-semibold text-white" title={finding.title}>{finding.title}</span>
+                      <span className="mt-1 line-clamp-2 text-[0.72rem] leading-[1.2] text-[#b4c1d6]">{finding.evidence}</span>
                     </span>
                     <PIconChevronRight className="h-4.5 w-4.5 shrink-0 text-[#c9d4e3]" />
                   </>
@@ -620,29 +621,24 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
                 return (
                   <li key={finding.id}>
                     {finding.actionHref ? (
-                      <Link href={finding.actionHref} className="pc-row flex items-center gap-4 px-3 py-2.5 transition-colors hover:border-[#3a92ff]/50" title={finding.recommendedAction ?? undefined}>
+                      <Link href={finding.actionHref} className="pc-row flex items-center gap-4 px-3 py-[7px] transition-colors hover:border-[#3a92ff]/50" title={finding.recommendedAction ?? undefined}>
                         {body}
                       </Link>
                     ) : (
-                      <div className="pc-row flex items-center gap-4 px-3 py-2.5">{body}</div>
+                      <div className="pc-row flex items-center gap-4 px-3 py-[7px]">{body}</div>
                     )}
                   </li>
                 );
               })}
             </ul>
           )}
-          {findings.length > 5 && (
-            <Link href={`/company/${companyId}/intelligence`} className="mt-3 inline-block text-xs font-medium text-[#5cb3ff] hover:underline">
-              +{findings.length - 5} more finding(s) →
-            </Link>
-          )}
         </section>
 
         <div className="flex flex-col gap-4">
           {/* Phase 27 — hidden entirely once every setup step is complete. */}
           {setupStepsComplete < SETUP_STEPS.length && (
-            <section className="pc-panel rounded-[14px] px-4 py-3.5">
-              <h2 className="pc-heading text-[1.1rem] font-semibold text-white">Business Setup Progress</h2>
+            <section className="pc-panel rounded-[14px] px-4 pt-3 pb-3.5">
+              <h2 className="pc-heading text-[1.1rem] leading-tight font-semibold text-white">Business Setup Progress</h2>
               <div className="mt-1 flex items-center justify-between text-[0.78rem] text-[#b4c1d6]">
                 <span>
                   {setupStepsComplete} of {SETUP_STEPS.length} steps completed
@@ -652,7 +648,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
               <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#132437]" role="progressbar" aria-valuenow={setupPercent} aria-valuemin={0} aria-valuemax={100} aria-label="Business setup progress">
                 <div className="h-full rounded-full bg-gradient-to-r from-[#1fbf6c] to-[#25d380] transition-[width] duration-300 ease-vf-out" style={{ width: `${setupPercent}%` }} />
               </div>
-              <ul className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              <ul className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
                 {SETUP_STEPS.map((step) => (
                   <li key={step.label} className="flex items-center gap-2.5 text-[0.8rem]">
                     {step.complete ? (
@@ -670,14 +666,14 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
             </section>
           )}
 
-          <section className="pc-panel flex flex-1 flex-col rounded-[14px] px-4 py-3.5">
-            <div className="mb-2 flex items-center justify-between gap-3">
+          <section className="pc-panel flex flex-1 flex-col rounded-[14px] px-4 py-3">
+            <div className="mb-1 flex items-center justify-between gap-3">
               <h2 className="pc-heading text-[1.1rem] font-semibold text-white">Account Overview</h2>
               <span className="flex items-center gap-2 rounded-[8px] border border-[#29405c] bg-[#0b1a2b] px-3 py-1.5 text-[0.8rem] text-[#dbe4f1]" title="Income, expenses and profit from the General Ledger for the last six months">
                 Last 6 months
               </span>
             </div>
-            <div className="min-h-[190px] flex-1">
+            <div className="min-h-[100px] flex-1">
               <AccountOverviewChart data={accountOverview} />
             </div>
           </section>
@@ -696,17 +692,17 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
             {recentActivity.length === 0 ? (
               <p className="mt-4 text-sm text-[#9fb0c6]">Actions across this company — imports, journals, matching, and more — will appear here as they happen.</p>
             ) : (
-              <ul className="mt-3 flex flex-col gap-2.5">
+              <ul className="mt-2.5 flex flex-col gap-2">
                 {recentActivity.slice(0, 5).map((a) => {
                   const Icon = ACTIVITY_ICON[a.category] ?? PIconUpload;
                   return (
                     <li key={a.id} className="flex items-start gap-3.5">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] border border-white/10 bg-[#13243a] text-[#c9d4e3]">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-white/10 bg-[#13243a] text-[#c9d4e3]">
                         <Icon className="h-[18px] w-[18px]" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[0.8rem] font-medium text-white" title={a.message}>{a.message}</p>
-                        <p className="truncate text-[0.7rem] text-[#9fb0c6]">{a.category}</p>
+                        <p className="truncate text-[0.8rem] leading-tight font-medium text-white" title={a.message}>{a.message}</p>
+                        <p className="truncate text-[0.7rem] leading-tight text-[#9fb0c6]">{a.category}</p>
                       </div>
                       <span className="shrink-0 text-[0.72rem] text-[#9fb0c6]">{activityTimeAgo(a.timestamp, now)}</span>
                     </li>
@@ -720,15 +716,16 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
               PRECISIA Intelligence page, reached from here. The reference's
               robot illustration is not available as a standalone image, so
               none is shown. */}
-          <section className="relative flex-1 overflow-hidden rounded-[14px] border border-[#3a92ff]/60 bg-gradient-to-br from-[#0b3fb0] via-[#0a3aa6] to-[#071e5c] px-5 py-4 shadow-[0_18px_48px_-20px_rgba(22,112,255,0.7)]">
+          <section className="relative flex-1 overflow-hidden rounded-[14px] border border-[#3a92ff]/60 bg-[linear-gradient(170deg,#052f5a_0%,#03284e_25%,#001c3a_60%,#011022_100%)] px-5 py-3.5 shadow-[0_18px_48px_-20px_rgba(22,112,255,0.7)]">
+            <RefPiece name="dashboard-robot" right={2} top={2} w={170} h={161} fade={[{ edge: "left", size: 34 }, { edge: "bottom", size: 12 }]} className="pointer-events-none hidden sm:block" />
             <div className="relative max-w-[62%]">
-              <h2 className="pc-heading text-[1.3rem] leading-tight font-bold text-white">
+              <h2 className="pc-heading text-[1.3rem] leading-[1.15] font-bold text-white">
                 Get insights faster
                 <br />
                 with AI.
               </h2>
-              <p className="mt-2 text-[0.8rem] leading-snug text-[#dbe4f1]">Ask PRECISIA about your numbers, trends, or exceptions.</p>
-              <Link href={`/company/${companyId}/intelligence`} className="pc-btn pc-btn-primary mt-4 h-11 bg-gradient-to-r from-[#1d7dff] to-[#2a8cff] px-5 text-[0.86rem]">
+              <p className="mt-1.5 text-[0.8rem] leading-snug text-[#dbe4f1]">Ask PRECISIA about your numbers, trends, or exceptions.</p>
+              <Link href={`/company/${companyId}/intelligence`} className="pc-btn pc-btn-primary mt-3 h-10 bg-gradient-to-r from-[#1d7dff] to-[#2a8cff] px-5 text-[0.86rem]">
                 <PIconSparkles className="h-4.5 w-4.5" />
                 PRECISIA Ask
                 <PIconArrowRight className="h-4 w-4" />

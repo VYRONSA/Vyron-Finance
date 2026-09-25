@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import type { ComponentType, SVGProps } from "react";
+import type { ComponentType, CSSProperties, SVGProps } from "react";
 import { Suspense } from "react";
 import Link from "next/link";
 import { LoginForm } from "@/components/auth/login-form";
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   title: "Sign In — PRECISIA",
 };
 
-// Copy verbatim from the approved "Precisia Login Page" reference.
+// Copy verbatim from the owner-supplied "Precisia Login Page" reference.
 const FEATURES: { icon: ComponentType<SVGProps<SVGSVGElement>>; title: string; body: string }[] = [
   { icon: PIconTrendUp, title: "Complete Financial Control", body: "From capture to reporting." },
   { icon: PIconShield, title: "Automated Processing", body: "Less admin. More time." },
@@ -19,80 +19,139 @@ const FEATURES: { icon: ComponentType<SVGProps<SVGSVGElement>>; title: string; b
   { icon: PIconBrain, title: "AI-Powered Insights", body: "Turn data into action." },
 ];
 
+// From 1024px the page IS the reference composition (1536 x 1024): the
+// root font size is set so 1rem = 16 reference pixels, scaled to cover the
+// window, and everything — including the real sign-in form, which is sized
+// in rem — keeps the reference's proportions. The photograph is the
+// reference's own pixels, used only where no text or UI is baked into it
+// (public/brand/precisia-ref/manifest.json); the text column and the card
+// sit over a matching dark fill.
+const ARTBOARD_SCALE = "@media (min-width: 1024px) { html { font-size: max(calc(100vw / 96), calc(100vh / 64)); } }";
+
+const r = (px: number) => `${px / 16}rem`;
+
+function Piece({ name, x, y, w, h, fade }: { name: string; x: number; y: number; w: number; h: number; fade?: { edge: "left" | "right" | "top" | "bottom"; size: number }[] }) {
+  const masks = (fade ?? []).map(({ edge, size }) => {
+    const dir = { left: "to right", right: "to left", top: "to bottom", bottom: "to top" }[edge];
+    return `linear-gradient(${dir}, transparent, #000 ${r(size)})`;
+  });
+  const style: CSSProperties = {
+    position: "absolute",
+    left: r(x),
+    top: r(y),
+    width: r(w),
+    height: r(h),
+    ...(masks.length > 0 && { maskImage: masks.join(", "), WebkitMaskImage: masks.join(", "), maskComposite: "intersect", WebkitMaskComposite: "source-in" }),
+  };
+  // eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels, served as-is
+  return <img src={`/brand/precisia-ref/${name}.png`} alt="" aria-hidden width={w} height={h} style={style} draggable={false} />;
+}
+
 export default function LoginPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#05080d] font-sans text-white">
-      {/* The reference's office-at-dusk photograph is not available as a
-          standalone image, so none is shown. Only its lighting is echoed:
-          a warm dusk glow top-right and cool city-blue low on the right,
-          fading to the dark brand column on the left. */}
-      <div
-        aria-hidden
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(640px 420px at 100% 18%, rgba(255,170,80,0.30), transparent 70%), radial-gradient(760px 520px at 88% 82%, rgba(30,110,230,0.28), transparent 70%), radial-gradient(900px 700px at 60% 40%, rgba(20,60,120,0.25), transparent 70%)",
-        }}
-      />
-      <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-[#03070d]/80 via-[#03070d]/35 to-transparent" />
+    <div className="relative min-h-screen overflow-hidden bg-[#05121f] font-sans text-white lg:h-screen">
+      <style>{ARTBOARD_SCALE}</style>
 
-      <div className="relative grid min-h-screen w-full grid-cols-1 items-center gap-12 px-5 py-12 sm:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:gap-10 lg:px-12 lg:py-16 xl:grid-cols-[508px_524px] xl:gap-[62px] xl:py-[72px] xl:pl-[9.2vw]">
-        {/* Brand column */}
-        <div className="flex flex-col justify-between self-stretch lg:py-4">
-          <div>
-            <Link href="/" aria-label="PRECISIA — home" className="inline-block">
-              <PrecisiaWordmark size="xl" />
-            </Link>
-            <div aria-hidden className="mt-8 h-px w-18 bg-[#2f9bff]" />
-            <p className="mt-8 text-[0.84rem] font-semibold tracking-[0.15em] whitespace-nowrap text-[#1d9bf0] uppercase max-sm:whitespace-normal">
-              Real Data. Clearer Insights. Stronger Businesses.
-            </p>
-            <h1 className="pc-brand-heading mt-8 text-[2.3rem] leading-[1.06] font-bold text-white sm:text-[3.1rem] xl:text-[3.55rem]">
-              Your books,
-              <br />
-              understood —
-              <br />
-              <span className="text-[#12a1f8]">
-                the moment you
+      {/* Phone/tablet: the reference's city-at-dusk photograph (its clean
+          right-hand strip) as a dimmed backdrop. */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
+      <img src="/brand/precisia-ref/login-right.png" alt="" aria-hidden className="absolute inset-y-0 right-0 h-full w-full object-cover object-right opacity-35 lg:hidden" />
+      <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-[#05121f]/60 via-[#05121f]/85 to-[#05121f] lg:hidden" />
+
+      <div className="relative lg:absolute lg:top-1/2 lg:left-1/2 lg:h-[64rem] lg:w-[96rem] lg:-translate-x-1/2 lg:-translate-y-1/2">
+        {/* Desktop: the reference photograph around the text column and card.
+            The pieces reach 28px under the card so its rounded corners show
+            the reference's own photograph (those strips hold no text). */}
+        <div aria-hidden className="hidden lg:block">
+          <div className="absolute inset-0" style={{ background: "linear-gradient(90deg,#03101b 0%,#061624 45%,#05182a 100%)" }} />
+          <Piece name="login-top" x={0} y={0} w={1240} h={74} />
+          <Piece name="login-left-strip" x={0} y={74} w={138} h={878} />
+          <Piece name="login-above-card" x={652} y={74} w={588} h={100} />
+          <Piece name="login-gap" x={652} y={144} w={88} h={766} />
+          <Piece name="login-below-card" x={440} y={878} w={800} h={74} />
+          <Piece name="login-bottom" x={0} y={952} w={1240} h={72} />
+          <Piece name="login-right" x={1206} y={0} w={330} h={1024} />
+          {/* The text column's own area (where the reference has lettering
+              baked into the photograph): one dark panel whose edges feather
+              into the surrounding photograph, so no seams show. */}
+          <div
+            className="absolute"
+            style={{
+              left: r(118),
+              top: r(54),
+              width: r(554),
+              height: r(918),
+              background: "#061624",
+              maskImage: `linear-gradient(to right, transparent, #000 ${r(28)}, #000 calc(100% - ${r(28)}), transparent), linear-gradient(to bottom, transparent, #000 ${r(24)}, #000 calc(100% - ${r(24)}), transparent)`,
+              WebkitMaskImage: `linear-gradient(to right, transparent, #000 ${r(28)}, #000 calc(100% - ${r(28)}), transparent), linear-gradient(to bottom, transparent, #000 ${r(24)}, #000 calc(100% - ${r(24)}), transparent)`,
+              maskComposite: "intersect",
+              WebkitMaskComposite: "source-in",
+            }}
+          />
+        </div>
+
+        <div className="grid min-h-screen w-full grid-cols-1 items-center gap-10 px-5 py-12 sm:px-10 lg:block lg:min-h-0 lg:p-0">
+          {/* Brand column */}
+          <div className="flex flex-col justify-between lg:absolute lg:top-[4.625rem] lg:left-[8.875rem] lg:h-[54.75rem] lg:w-[32rem]">
+            <div>
+              <Link href="/" aria-label="PRECISIA — home" className="inline-block">
+                <PrecisiaWordmark size="xl" />
+              </Link>
+              <div aria-hidden className="mt-8 h-[2px] w-16 bg-gradient-to-r from-[#2f9bff] to-[#2f9bff]/40" />
+              <p className="mt-8 text-[0.84rem] font-semibold tracking-[0.15em] whitespace-nowrap text-[#1d9bf0] uppercase max-sm:whitespace-normal">
+                Real Data. Clearer Insights. Stronger Businesses.
+              </p>
+              <h1 className="pc-brand-heading mt-8 text-[2.3rem] leading-[1.03] font-bold text-white sm:text-[3.1rem] lg:text-[3.62rem]">
+                Your books,
                 <br />
-                sign in.
-              </span>
-            </h1>
-            <ul className="mt-8 hidden flex-col gap-4 lg:flex">
-              {FEATURES.map((feature) => {
-                const Icon = feature.icon;
-                return (
-                  <li key={feature.title} className="flex items-center gap-5">
-                    <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[12px] border border-[#0096f1]/70 bg-[#06111e]/70 text-[#1d9bf0] shadow-[inset_0_0_16px_rgba(0,150,241,0.18)]">
-                      <Icon className="h-9 w-9" strokeWidth={1.9} />
-                    </span>
-                    <span>
-                      <span className="block text-[1.12rem] font-semibold text-white">{feature.title}</span>
-                      <span className="mt-1 block text-[0.98rem] text-[#c9d4e3]">{feature.body}</span>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+                understood —
+                <br />
+                <span className="text-[#12a1f8]">
+                  the moment you
+                  <br />
+                  sign in.
+                </span>
+              </h1>
+              <ul className="mt-8 hidden flex-col gap-4 lg:flex">
+                {FEATURES.map((feature) => {
+                  const Icon = feature.icon;
+                  return (
+                    <li key={feature.title} className="flex items-center gap-[1.4rem]">
+                      <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[0.75rem] border border-[#0096f1]/70 bg-[#06111e]/70 text-[#1d9bf0] shadow-[inset_0_0_16px_rgba(0,150,241,0.18)]">
+                        <Icon className="h-9 w-9" strokeWidth={1.9} />
+                      </span>
+                      <span>
+                        <span className="block text-[1.16rem] font-semibold text-white">{feature.title}</span>
+                        <span className="mt-1 block text-[1.02rem] text-[#c9d4e3]">{feature.body}</span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+            <div className="mt-10 hidden lg:block">
+              <div aria-hidden className="h-[2px] w-16 bg-[#2f9bff]" />
+              <VyronsoftAttribution className="mt-6 text-[1.12rem] text-[#e6ebf2]" />
+            </div>
           </div>
-          <div className="mt-10 hidden lg:block">
-            <div aria-hidden className="h-px w-18 bg-[#2f9bff]" />
-            <VyronsoftAttribution className="mt-5 text-[1.02rem] text-[#e6ebf2]" />
-          </div>
-        </div>
 
-        {/* Glass login card */}
-        <div className="pc-glass w-full rounded-[28px] px-7 py-10 shadow-[0_40px_90px_-30px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.06)] sm:px-[60px] sm:py-[58px]">
-          <h2 className="font-display text-[2.4rem] leading-tight font-medium text-white sm:text-[2.9rem]">Welcome back</h2>
-          <p className="mt-3 text-[1.1rem] text-[#dbe4f1]">Sign in to your PRECISIA workspace.</p>
-          <div className="mt-10">
-            <Suspense>
-              <LoginForm />
-            </Suspense>
+          {/* Glass sign-in card — the reference's geometry (522 x 760 at
+              712, 146). The reference's "OR / Continue with SSO" row is not
+              reproduced: SSO is not implemented, and a control that does
+              nothing would mislead. "Need help?" keeps its reference
+              position at the foot of the card. */}
+          <div className="pc-glass relative w-full rounded-[1.75rem] px-7 py-10 shadow-[0_40px_90px_-30px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.06)] sm:px-[3.875rem] sm:py-[3.6rem] lg:absolute lg:top-[9.125rem] lg:left-[44.5rem] lg:h-[47.5rem] lg:w-[32.625rem] lg:pt-[4.35rem] lg:[&_form>p:last-child]:absolute lg:[&_form>p:last-child]:inset-x-0 lg:[&_form>p:last-child]:bottom-[2.9rem]">
+            <h2 className="font-display text-[2.4rem] leading-none font-medium text-white sm:text-[2.8rem]">Welcome back</h2>
+            <p className="mt-3 text-[1.18rem] text-[#dbe4f1]">Sign in to your PRECISIA workspace.</p>
+            <div className="mt-[1.7rem] lg:[&_form>button]:mt-[1.45rem] lg:[&_form>label:not(:first-child)]:mt-[1.15rem]">
+              <Suspense>
+                <LoginForm />
+              </Suspense>
+            </div>
           </div>
-        </div>
 
-        <VyronsoftAttribution className="text-center text-[#e6ebf2] lg:hidden" />
+          <VyronsoftAttribution className="text-center text-[#e6ebf2] lg:hidden" />
+        </div>
       </div>
     </div>
   );

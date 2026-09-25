@@ -39,7 +39,7 @@ function navigateTo(pathname: string) {
 }
 
 /** The sidebar's width class is the only observable signal of
- * `collapsed` state from outside the component — `aside.w-64` is normal
+ * `collapsed` state from outside the component — `aside.w-[230px]` is normal
  * width, `aside.w-[72px]` is collapsed (icons-only). */
 function sidebar(container: HTMLElement): HTMLElement {
   const aside = container.querySelector("aside");
@@ -50,7 +50,7 @@ function sidebar(container: HTMLElement): HTMLElement {
 describe("FinancialWorkspaceShell — sidebar width (regression)", () => {
   it("starts expanded (normal width) on an ordinary route", () => {
     const { container } = renderShell("/company/co_1/dashboard");
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
   });
 
   it("the manual Collapse/Expand button still toggles the sidebar on an ordinary route", () => {
@@ -58,13 +58,13 @@ describe("FinancialWorkspaceShell — sidebar width (regression)", () => {
     fireEvent.click(screen.getByTitle("Collapse sidebar"));
     expect(sidebar(container).className).toContain("w-[72px]");
     fireEvent.click(screen.getByTitle("Expand sidebar"));
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
   });
 
   it("clicking inside ordinary page content never changes sidebar width", () => {
     const { container } = renderShell("/company/co_1/dashboard");
     fireEvent.click(screen.getByTestId("page-content"));
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
   });
 
   it("auto-collapses the sidebar when navigating INTO the Transaction Explorer route (pre-existing UX-006, unchanged)", () => {
@@ -76,7 +76,7 @@ describe("FinancialWorkspaceShell — sidebar width (regression)", () => {
 describe("FinancialWorkspaceShell — Transaction Explorer focus mode (Phase 16, Part 11)", () => {
   it("clicking inside Transaction Explorer content collapses the sidebar (explorer focus mode reduces sidebar)", () => {
     const { container } = renderShell("/company/co_1/transactions");
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
 
     fireEvent.click(screen.getByTestId("page-content"));
 
@@ -90,14 +90,14 @@ describe("FinancialWorkspaceShell — Transaction Explorer focus mode (Phase 16,
 
     fireEvent.click(sidebar(container));
 
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
   });
 
   it("clicking back inside Transaction Explorer re-enters focus mode, collapsing the sidebar again (clicking explorer again re-enters focus mode)", () => {
     const { container } = renderShell("/company/co_1/transactions");
     fireEvent.click(screen.getByTestId("page-content"));
     fireEvent.click(sidebar(container));
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
 
     fireEvent.click(screen.getByTestId("page-content"));
 
@@ -108,7 +108,7 @@ describe("FinancialWorkspaceShell — Transaction Explorer focus mode (Phase 16,
     const { container } = renderShell("/company/co_1/transactions");
     for (let i = 0; i < 3; i++) {
       fireEvent.click(sidebar(container));
-      expect(sidebar(container).className).toContain("w-64");
+      expect(sidebar(container).className).toContain("w-[230px]");
       fireEvent.click(screen.getByTestId("page-content"));
       expect(sidebar(container).className).toContain("w-[72px]");
     }
@@ -122,7 +122,7 @@ describe("FinancialWorkspaceShell — Transaction Explorer focus mode (Phase 16,
 
     fireEvent.click(screen.getByTitle("Expand sidebar"));
 
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
   });
 
   it("clicking an interactive control inside Transaction Explorer content still fires its own handler (transaction explorer selection unaffected)", () => {
@@ -141,11 +141,11 @@ describe("FinancialWorkspaceShell — Transaction Explorer focus mode (Phase 16,
 
   it("leaves sidebar behaviour on every other route completely unaffected by the focus-mode handlers", () => {
     const { container } = renderShell("/company/co_1/bank-accounts");
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
     fireEvent.click(sidebar(container));
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
     fireEvent.click(screen.getByTestId("page-content"));
-    expect(sidebar(container).className).toContain("w-64");
+    expect(sidebar(container).className).toContain("w-[230px]");
   });
 });
 
