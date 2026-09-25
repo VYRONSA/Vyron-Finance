@@ -41,13 +41,13 @@ const FEATURE_STRIP: { icon: Icon; title: string; body: string }[] = [
 ];
 
 const INDUSTRIES: { label: string; icon: Icon; photo: string }[] = [
-  { label: "Retail\n& Franchises", icon: PIconCart, photo: "landing-industry-1" },
-  { label: "Hospitality\n& Restaurants", icon: IconReceipt, photo: "landing-industry-2" },
-  { label: "Food\nManufacturing", icon: PIconGear, photo: "landing-industry-3" },
-  { label: "Wholesale\n& Distribution", icon: IconArchive, photo: "landing-industry-4" },
-  { label: "Professional\nServices", icon: PIconBadgeInfo, photo: "landing-industry-5" },
-  { label: "Construction\n& Contracting", icon: PIconBuildingColumns, photo: "landing-industry-6" },
-  { label: "Multi-Company\nGroups", icon: PIconOffice, photo: "landing-industry-7" },
+  { label: "Retail\n& Franchises", icon: PIconCart, photo: "landing-tile-1" },
+  { label: "Hospitality\n& Restaurants", icon: IconReceipt, photo: "landing-tile-2" },
+  { label: "Food\nManufacturing", icon: PIconGear, photo: "landing-tile-3" },
+  { label: "Wholesale\n& Distribution", icon: IconArchive, photo: "landing-tile-4" },
+  { label: "Professional\nServices", icon: PIconBadgeInfo, photo: "landing-tile-5" },
+  { label: "Construction\n& Contracting", icon: PIconBuildingColumns, photo: "landing-tile-6" },
+  { label: "Multi-Company\nGroups", icon: PIconOffice, photo: "landing-tile-7" },
 ];
 
 const PLATFORM_FEATURES: { icon: Icon; label: string }[] = [
@@ -134,7 +134,7 @@ export default function HomePage() {
           </div>
           <figure>
             {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
-            <img src={`${REF}landing-hero-main.png`} alt="" aria-hidden className="w-full rounded-[12px]" />
+            <img src="/brand/precisia-native/landing-hero-visual.png" alt="" aria-hidden className="w-full rounded-[12px]" />
             <figcaption className="mt-2 text-center text-[0.65rem] text-[#7f8da6]">Illustrative product preview — sample figures, not live data.</figcaption>
           </figure>
         </div>
@@ -204,7 +204,7 @@ export default function HomePage() {
               return (
                 <li key={industry.label} className="overflow-hidden rounded-[10px] border border-[#2d6fc0]/45 bg-[#07152a] shadow-[0_18px_40px_-24px_rgba(22,112,255,0.6)]">
                   {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
-                  <img src={`${REF}${industry.photo}.png`} alt="" aria-hidden className="aspect-[1.25] w-full object-cover" />
+                  <img src={`/brand/precisia-native/${industry.photo}.png`} alt="" aria-hidden className="aspect-[1.25] w-full object-cover" />
                   <div className="flex items-center gap-2.5 px-3 py-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#1d8dff]/70 text-[#2f9bff]">
                       <Icon className="h-4 w-4" />

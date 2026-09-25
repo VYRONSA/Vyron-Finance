@@ -427,3 +427,10 @@ h1, h2, h3, h4 {
     display: none;
   }
 }
+
+/* Landing page frame: at most 1672px (the reference's own width, so its
+ * photography is never enlarged), centred on whole pixels. */
+.landing-frame {
+  width: min(100%, 1672px);
+  margin-left: round(down, calc((100% - min(100%, 1672px)) / 2), 1px);
+}

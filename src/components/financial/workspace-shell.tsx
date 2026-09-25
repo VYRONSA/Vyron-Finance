@@ -123,6 +123,9 @@ export function FinancialWorkspaceShell({
   // other module page keeps the light operational canvas its white
   // "paper" cards and ink text were designed for.
   const isDashboardRoute = pathname === `/company/${companyId}/dashboard` || pathname === `/company/${companyId}`;
+  // On the dashboard the header floats over the hero photograph (as in the
+  // "Software Page" reference) and turns solid once the page scrolls.
+  const [scrolled, setScrolled] = useState(false);
 
   // UI-005 — "the sidebar must never visually move... full-height blue
   // application frame." A `sticky` sidebar (last round's fix) still
@@ -248,13 +251,19 @@ export function FinancialWorkspaceShell({
         <aside
           onClick={expandSidebarIfProcessing}
           className={cn(
-            "hidden h-full shrink-0 flex-col border-r border-[#0f2238] bg-gradient-to-b from-[#020a16] via-[#010711] to-[#01060f] px-3 py-6 transition-[width] duration-300 ease-vf-out lg:flex",
+            "relative hidden h-full shrink-0 flex-col overflow-hidden border-r border-[#0f2238] bg-gradient-to-b from-[#020a16] via-[#010711] to-[#01060f] px-3 py-6 transition-[width] duration-300 ease-vf-out lg:flex",
             collapsed ? "w-[72px]" : "w-[230px]",
           )}
         >
+          {/* The "Software Page" reference's light-wave artwork at the foot
+              of the rail — its own pixels at native size. */}
+          {!collapsed && (
+            // eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels, served as-is
+            <img src="/brand/precisia-native/dashboard-sidebar-waves.png" alt="" aria-hidden width={235} height={175} className="pointer-events-none absolute bottom-[56px] left-0 h-[175px] w-[235px] max-w-none" />
+          )}
           {/* PRECISIA wordmark, as in the "Software Page" reference. In
               icons-only mode there is room for the "PA" monogram only. */}
-          <Link href="/platform" className="mb-5 flex px-4" title="PRECISIA — back to Platform Workspace" aria-label="PRECISIA — back to Platform Workspace">
+          <Link href="/platform" className="relative mb-5 flex px-4" title="PRECISIA — back to Platform Workspace" aria-label="PRECISIA — back to Platform Workspace">
             {collapsed ? (
               <span className="font-[family-name:var(--font-brand)] text-2xl text-white">
                 P<span className="text-[#1d8dff]">A</span>
@@ -270,7 +279,7 @@ export function FinancialWorkspaceShell({
               icon list it always had — collapsing an icon strip into
               accordions would hide navigation behind two clicks for no
               gain. */}
-          <nav aria-label="Workspace" className="flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto pt-1">
+          <nav aria-label="Workspace" className="relative flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto pt-1">
             {collapsed ? (
               NAV_GROUPS.flatMap((group) => group.items).map((item) => {
                 const Icon = item.icon;
@@ -311,7 +320,7 @@ export function FinancialWorkspaceShell({
             aria-expanded={!collapsed}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className={cn(
-              "mt-4 flex items-center gap-2 rounded-[10px] px-3 py-2 text-xs font-medium text-[#7f8da6] transition-colors duration-150 ease-vf-out hover:bg-white/5 hover:text-white",
+              "relative mt-4 flex items-center gap-2 rounded-[10px] px-3 py-2 text-xs font-medium text-[#7f8da6] transition-colors duration-150 ease-vf-out hover:bg-white/5 hover:text-white",
               collapsed && "justify-center",
             )}
           >
@@ -334,8 +343,14 @@ export function FinancialWorkspaceShell({
             table later. `min-h-0` is the same fix on the height axis —
             needed now that `<main>` below has its own bounded scroll
             (UI-005) instead of the document scrolling. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="z-10 flex h-[70px] shrink-0 items-center justify-between gap-4 border-b border-[#16304d] bg-[#0b1a2a] px-4 font-sans sm:px-6">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <header
+            className={cn(
+              "z-30 flex h-[70px] shrink-0 items-center justify-between gap-4 px-4 font-sans transition-colors duration-200 sm:px-6",
+              isDashboardRoute ? "absolute inset-x-0 top-0 lg:h-[110px] lg:justify-end lg:gap-3 lg:pr-3" : "border-b border-[#16304d] bg-[#0b1a2a]",
+              isDashboardRoute && (scrolled ? "border-b border-[#16304d] bg-[#0b1a2a] lg:h-[70px]" : "bg-transparent"),
+            )}
+          >
             {/* Phase 5G — below `lg` the sidebar is hidden, so this is
                 the only way into navigation at tablet and phone widths.
                 Hidden at `lg` and up, where the real sidebar is back. */}
@@ -364,7 +379,10 @@ export function FinancialWorkspaceShell({
                   type="button"
                   onClick={() => setSwitcherOpen((v) => !v)}
                   aria-expanded={switcherOpen}
-                  className="flex min-w-0 items-center gap-2.5 text-[0.95rem] font-medium text-white transition hover:text-[#8cc8ff]"
+                  className={cn(
+                    "flex min-w-0 items-center gap-2.5 text-[0.95rem] font-medium text-white transition hover:text-[#8cc8ff]",
+                    isDashboardRoute && "lg:h-[58px] lg:rounded-[10px] lg:border lg:border-white/12 lg:bg-[#0c1626]/80 lg:px-5",
+                  )}
                 >
                   <span className="truncate">{companyName}</span>
                   <IconChevronDown className="h-4 w-4 shrink-0 text-[#c9d4e3]" />
@@ -396,7 +414,10 @@ export function FinancialWorkspaceShell({
             ) : (
               <Link
                 href="/platform"
-                className="flex min-w-0 items-center gap-2.5 text-[0.95rem] font-medium text-white transition hover:text-[#8cc8ff]"
+                className={cn(
+                  "flex min-w-0 items-center gap-2.5 text-[0.95rem] font-medium text-white transition hover:text-[#8cc8ff]",
+                  isDashboardRoute && "lg:h-[58px] lg:rounded-[10px] lg:border lg:border-white/12 lg:bg-[#0c1626]/80 lg:px-5",
+                )}
                 title="Back to Platform Overview"
               >
                 <span className="truncate">{companyName}</span>
@@ -405,7 +426,7 @@ export function FinancialWorkspaceShell({
 
             {/* Workspace-wide search is not built yet, so the field stays
                 disabled and says so. */}
-            <div className="relative hidden w-full max-w-[600px] flex-1 md:block">
+            <div className={cn("relative hidden w-full max-w-[600px] flex-1", !isDashboardRoute && "md:block")}>
               <IconSearch className="pointer-events-none absolute top-1/2 left-4 h-4.5 w-4.5 -translate-y-1/2 text-[#9fb0c6]" />
               <input
                 type="search"
@@ -416,7 +437,7 @@ export function FinancialWorkspaceShell({
               />
             </div>
 
-            <div className="flex items-center gap-2 text-[#dbe4f1] [&_button]:text-[#dbe4f1] [&_button:hover]:bg-white/8">
+            <div className={cn("flex items-center gap-2 text-[#dbe4f1] [&_button]:text-[#dbe4f1] [&_button:hover]:bg-white/8", isDashboardRoute && !scrolled && "lg:h-[58px] lg:rounded-[10px] lg:border lg:border-white/12 lg:bg-[#0c1626]/80 lg:px-3")}>
               <NotificationBell companyId={companyId} previewMode={previewMode} />
               <span
                 className="flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-full text-[#dbe4f1]"
@@ -463,10 +484,11 @@ export function FinancialWorkspaceShell({
           <main
             ref={mainRef}
             onClick={refocusExplorerIfProcessing}
+            onScroll={isDashboardRoute ? (e) => setScrolled(e.currentTarget.scrollTop > 40) : undefined}
             className={cn(
               "flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto",
               isDashboardRoute ? "pc-canvas" : "bg-vf-workspace-bg",
-              isProcessingRoute ? "px-4 py-3 sm:px-6" : isDashboardRoute ? "px-4 pt-[19px] pb-3 sm:px-[17px]" : "px-4 py-6 sm:px-6 lg:px-8 2xl:px-10",
+              isProcessingRoute ? "px-4 py-3 sm:px-6" : isDashboardRoute ? "px-4 pt-[89px] pb-3 sm:px-[17px] lg:pt-[19px]" : "px-4 py-6 sm:px-6 lg:px-8 2xl:px-10",
             )}
           >
             <div className="flex-1">{children}</div>

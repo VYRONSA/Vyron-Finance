@@ -31,7 +31,7 @@ async function renderPage() {
 describe("Dashboard page — Phase 26G compaction", () => {
   it("renders without crashing in preview mode", async () => {
     await renderPage();
-    expect(screen.getByText("Executive KPIs")).toBeInTheDocument();
+    expect(screen.getByText("Key figures this month")).toBeInTheDocument();
   });
 
   it("no longer renders the 'Detailed Financials' heading or the 54-tile Executive Summary strip", async () => {
@@ -46,7 +46,6 @@ describe("Dashboard page — Phase 26G compaction", () => {
     expect(screen.queryByText("Recovery Trend")).not.toBeInTheDocument();
     expect(screen.queryByText("Import Activity")).not.toBeInTheDocument();
     expect(screen.queryByText("Allocation Status")).not.toBeInTheDocument();
-    expect(screen.queryByText("Cash Position")).not.toBeInTheDocument();
     expect(screen.queryByText("AI Insights")).not.toBeInTheDocument();
   });
 
@@ -90,13 +89,10 @@ describe("Dashboard page — Phase 26G compaction", () => {
     expect(screen.getByRole("link", { name: "AI Assistant" })).toBeInTheDocument();
   });
 
-  it("Executive KPIs (relabelled to the PRECISIA reference) are trimmed to 5 genuinely distinct tiles — no 'Coming Soon' placeholders, no redundant Bank Accounts count", async () => {
+  it("follows the 'Software Page' reference: four live headline figures and six live panels — no 'Coming Soon' placeholders, no redundant Bank Accounts count", async () => {
     await renderPage();
-    expect(screen.getByText("Cash at Bank")).toBeInTheDocument();
-    expect(screen.getByText("Outstanding Customers")).toBeInTheDocument();
-    expect(screen.getByText("Outstanding Suppliers")).toBeInTheDocument();
-    expect(screen.getByText("Profit This Month")).toBeInTheDocument();
-    expect(screen.getByText("VAT Liability")).toBeInTheDocument();
+    for (const label of ["Total Revenue", "Total Costs", "Gross Profit", "Cash Position"]) expect(screen.getByText(label)).toBeInTheDocument();
+    for (const panel of ["Revenue vs Costs", "Expense Breakdown", "Cash Flow Trend", "Invoices", "Bank Reconciliation", "Top 5 Expenses"]) expect(screen.getByRole("heading", { name: panel })).toBeInTheDocument();
     expect(screen.queryByText("Coming Soon")).not.toBeInTheDocument();
     expect(screen.queryByText("Bank Accounts")).not.toBeInTheDocument();
   });

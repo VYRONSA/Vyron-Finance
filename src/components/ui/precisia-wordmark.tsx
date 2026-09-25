@@ -12,6 +12,8 @@ const SIZES = {
   sm: { word: "text-[1.35rem]", sub: "text-[0.5rem] tracking-[0.2em] mt-0.5" },
   md: { word: "text-[1.85rem]", sub: "text-[0.6rem] tracking-[0.2em] mt-1" },
   lg: { word: "text-[2.6rem]", sub: "text-[0.82rem] tracking-[0.22em] mt-1.5" },
+  /** The "New Login Page" reference card lock-up. */
+  card: { word: "text-[3.05rem]", sub: "text-[0.9rem] tracking-[0.2em] mt-2.5" },
   xl: { word: "text-[3.4rem] sm:text-[4rem]", sub: "text-[0.95rem] sm:text-[1.1rem] tracking-[0.24em] mt-2" },
 } as const;
 
