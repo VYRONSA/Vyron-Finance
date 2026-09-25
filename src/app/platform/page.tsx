@@ -333,9 +333,9 @@ export default async function PlatformOverviewPage() {
             right-aligned actions at every width. Split where the reference
             has baked-in buttons and captions; those are real controls here. */}
         <div aria-hidden className="pointer-events-none absolute inset-0 hidden lg:block">
-          <RefPiece name="platform-hero-a" right={505} top={0} w={528} h={148} fade={[{ edge: "left", size: 110 }]} />
-          <RefPiece name="platform-hero-b" right={505} top={148} w={293} h={63} fade={[{ edge: "left", size: 50 }]} />
-          <RefPiece name="platform-hero-c" right={208} top={68} w={297} h={143} fade={[{ edge: "top", size: 18 }, { edge: "right", size: 60 }]} />
+          <RefPiece name="platform-hero-a" right={505} top={0} w={528} h={148} />
+          <RefPiece name="platform-hero-b" right={505} top={148} w={293} h={63} />
+          <RefPiece name="platform-hero-c" right={208} top={68} w={297} h={143} />
         </div>
         <div className="relative flex flex-col gap-6 p-6 lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-6">
           <div>

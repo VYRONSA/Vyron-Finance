@@ -72,7 +72,7 @@ export function WorkspaceShell({
             aria-hidden
             width={222}
             height={265}
-            className="pointer-events-none absolute bottom-[82px] left-0 h-[265px] w-[222px] [mask-image:linear-gradient(to_bottom,transparent,#000_40px,#000_calc(100%-30px),transparent)]"
+            className="pointer-events-none absolute bottom-[82px] left-0 h-[265px] w-[222px]"
           />
           <Link href="/" className="relative px-6 pt-6 pb-5" aria-label="PRECISIA — home">
             <PrecisiaWordmark size="md" />

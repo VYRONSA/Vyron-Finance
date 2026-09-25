@@ -488,6 +488,1176 @@
     92,
     73
    ]
+  },
+  "loginColumn-01": {
+   "source": "login",
+   "box": [
+    138,
+    74,
+    652,
+    78
+   ],
+   "size": [
+    514,
+    4
+   ]
+  },
+  "loginColumn-02": {
+   "source": "login",
+   "box": [
+    470,
+    78,
+    652,
+    168
+   ],
+   "size": [
+    182,
+    90
+   ]
+  },
+  "loginColumn-03": {
+   "source": "login",
+   "box": [
+    138,
+    168,
+    652,
+    195
+   ],
+   "size": [
+    514,
+    27
+   ]
+  },
+  "loginColumn-04": {
+   "source": "login",
+   "box": [
+    340,
+    195,
+    652,
+    213
+   ],
+   "size": [
+    312,
+    18
+   ]
+  },
+  "loginColumn-05": {
+   "source": "login",
+   "box": [
+    138,
+    213,
+    652,
+    229
+   ],
+   "size": [
+    514,
+    16
+   ]
+  },
+  "loginColumn-06": {
+   "source": "login",
+   "box": [
+    138,
+    252,
+    652,
+    278
+   ],
+   "size": [
+    514,
+    26
+   ]
+  },
+  "loginColumn-07": {
+   "source": "login",
+   "box": [
+    484,
+    278,
+    652,
+    340
+   ],
+   "size": [
+    168,
+    62
+   ]
+  },
+  "loginColumn-08": {
+   "source": "login",
+   "box": [
+    556,
+    340,
+    652,
+    398
+   ],
+   "size": [
+    96,
+    58
+   ]
+  },
+  "loginColumn-09": {
+   "source": "login",
+   "box": [
+    619,
+    398,
+    652,
+    472
+   ],
+   "size": [
+    33,
+    74
+   ]
+  },
+  "loginColumn-10": {
+   "source": "login",
+   "box": [
+    347,
+    472,
+    652,
+    524
+   ],
+   "size": [
+    305,
+    52
+   ]
+  },
+  "loginColumn-11": {
+   "source": "login",
+   "box": [
+    138,
+    524,
+    652,
+    541
+   ],
+   "size": [
+    514,
+    17
+   ]
+  },
+  "loginColumn-12": {
+   "source": "login",
+   "box": [
+    476,
+    541,
+    652,
+    616
+   ],
+   "size": [
+    176,
+    75
+   ]
+  },
+  "loginColumn-13": {
+   "source": "login",
+   "box": [
+    138,
+    616,
+    652,
+    622
+   ],
+   "size": [
+    514,
+    6
+   ]
+  },
+  "loginColumn-14": {
+   "source": "login",
+   "box": [
+    442,
+    622,
+    652,
+    696
+   ],
+   "size": [
+    210,
+    74
+   ]
+  },
+  "loginColumn-15": {
+   "source": "login",
+   "box": [
+    138,
+    696,
+    652,
+    704
+   ],
+   "size": [
+    514,
+    8
+   ]
+  },
+  "loginColumn-16": {
+   "source": "login",
+   "box": [
+    466,
+    704,
+    652,
+    778
+   ],
+   "size": [
+    186,
+    74
+   ]
+  },
+  "loginColumn-17": {
+   "source": "login",
+   "box": [
+    138,
+    778,
+    652,
+    786
+   ],
+   "size": [
+    514,
+    8
+   ]
+  },
+  "loginColumn-18": {
+   "source": "login",
+   "box": [
+    428,
+    786,
+    652,
+    860
+   ],
+   "size": [
+    224,
+    74
+   ]
+  },
+  "loginColumn-19": {
+   "source": "login",
+   "box": [
+    138,
+    860,
+    652,
+    898
+   ],
+   "size": [
+    514,
+    38
+   ]
+  },
+  "loginColumn-20": {
+   "source": "login",
+   "box": [
+    440,
+    898,
+    652,
+    952
+   ],
+   "size": [
+    212,
+    54
+   ]
+  },
+  "landingHero-01": {
+   "source": "landing",
+   "box": [
+    52,
+    48,
+    330,
+    62
+   ],
+   "size": [
+    278,
+    14
+   ]
+  },
+  "landingHero-02": {
+   "source": "landing",
+   "box": [
+    188,
+    62,
+    330,
+    72
+   ],
+   "size": [
+    142,
+    10
+   ]
+  },
+  "landingHero-03": {
+   "source": "landing",
+   "box": [
+    52,
+    72,
+    330,
+    82
+   ],
+   "size": [
+    278,
+    10
+   ]
+  },
+  "landingHero-04": {
+   "source": "landing",
+   "box": [
+    322,
+    82,
+    330,
+    95
+   ],
+   "size": [
+    8,
+    13
+   ]
+  },
+  "landingHero-05": {
+   "source": "landing",
+   "box": [
+    52,
+    96,
+    305,
+    110
+   ],
+   "size": [
+    253,
+    14
+   ]
+  },
+  "landingHero-06": {
+   "source": "landing",
+   "box": [
+    236,
+    110,
+    305,
+    147
+   ],
+   "size": [
+    69,
+    37
+   ]
+  },
+  "landingHero-07": {
+   "source": "landing",
+   "box": [
+    300,
+    147,
+    305,
+    186
+   ],
+   "size": [
+    5,
+    39
+   ]
+  },
+  "landingHero-08": {
+   "source": "landing",
+   "box": [
+    272,
+    186,
+    305,
+    232
+   ],
+   "size": [
+    33,
+    46
+   ]
+  },
+  "landingHero-09": {
+   "source": "landing",
+   "box": [
+    52,
+    232,
+    305,
+    242
+   ],
+   "size": [
+    253,
+    10
+   ]
+  },
+  "landingHero-10": {
+   "source": "landing",
+   "box": [
+    304,
+    242,
+    305,
+    320
+   ],
+   "size": [
+    1,
+    78
+   ]
+  },
+  "landingHero-11": {
+   "source": "landing",
+   "box": [
+    52,
+    320,
+    305,
+    335
+   ],
+   "size": [
+    253,
+    15
+   ]
+  },
+  "landingHero-12": {
+   "source": "landing",
+   "box": [
+    52,
+    335,
+    330,
+    336
+   ],
+   "size": [
+    278,
+    1
+   ]
+  },
+  "landingHero-13": {
+   "source": "landing",
+   "box": [
+    52,
+    374,
+    330,
+    396
+   ],
+   "size": [
+    278,
+    22
+   ]
+  },
+  "landingCta-01": {
+   "source": "landing",
+   "box": [
+    195,
+    1633,
+    346,
+    1644
+   ],
+   "size": [
+    151,
+    11
+   ]
+  },
+  "landingCta-02": {
+   "source": "landing",
+   "box": [
+    454,
+    1633,
+    606,
+    1644
+   ],
+   "size": [
+    152,
+    11
+   ]
+  },
+  "landingCta-03": {
+   "source": "landing",
+   "box": [
+    195,
+    1644,
+    606,
+    1650
+   ],
+   "size": [
+    411,
+    6
+   ]
+  },
+  "landingCta-04": {
+   "source": "landing",
+   "box": [
+    195,
+    1673,
+    606,
+    1677
+   ],
+   "size": [
+    411,
+    4
+   ]
+  },
+  "landingCta-05": {
+   "source": "landing",
+   "box": [
+    195,
+    1677,
+    240,
+    1707
+   ],
+   "size": [
+    45,
+    30
+   ]
+  },
+  "landingCta-06": {
+   "source": "landing",
+   "box": [
+    560,
+    1677,
+    606,
+    1707
+   ],
+   "size": [
+    46,
+    30
+   ]
+  },
+  "landingCta-07": {
+   "source": "landing",
+   "box": [
+    195,
+    1707,
+    606,
+    1716
+   ],
+   "size": [
+    411,
+    9
+   ]
+  },
+  "landingCta-08": {
+   "source": "landing",
+   "box": [
+    195,
+    1716,
+    262,
+    1756
+   ],
+   "size": [
+    67,
+    40
+   ]
+  },
+  "landingCta-09": {
+   "source": "landing",
+   "box": [
+    540,
+    1716,
+    606,
+    1756
+   ],
+   "size": [
+    66,
+    40
+   ]
+  },
+  "landingCta-10": {
+   "source": "landing",
+   "box": [
+    195,
+    1756,
+    606,
+    1757
+   ],
+   "size": [
+    411,
+    1
+   ]
+  },
+  "landingHeader-01": {
+   "source": "landing",
+   "box": [
+    0,
+    0,
+    801,
+    6
+   ],
+   "size": [
+    801,
+    6
+   ]
+  },
+  "landingHeader-02": {
+   "source": "landing",
+   "box": [
+    194,
+    6,
+    801,
+    8
+   ],
+   "size": [
+    607,
+    2
+   ]
+  },
+  "landingHeader-03": {
+   "source": "landing",
+   "box": [
+    194,
+    8,
+    636,
+    10
+   ],
+   "size": [
+    442,
+    2
+   ]
+  },
+  "landingHeader-04": {
+   "source": "landing",
+   "box": [
+    194,
+    10,
+    538,
+    12
+   ],
+   "size": [
+    344,
+    2
+   ]
+  },
+  "landingHeader-05": {
+   "source": "landing",
+   "box": [
+    194,
+    12,
+    236,
+    32
+   ],
+   "size": [
+    42,
+    20
+   ]
+  },
+  "landingHeader-06": {
+   "source": "landing",
+   "box": [
+    528,
+    12,
+    538,
+    32
+   ],
+   "size": [
+    10,
+    20
+   ]
+  },
+  "landingHeader-07": {
+   "source": "landing",
+   "box": [
+    620,
+    10,
+    636,
+    34
+   ],
+   "size": [
+    16,
+    24
+   ]
+  },
+  "landingHeader-08": {
+   "source": "landing",
+   "box": [
+    194,
+    32,
+    538,
+    34
+   ],
+   "size": [
+    344,
+    2
+   ]
+  },
+  "landingHeader-09": {
+   "source": "landing",
+   "box": [
+    768,
+    8,
+    801,
+    42
+   ],
+   "size": [
+    33,
+    34
+   ]
+  },
+  "landingHeader-10": {
+   "source": "landing",
+   "box": [
+    194,
+    34,
+    636,
+    42
+   ],
+   "size": [
+    442,
+    8
+   ]
+  },
+  "landingHeader-11": {
+   "source": "landing",
+   "box": [
+    0,
+    6,
+    48,
+    46
+   ],
+   "size": [
+    48,
+    40
+   ]
+  },
+  "landingHeader-12": {
+   "source": "landing",
+   "box": [
+    194,
+    42,
+    801,
+    46
+   ],
+   "size": [
+    607,
+    4
+   ]
+  },
+  "landingHeader-13": {
+   "source": "landing",
+   "box": [
+    0,
+    46,
+    801,
+    48
+   ],
+   "size": [
+    801,
+    2
+   ]
+  },
+  "landingClarity-01": {
+   "source": "landing",
+   "box": [
+    0,
+    500,
+    548,
+    527
+   ],
+   "size": [
+    548,
+    27
+   ]
+  },
+  "landingClarity-02": {
+   "source": "landing",
+   "box": [
+    0,
+    527,
+    40,
+    540
+   ],
+   "size": [
+    40,
+    13
+   ]
+  },
+  "landingClarity-03": {
+   "source": "landing",
+   "box": [
+    226,
+    527,
+    548,
+    540
+   ],
+   "size": [
+    322,
+    13
+   ]
+  },
+  "landingClarity-04": {
+   "source": "landing",
+   "box": [
+    0,
+    540,
+    548,
+    546
+   ],
+   "size": [
+    548,
+    6
+   ]
+  },
+  "landingClarity-05": {
+   "source": "landing",
+   "box": [
+    0,
+    546,
+    40,
+    600
+   ],
+   "size": [
+    40,
+    54
+   ]
+  },
+  "landingClarity-06": {
+   "source": "landing",
+   "box": [
+    342,
+    546,
+    548,
+    600
+   ],
+   "size": [
+    206,
+    54
+   ]
+  },
+  "landingClarity-07": {
+   "source": "landing",
+   "box": [
+    0,
+    600,
+    548,
+    605
+   ],
+   "size": [
+    548,
+    5
+   ]
+  },
+  "landingClarity-08": {
+   "source": "landing",
+   "box": [
+    366,
+    605,
+    548,
+    619
+   ],
+   "size": [
+    182,
+    14
+   ]
+  },
+  "landingClarity-09": {
+   "source": "landing",
+   "box": [
+    380,
+    619,
+    548,
+    634
+   ],
+   "size": [
+    168,
+    15
+   ]
+  },
+  "landingClarity-10": {
+   "source": "landing",
+   "box": [
+    0,
+    605,
+    40,
+    649
+   ],
+   "size": [
+    40,
+    44
+   ]
+  },
+  "landingClarity-11": {
+   "source": "landing",
+   "box": [
+    202,
+    634,
+    548,
+    649
+   ],
+   "size": [
+    346,
+    15
+   ]
+  },
+  "landingClarity-12": {
+   "source": "landing",
+   "box": [
+    0,
+    649,
+    548,
+    659
+   ],
+   "size": [
+    548,
+    10
+   ]
+  },
+  "landingClarity-13": {
+   "source": "landing",
+   "box": [
+    0,
+    659,
+    42,
+    699
+   ],
+   "size": [
+    42,
+    40
+   ]
+  },
+  "landingClarity-14": {
+   "source": "landing",
+   "box": [
+    194,
+    659,
+    548,
+    699
+   ],
+   "size": [
+    354,
+    40
+   ]
+  },
+  "landingClarity-15": {
+   "source": "landing",
+   "box": [
+    0,
+    699,
+    548,
+    720
+   ],
+   "size": [
+    548,
+    21
+   ]
+  },
+  "landingIndustries-01": {
+   "source": "landing",
+   "box": [
+    0,
+    720,
+    350,
+    732
+   ],
+   "size": [
+    350,
+    12
+   ]
+  },
+  "landingIndustries-02": {
+   "source": "landing",
+   "box": [
+    0,
+    732,
+    41,
+    746
+   ],
+   "size": [
+    41,
+    14
+   ]
+  },
+  "landingIndustries-03": {
+   "source": "landing",
+   "box": [
+    198,
+    732,
+    350,
+    746
+   ],
+   "size": [
+    152,
+    14
+   ]
+  },
+  "landingIndustries-04": {
+   "source": "landing",
+   "box": [
+    0,
+    746,
+    350,
+    750
+   ],
+   "size": [
+    350,
+    4
+   ]
+  },
+  "landingIndustries-05": {
+   "source": "landing",
+   "box": [
+    304,
+    750,
+    350,
+    808
+   ],
+   "size": [
+    46,
+    58
+   ]
+  },
+  "landingIndustries-06": {
+   "source": "landing",
+   "box": [
+    0,
+    750,
+    41,
+    860
+   ],
+   "size": [
+    41,
+    110
+   ]
+  },
+  "landingIndustries-07": {
+   "source": "landing",
+   "box": [
+    346,
+    808,
+    350,
+    860
+   ],
+   "size": [
+    4,
+    52
+   ]
+  },
+  "landingIndustries-08": {
+   "source": "landing",
+   "box": [
+    0,
+    860,
+    350,
+    868
+   ],
+   "size": [
+    350,
+    8
+   ]
+  },
+  "landingPlatformTop-01": {
+   "source": "landing",
+   "box": [
+    0,
+    1000,
+    345,
+    1018
+   ],
+   "size": [
+    345,
+    18
+   ]
+  },
+  "landingPlatformTop-02": {
+   "source": "landing",
+   "box": [
+    0,
+    1018,
+    38,
+    1032
+   ],
+   "size": [
+    38,
+    14
+   ]
+  },
+  "landingPlatformTop-03": {
+   "source": "landing",
+   "box": [
+    152,
+    1018,
+    345,
+    1032
+   ],
+   "size": [
+    193,
+    14
+   ]
+  },
+  "landingPlatformTop-04": {
+   "source": "landing",
+   "box": [
+    0,
+    1032,
+    345,
+    1036
+   ],
+   "size": [
+    345,
+    4
+   ]
+  },
+  "landingPlatformTop-05": {
+   "source": "landing",
+   "box": [
+    0,
+    1036,
+    38,
+    1138
+   ],
+   "size": [
+    38,
+    102
+   ]
+  },
+  "landingPlatformLeft-01": {
+   "source": "landing",
+   "box": [
+    0,
+    1138,
+    200,
+    1146
+   ],
+   "size": [
+    200,
+    8
+   ]
+  },
+  "landingPlatformLeft-02": {
+   "source": "landing",
+   "box": [
+    0,
+    1146,
+    38,
+    1386
+   ],
+   "size": [
+    38,
+    240
+   ]
+  },
+  "landingPlatformLeft-03": {
+   "source": "landing",
+   "box": [
+    0,
+    1386,
+    200,
+    1398
+   ],
+   "size": [
+    200,
+    12
+   ]
+  },
+  "landingPlatformLeft-04": {
+   "source": "landing",
+   "box": [
+    0,
+    1398,
+    40,
+    1442
+   ],
+   "size": [
+    40,
+    44
+   ]
+  },
+  "landingPlatformLeft-05": {
+   "source": "landing",
+   "box": [
+    180,
+    1398,
+    200,
+    1442
+   ],
+   "size": [
+    20,
+    44
+   ]
+  },
+  "landingPlatformLeft-06": {
+   "source": "landing",
+   "box": [
+    0,
+    1442,
+    200,
+    1466
+   ],
+   "size": [
+    200,
+    24
+   ]
   }
  }
 }

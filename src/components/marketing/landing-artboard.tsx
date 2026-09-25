@@ -18,7 +18,17 @@ import {
   PIconUsers,
 } from "@/components/ui/precisia-icons";
 import { IconArchive, IconBarChart, IconFileText, IconReceipt, IconShieldCheck } from "@/components/ui/icons";
-import { ClarityScript } from "@/components/ui/precisia-script";
+import {
+  LANDINGCLARITY_FILL,
+  LANDINGCTA_FILL,
+  LANDINGHEADER_FILL,
+  LANDINGHERO_FILL,
+  LANDINGINDUSTRIES_FILL,
+  LANDINGPLATFORMLEFT_FILL,
+  LANDINGPLATFORMTOP_FILL,
+  type RefFillPatch,
+  type RefFillPiece,
+} from "@/components/ui/ref-fills.generated";
 
 /**
  * The PRECISIA landing page at desktop widths, built to the owner-supplied
@@ -37,45 +47,31 @@ const REF = "/brand/precisia-ref/";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
-/** A reference crop placed at its original coordinates. `fade` feathers the
- * named edges into the surrounding background (CSS mask only — the image
- * file itself is untouched). */
-function Crop({
-  name,
-  x,
-  y,
-  w,
-  h,
-  fade = [],
-  fadeSize = 18,
-}: {
-  name: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  fade?: ("left" | "right" | "top" | "bottom")[];
-  fadeSize?: number;
-}) {
-  const masks = fade.map((edge) => {
-    const dir = { left: "to right", right: "to left", top: "to bottom", bottom: "to top" }[edge];
-    return `linear-gradient(${dir}, transparent, #000 ${u(fadeSize)})`;
-  });
-  const style: CSSProperties = {
-    position: "absolute",
-    left: u(x),
-    top: u(y),
-    width: u(w),
-    height: u(h),
-    ...(masks.length > 0 && {
-      maskImage: masks.join(", "),
-      WebkitMaskImage: masks.join(", "),
-      maskComposite: "intersect",
-      WebkitMaskComposite: "source-in",
-    }),
-  };
+/** A reference crop placed at its original coordinates and size (reference
+ * px). Rendered as-is: no mask, filter, opacity or overlay. */
+function Crop({ name, x, y, w, h }: { name: string; x: number; y: number; w: number; h: number }) {
+  const style: CSSProperties = { position: "absolute", left: u(x), top: u(y), width: u(w), height: u(h) };
   // eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels, served as-is (no re-encoding)
   return <img src={`${REF}${name}.png`} alt="" aria-hidden width={w} height={h} style={style} draggable={false} />;
+}
+
+/** The reference photograph around a block of real text: exact crops of
+ * every text-free rectangle, plus a patch behind each line of text (where
+ * the reference has its own lettering baked in), coloured from the
+ * photograph just outside it. See ref-fills.generated.ts. */
+function Fill({ data }: { data: { pieces: RefFillPiece[]; patches: RefFillPatch[] } }) {
+  return (
+    <>
+      {data.patches.map((p) => (
+        <div key={`${p.x},${p.y}`} aria-hidden className="absolute" style={{ left: u(p.x), top: u(p.y), width: u(p.w), height: u(p.h), background: p.top }}>
+          <div className="absolute inset-0" style={{ background: p.bottom, maskImage: "linear-gradient(to bottom, transparent, #000)", WebkitMaskImage: "linear-gradient(to bottom, transparent, #000)" }} />
+        </div>
+      ))}
+      {data.pieces.map((p) => (
+        <Crop key={p.name} name={p.name} x={p.x} y={p.y} w={p.w} h={p.h} />
+      ))}
+    </>
+  );
 }
 
 function Abs({ x, y, w, children, style, className }: { x: number; y: number; w?: number; children: ReactNode; style?: CSSProperties; className?: string }) {
@@ -188,13 +184,15 @@ export function LandingArtboard() {
       >
         {/* ---------------- HERO BACKGROUND (reference pixels) ---------------- */}
         <div aria-hidden className="absolute inset-x-0 top-0" style={{ height: u(396), background: "linear-gradient(180deg,#000c1a,#000913 60%,#08131f)" }} />
-        <Crop name="landing-hero-left" x={0} y={48} w={52} h={348} fade={["right"]} fadeSize={30} />
-        <Crop name="landing-hero-top" x={330} y={48} w={471} h={47} fade={["left", "top"]} fadeSize={24} />
-        <Crop name="landing-hero-main" x={305} y={95} w={496} h={240} fade={["left"]} fadeSize={14} />
-        <Crop name="landing-hero-bottom" x={330} y={335} w={471} h={61} fade={["left"]} fadeSize={24} />
+        <Crop name="landing-hero-left" x={0} y={48} w={52} h={348} />
+        <Crop name="landing-hero-top" x={330} y={48} w={471} h={47} />
+        <Crop name="landing-hero-main" x={305} y={95} w={496} h={240} />
+        <Crop name="landing-hero-bottom" x={330} y={335} w={471} h={61} />
+        <Fill data={LANDINGHERO_FILL} />
+        <Fill data={LANDINGHEADER_FILL} />
 
-        {/* ---------------- HEADER (sticky, real navigation) ---------------- */}
-        <header className="sticky top-0 z-50 bg-gradient-to-b from-[#000c1a]/85 to-[#000c1a]/40 backdrop-blur-[2px]" style={{ height: u(48) }}>
+        {/* ---------------- HEADER (real navigation, over the photograph) ---------------- */}
+        <header className="absolute inset-x-0 top-0 z-50" style={{ height: u(48) }}>
           <Link href="/" aria-label="PRECISIA — home" className="absolute" style={{ left: u(55), top: u(12) }}>
             <span className="block font-[family-name:var(--font-brand)] leading-none text-white" style={{ fontSize: u(26.5), letterSpacing: "0.02em" }}>
               PRECISI<span className="text-[#1d8dff]">A</span>
@@ -292,7 +290,8 @@ export function LandingArtboard() {
         {/* ---------------- MORE THAN ACCOUNTING SOFTWARE ---------------- */}
         <section id="solutions" aria-label="More than accounting software">
           <div aria-hidden className="absolute" style={{ left: 0, top: u(470), width: "100%", height: u(250), background: "linear-gradient(90deg,#f7f9fc 0%,#f0f6fc 55%,#fefcf1 72%)" }} />
-          <Crop name="landing-plant" x={548} y={506} w={253} h={214} fade={["left", "top"]} fadeSize={26} />
+          <Crop name="landing-plant" x={548} y={506} w={253} h={214} />
+          <Fill data={LANDINGCLARITY_FILL} />
           <Abs x={43} y={529}>
             <p className="text-[#1e57b5]" style={eyebrow()}>More Than Accounting Software</p>
           </Abs>
@@ -316,17 +315,17 @@ export function LandingArtboard() {
             Explore the Platform
             <Arrow />
           </Btn>
-          <Abs x={384} y={549} style={{ pointerEvents: "none" }}>
-            <div aria-hidden>
-              <ClarityScript tone="onLight" className="text-[length:calc(var(--u)*47)]" />
-            </div>
-          </Abs>
+          {/* "Clarity Creates Opportunity" is shown as the reference's own
+              hand lettering (part of the photograph above); screen readers
+              get the phrase here. */}
+          <p className="sr-only">Clarity Creates Opportunity</p>
         </section>
 
         {/* ---------------- BUILT FOR YOUR BUSINESS ---------------- */}
         <section id="industries" aria-label="Industries">
           <div aria-hidden className="absolute" style={{ left: 0, top: u(720), width: "100%", height: u(280), background: "linear-gradient(180deg,#000c19,#01101f 55%,#010b18)" }} />
-          <Crop name="landing-industries-bg" x={350} y={720} w={451} h={148} fade={["left", "bottom"]} fadeSize={40} />
+          <Crop name="landing-industries-bg" x={350} y={720} w={451} h={148} />
+          <Fill data={LANDINGINDUSTRIES_FILL} />
           <Abs x={46} y={738}>
             <p className="text-[#1fb5f5]" style={eyebrow()}>Built For Your Business</p>
           </Abs>
@@ -374,9 +373,11 @@ export function LandingArtboard() {
         {/* ---------------- THE PLATFORM ---------------- */}
         <section id="platform" aria-label="The platform">
           <div aria-hidden className="absolute" style={{ left: 0, top: u(1000), width: "100%", height: u(466), background: "linear-gradient(90deg,#f7f9fc 0%,#f7fafd 25%,#e8f0f7 37.5%,#d2e3f4 43%,#bcd3ea 60%)" }} />
-          <Crop name="landing-platform-laptop-left" x={200} y={1138} w={145} h={328} fade={["left"]} fadeSize={60} />
-          <Crop name="landing-platform-laptop-top" x={345} y={1000} w={456} h={138} fade={["top"]} fadeSize={5} />
+          <Crop name="landing-platform-laptop-left" x={200} y={1138} w={145} h={328} />
+          <Crop name="landing-platform-laptop-top" x={345} y={1000} w={456} h={138} />
           <Crop name="landing-platform-laptop" x={345} y={1138} w={456} h={328} />
+          <Fill data={LANDINGPLATFORMTOP_FILL} />
+          <Fill data={LANDINGPLATFORMLEFT_FILL} />
           <Abs x={43} y={1024}>
             <p className="text-[#1e57b5]" style={eyebrow()}>The Platform</p>
           </Abs>
@@ -466,12 +467,13 @@ export function LandingArtboard() {
         {/* ---------------- TAKE THE NEXT STEP ---------------- */}
         <section id="contact" aria-label="Request a demonstration">
           <div aria-hidden className="absolute" style={{ left: 0, top: u(1613), width: "100%", height: u(162), background: "linear-gradient(180deg,#002342 0%,#002342 14%,#031a35 47%,#00122a 78%,#010b16 100%)" }} />
-          <Crop name="landing-cta-left" x={0} y={1614} w={195} h={161} fade={["right"]} fadeSize={70} />
-          <Crop name="landing-cta-right" x={606} y={1614} w={195} h={161} fade={["left"]} fadeSize={70} />
+          <Crop name="landing-cta-left" x={0} y={1614} w={195} h={161} />
+          <Crop name="landing-cta-right" x={606} y={1614} w={195} h={161} />
           {/* Full-width top and bottom bands drawn over the side crops: the
               same reference pixels continue across, so no seam shows. */}
-          <Crop name="landing-cta-top" x={0} y={1614} w={801} h={19} fade={["bottom"]} fadeSize={14} />
-          <Crop name="landing-cta-bottom" x={0} y={1757} w={801} h={18} fade={["top"]} fadeSize={12} />
+          <Crop name="landing-cta-top" x={0} y={1614} w={801} h={19} />
+          <Crop name="landing-cta-bottom" x={0} y={1757} w={801} h={18} />
+          <Fill data={LANDINGCTA_FILL} />
           <Abs x={0} y={1635} w={801} className="text-center">
             <p className="text-[#1fb5f5]" style={eyebrow()}>Take The Next Step</p>
           </Abs>

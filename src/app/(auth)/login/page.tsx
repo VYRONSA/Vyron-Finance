@@ -6,6 +6,7 @@ import { LoginForm } from "@/components/auth/login-form";
 import { PrecisiaWordmark, VyronsoftAttribution } from "@/components/ui/precisia-wordmark";
 import { PIconBrain, PIconShield, PIconTrendUp } from "@/components/ui/precisia-icons";
 import { IconFileText } from "@/components/ui/icons";
+import { LOGINCOLUMN_FILL } from "@/components/ui/ref-fills.generated";
 
 export const metadata: Metadata = {
   title: "Sign In — PRECISIA",
@@ -30,19 +31,10 @@ const ARTBOARD_SCALE = "@media (min-width: 1024px) { html { font-size: max(calc(
 
 const r = (px: number) => `${px / 16}rem`;
 
-function Piece({ name, x, y, w, h, fade }: { name: string; x: number; y: number; w: number; h: number; fade?: { edge: "left" | "right" | "top" | "bottom"; size: number }[] }) {
-  const masks = (fade ?? []).map(({ edge, size }) => {
-    const dir = { left: "to right", right: "to left", top: "to bottom", bottom: "to top" }[edge];
-    return `linear-gradient(${dir}, transparent, #000 ${r(size)})`;
-  });
-  const style: CSSProperties = {
-    position: "absolute",
-    left: r(x),
-    top: r(y),
-    width: r(w),
-    height: r(h),
-    ...(masks.length > 0 && { maskImage: masks.join(", "), WebkitMaskImage: masks.join(", "), maskComposite: "intersect", WebkitMaskComposite: "source-in" }),
-  };
+/** A reference crop at its original coordinates and size (reference px),
+ * rendered as-is: no mask, filter, opacity or overlay. */
+function Piece({ name, x, y, w, h }: { name: string; x: number; y: number; w: number; h: number }) {
+  const style: CSSProperties = { position: "absolute", left: r(x), top: r(y), width: r(w), height: r(h) };
   // eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels, served as-is
   return <img src={`/brand/precisia-ref/${name}.png`} alt="" aria-hidden width={w} height={h} style={style} draggable={false} />;
 }
@@ -52,11 +44,11 @@ export default function LoginPage() {
     <div className="relative min-h-screen overflow-hidden bg-[#05121f] font-sans text-white lg:h-screen">
       <style>{ARTBOARD_SCALE}</style>
 
-      {/* Phone/tablet: the reference's city-at-dusk photograph (its clean
-          right-hand strip) as a dimmed backdrop. */}
+      {/* Phone/tablet: the reference's office-at-dusk photograph (its clean
+          right-hand strip, the widest text-free region) behind the page —
+          full opacity, no overlay. */}
       {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
-      <img src="/brand/precisia-ref/login-right.png" alt="" aria-hidden className="absolute inset-y-0 right-0 h-full w-full object-cover object-right opacity-35 lg:hidden" />
-      <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-[#05121f]/60 via-[#05121f]/85 to-[#05121f] lg:hidden" />
+      <img src="/brand/precisia-ref/login-right.png" alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover object-center lg:hidden" />
 
       <div className="relative lg:absolute lg:top-1/2 lg:left-1/2 lg:h-[64rem] lg:w-[96rem] lg:-translate-x-1/2 lg:-translate-y-1/2">
         {/* Desktop: the reference photograph around the text column and card.
@@ -71,23 +63,17 @@ export default function LoginPage() {
           <Piece name="login-below-card" x={440} y={878} w={800} h={74} />
           <Piece name="login-bottom" x={0} y={952} w={1240} h={72} />
           <Piece name="login-right" x={1206} y={0} w={330} h={1024} />
-          {/* The text column's own area (where the reference has lettering
-              baked into the photograph): one dark panel whose edges feather
-              into the surrounding photograph, so no seams show. */}
-          <div
-            className="absolute"
-            style={{
-              left: r(118),
-              top: r(54),
-              width: r(554),
-              height: r(918),
-              background: "#061624",
-              maskImage: `linear-gradient(to right, transparent, #000 ${r(28)}, #000 calc(100% - ${r(28)}), transparent), linear-gradient(to bottom, transparent, #000 ${r(24)}, #000 calc(100% - ${r(24)}), transparent)`,
-              WebkitMaskImage: `linear-gradient(to right, transparent, #000 ${r(28)}, #000 calc(100% - ${r(28)}), transparent), linear-gradient(to bottom, transparent, #000 ${r(24)}, #000 calc(100% - ${r(24)}), transparent)`,
-              maskComposite: "intersect",
-              WebkitMaskComposite: "source-in",
-            }}
-          />
+          {/* The text column: the reference photograph between and around
+              the lines of text (exact crops), with a patch only directly
+              behind each line, where the reference has its own lettering. */}
+          {LOGINCOLUMN_FILL.patches.map((p) => (
+            <div key={`${p.x},${p.y}`} className="absolute" style={{ left: r(p.x), top: r(p.y), width: r(p.w), height: r(p.h), background: p.top }}>
+              <div className="absolute inset-0" style={{ background: p.bottom, maskImage: "linear-gradient(to bottom, transparent, #000)", WebkitMaskImage: "linear-gradient(to bottom, transparent, #000)" }} />
+            </div>
+          ))}
+          {LOGINCOLUMN_FILL.pieces.map((p) => (
+            <Piece key={p.name} name={p.name} x={p.x} y={p.y} w={p.w} h={p.h} />
+          ))}
         </div>
 
         <div className="grid min-h-screen w-full grid-cols-1 items-center gap-10 px-5 py-12 sm:px-10 lg:block lg:min-h-0 lg:p-0">
@@ -140,7 +126,7 @@ export default function LoginPage() {
               reproduced: SSO is not implemented, and a control that does
               nothing would mislead. "Need help?" keeps its reference
               position at the foot of the card. */}
-          <div className="pc-glass relative w-full rounded-[1.75rem] px-7 py-10 shadow-[0_40px_90px_-30px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.06)] sm:px-[3.875rem] sm:py-[3.6rem] lg:absolute lg:top-[9.125rem] lg:left-[44.5rem] lg:h-[47.5rem] lg:w-[32.625rem] lg:pt-[4.35rem] lg:[&_form>p:last-child]:absolute lg:[&_form>p:last-child]:inset-x-0 lg:[&_form>p:last-child]:bottom-[2.9rem]">
+          <div style={{ backdropFilter: "none", WebkitBackdropFilter: "none" }} className="pc-glass relative w-full rounded-[1.75rem] px-7 py-10 shadow-[0_40px_90px_-30px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.06)] sm:px-[3.875rem] sm:py-[3.6rem] lg:absolute lg:top-[9.125rem] lg:left-[44.5rem] lg:h-[47.5rem] lg:w-[32.625rem] lg:pt-[4.35rem] lg:[&_form>p:last-child]:absolute lg:[&_form>p:last-child]:inset-x-0 lg:[&_form>p:last-child]:bottom-[2.9rem]">
             <h2 className="font-display text-[2.4rem] leading-none font-medium text-white sm:text-[2.8rem]">Welcome back</h2>
             <p className="mt-3 text-[1.18rem] text-[#dbe4f1]">Sign in to your PRECISIA workspace.</p>
             <div className="mt-[1.7rem] lg:[&_form>button]:mt-[1.45rem] lg:[&_form>label:not(:first-child)]:mt-[1.15rem]">

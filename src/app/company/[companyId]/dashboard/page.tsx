@@ -509,8 +509,8 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
             Split around the greeting and action buttons, which are real
             here. */}
         <div aria-hidden className="pointer-events-none absolute inset-0 hidden lg:block">
-          <RefPiece name="dashboard-hero-a" right={769} top={0} w={218} h={87} fade={[{ edge: "left", size: 90 }, { edge: "bottom", size: 22 }]} />
-          <RefPiece name="dashboard-hero-b" right={619} top={0} w={150} h={125} fade={[{ edge: "bottom", size: 18 }]} />
+          <RefPiece name="dashboard-hero-a" right={769} top={0} w={218} h={87} />
+          <RefPiece name="dashboard-hero-b" right={619} top={0} w={150} h={125} />
           <RefPiece name="dashboard-hero-c" right={0} top={0} w={619} h={192} />
         </div>
         <div className="relative px-6 pt-3 pb-[19px]">
@@ -717,7 +717,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
               robot illustration is not available as a standalone image, so
               none is shown. */}
           <section className="relative flex-1 overflow-hidden rounded-[14px] border border-[#3a92ff]/60 bg-[linear-gradient(170deg,#052f5a_0%,#03284e_25%,#001c3a_60%,#011022_100%)] px-5 py-3.5 shadow-[0_18px_48px_-20px_rgba(22,112,255,0.7)]">
-            <RefPiece name="dashboard-robot" right={2} top={2} w={170} h={161} fade={[{ edge: "left", size: 34 }, { edge: "bottom", size: 12 }]} className="pointer-events-none hidden sm:block" />
+            <RefPiece name="dashboard-robot" right={2} top={2} w={170} h={161} className="pointer-events-none hidden sm:block" />
             <div className="relative max-w-[62%]">
               <h2 className="pc-heading text-[1.3rem] leading-[1.15] font-bold text-white">
                 Get insights faster
