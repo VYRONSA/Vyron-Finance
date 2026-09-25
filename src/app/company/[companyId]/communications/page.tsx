@@ -8,7 +8,7 @@ import { MOCK_COMMUNICATIONS, MOCK_COMMUNICATION_TEMPLATES } from "@/lib/mock/co
 import { IconImport } from "@/components/ui/icons";
 
 export const metadata: Metadata = {
-  title: "Communications — VYRON FINANCE",
+  title: "Communications — PRECISIA",
 };
 
 export default async function CommunicationsPage({ params }: { params: Promise<{ companyId: string }> }) {

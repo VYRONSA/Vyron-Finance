@@ -49,7 +49,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Executive",
     items: [
       { label: "Dashboard", href: "dashboard", icon: IconGrid },
-      { label: "VYRON Intelligence", href: "intelligence", icon: IconSparkles },
+      { label: "PRECISIA Intelligence", href: "intelligence", icon: IconSparkles },
       { label: "Bank Accounts", href: "bank-accounts", icon: IconBank },
       { label: "Import Centre", href: "import-centre", icon: IconImport },
       { label: "Cashbook", href: "cashbook", icon: IconBanknote },

@@ -123,7 +123,7 @@ export function describeSource(source: GlAccountSource | VatCodeSource): string 
       "learned-mapping": "a mapping you confirmed before",
       "historical-bill": "a previous bill from this supplier",
       "printed-rate": "the VAT rate printed on the invoice",
-      ai: "suggested by VYRON AI — check it",
+      ai: "suggested by PRECISIA AI — check it",
       none: "not suggested — choose one",
     } as Record<string, string>
   )[source] ?? source;

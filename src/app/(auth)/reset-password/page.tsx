@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { SetPasswordForm } from "@/components/auth/set-password-form";
-import { BrandMark } from "@/components/ui/brand-mark";
+import { PrecisiaWordmark } from "@/components/ui/precisia-wordmark";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 
 export const metadata: Metadata = {
-  title: "Set Password — VYRON FINANCE",
+  title: "Set Password — PRECISIA",
 };
 
 /** Landed on only via /auth/confirm after a valid recovery/invite email
@@ -22,9 +22,8 @@ export default async function ResetPasswordPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-vf-canvas px-6 py-16">
       <Card className="w-full max-w-sm">
         <CardContent className="p-8 sm:p-10">
-          <Link href="/" className="mb-8 flex items-center gap-2.5 font-display text-lg text-vf-ink">
-            <BrandMark className="h-8 w-8" />
-            VYRON FINANCE
+          <Link href="/" className="mb-8 inline-block" aria-label="PRECISIA — home">
+            <PrecisiaWordmark size="sm" tone="onLight" />
           </Link>
 
           <h1 className="text-2xl font-medium text-vf-ink">Choose a new password</h1>

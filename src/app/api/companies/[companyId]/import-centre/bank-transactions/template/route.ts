@@ -27,7 +27,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
   return new NextResponse(buffer as ArrayBuffer, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="VYRON_Bank_Transactions_Import_Template.xlsx"`,
+      "Content-Disposition": `attachment; filename="PRECISIA_Bank_Transactions_Import_Template.xlsx"`,
     },
   });
 }

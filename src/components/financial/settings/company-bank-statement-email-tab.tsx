@@ -59,7 +59,7 @@ export function CompanyBankStatementEmailTab({ companyId }: { companyId: string 
       <div>
         <p className="text-sm font-medium text-vf-ink">Bank Statement Email</p>
         <p className="mt-0.5 max-w-[54ch] text-xs text-vf-ink-faint">
-          A dedicated address for this company to receive bank statements by email. VYRON automatically processes
+          A dedicated address for this company to receive bank statements by email. PRECISIA automatically processes
           supported statements sent here once this environment&apos;s inbound email routing is configured to deliver to it.
         </p>
       </div>
@@ -85,7 +85,7 @@ export function CompanyBankStatementEmailTab({ companyId }: { companyId: string 
               </Button>
             </div>
             <p className="text-xs text-vf-ink-faint">
-              Send your bank statements to this address. VYRON will automatically process supported statements once
+              Send your bank statements to this address. PRECISIA will automatically process supported statements once
               this environment&apos;s inbound email is fully configured.
             </p>
             <dl className="mt-1 flex flex-col gap-1 text-xs text-vf-ink-faint">

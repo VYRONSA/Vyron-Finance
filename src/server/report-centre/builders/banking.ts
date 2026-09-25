@@ -349,7 +349,7 @@ export const BANKING_REPORTS: ReportDefinition[] = [
         summary: [summaryCount("Bank accounts", bankAccounts.length), summaryCount("Unposted transactions", bank.items.filter((t) => !t.postedFlag).length)],
         sections: [section([col("account", "Bank Account"), col("opening", "GL Opening", "money"), col("glIn", "GL In", "money"), col("glOut", "GL Out", "money"), col("closing", "GL Closing", "money"), col("bankIn", "Bank In", "money"), col("bankOut", "Bank Out", "money"), col("unposted", "Unposted", "number")], rows, undefined, "No bank accounts are set up.")],
         checks: [],
-        notices: ["GL columns are the bank account's GL account; Bank columns are the bank transactions recorded in VYRON. They differ by transactions not yet posted and by GL postings that don't come from the bank feed (e.g. receipts captured in Sales, opening balances)."],
+        notices: ["GL columns are the bank account's GL account; Bank columns are the bank transactions recorded in PRECISIA. They differ by transactions not yet posted and by GL postings that don't come from the bank feed (e.g. receipts captured in Sales, opening balances)."],
       };
     },
   },
@@ -416,7 +416,7 @@ export const BANKING_REPORTS: ReportDefinition[] = [
       const checks: ReconciliationCheck[] = [];
       const rows = list.map((b) => {
         const present = b.importType === "bank_transactions" ? inBatch.get(b.batchId)?.length ?? 0 : null;
-        if (present !== null && importBatch) checks.push(check("Rows still in VYRON equal rows imported", b.importedCount, present, "Fewer rows now than imported means rows were deleted after import."));
+        if (present !== null && importBatch) checks.push(check("Rows still in PRECISIA equal rows imported", b.importedCount, present, "Fewer rows now than imported means rows were deleted after import."));
         return row(
           {
             date: b.createdAt.slice(0, 10),
@@ -434,7 +434,7 @@ export const BANKING_REPORTS: ReportDefinition[] = [
           { drill: drill.report("imported-transaction-audit", { importBatch: b.batchId, dateFrom, dateTo }) },
         );
       });
-      const sections = [section([col("date", "Imported", "date"), col("file", "File"), col("type", "Type", "badge"), col("rows", "Rows", "number"), col("imported", "Imported", "number"), col("duplicates", "Duplicates", "number"), col("exceptions", "Exceptions", "number"), col("present", "Rows in VYRON", "number"), col("statement", "Statement Period"), col("balances", "Statement Balances", "badge"), col("by", "By")], rows, "Import Batches", "No imports in this period.")];
+      const sections = [section([col("date", "Imported", "date"), col("file", "File"), col("type", "Type", "badge"), col("rows", "Rows", "number"), col("imported", "Imported", "number"), col("duplicates", "Duplicates", "number"), col("exceptions", "Exceptions", "number"), col("present", "Rows in PRECISIA", "number"), col("statement", "Statement Period"), col("balances", "Statement Balances", "badge"), col("by", "By")], rows, "Import Batches", "No imports in this period.")];
       if (importBatch) {
         const txns = inBatch.get(importBatch) ?? [];
         const tRows = txns.map((t) => txnRow(c, t));
@@ -446,7 +446,7 @@ export const BANKING_REPORTS: ReportDefinition[] = [
         summary: [summaryCount("Batches", list.length), summaryCount("Rows imported", sum(list, (b) => b.importedCount)), summaryCount("Duplicates skipped", sum(list, (b) => b.duplicateCount))],
         sections,
         checks,
-        notices: ["Batches are listed from the import history VYRON records; the Xero migration imports its bank rows under batches named XERO-<account>."],
+        notices: ["Batches are listed from the import history PRECISIA records; the Xero migration imports its bank rows under batches named XERO-<account>."],
       };
     },
   },
@@ -482,9 +482,9 @@ export const BANKING_REPORTS: ReportDefinition[] = [
       return {
         subtitle: `${xero.length} transactions migrated from Xero`,
         summary: [summaryCount("Transactions", xero.length), ...LIFECYCLE.map((s) => summaryCount(s, xero.filter((t) => transactionPostingStatus(t) === s).length))],
-        sections: [section([col("batch", "Xero Account"), col("account", "VYRON Bank Account"), col("count", "Transactions", "number"), col("in", "Money In", "money"), col("out", "Money Out", "money"), col("from", "From", "date"), col("to", "To", "date"), ...LIFECYCLE.map((s) => col(s, s, "number"))], rows, undefined, "No Xero-migrated bank transactions.")],
+        sections: [section([col("batch", "Xero Account"), col("account", "PRECISIA Bank Account"), col("count", "Transactions", "number"), col("in", "Money In", "money"), col("out", "Money Out", "money"), col("from", "From", "date"), col("to", "To", "date"), ...LIFECYCLE.map((s) => col(s, s, "number"))], rows, undefined, "No Xero-migrated bank transactions.")],
         checks: [],
-        notices: ["Xero exports state debits and credits from the bank ledger's perspective; VYRON stores them in cashbook convention (money in as credit). Rows imported before that mapping was corrected were repaired by migration 0093 — these figures are the corrected ones."],
+        notices: ["Xero exports state debits and credits from the bank ledger's perspective; PRECISIA stores them in cashbook convention (money in as credit). Rows imported before that mapping was corrected were repaired by migration 0093 — these figures are the corrected ones."],
       };
     },
   },
@@ -545,7 +545,7 @@ export const BANKING_REPORTS: ReportDefinition[] = [
       const byStatus = (s: TransactionPostingStatus) => list.filter((t) => transactionPostingStatus(t) === s);
       const funnel = [
         stage("Imported / captured", list),
-        stage("Allocated (VYRON knows where it belongs)", allocated),
+        stage("Allocated (PRECISIA knows where it belongs)", allocated),
         stage("Posted to the General Ledger", list.filter((t) => t.postedFlag)),
         stage("Reconciled to a bank statement", byStatus("Reconciled"), "Reconciled"),
       ];

@@ -47,7 +47,7 @@ import { MOCK_BANK_RECONCILIATIONS } from "@/lib/mock/cashbook-data";
 import { formatAmount, formatCount, formatDate } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Banking Command Centre — VYRON FINANCE",
+  title: "Banking Command Centre — PRECISIA",
 };
 
 function money(value: number, currency: string) {
@@ -378,7 +378,7 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ c
           <EmptyState
             icon={<IconImport className="h-5 w-5" />}
             title="Import your first bank statement"
-            description="VYRON doesn't yet connect directly to your bank — importing a statement is how an account gets connected. If the account number on the statement isn't recognised, VYRON creates it automatically."
+            description="PRECISIA doesn't yet connect directly to your bank — importing a statement is how an account gets connected. If the account number on the statement isn't recognised, PRECISIA creates it automatically."
             action={
               <div className="flex flex-wrap items-center gap-3">
                 <Button href={`/company/${companyId}/import-centre`} variant="primary" size="sm">
@@ -522,7 +522,7 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ c
                 companyId={companyId}
                 kind="bank-transactions"
                 title="Bank Statement"
-                description="Standard VYRON Bank Import Template (CSV or Excel), OFX, QIF, or PDF."
+                description="Standard PRECISIA Bank Import Template (CSV or Excel), OFX, QIF, or PDF."
                 templateHint="Supported formats: CSV, Excel, OFX, QIF, PDF. PDF statements go through a review step before anything is committed; every other format imports and applies Banking Rules immediately. Balance and VAT are optional but must be numbers if provided."
                 previewMode={previewMode}
               />
@@ -536,7 +536,7 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ c
                 <IconSliders className="h-4 w-4 text-vf-red-600" />
                 <div>
                   <CardTitle>Banking Rules</CardTitle>
-                  <CardDescription>Let VYRON automatically recognise recurring transactions.</CardDescription>
+                  <CardDescription>Let PRECISIA automatically recognise recurring transactions.</CardDescription>
                 </div>
               </div>
               <Button href={`/company/${companyId}/banking-rules`} variant="subtle" size="sm">

@@ -25,7 +25,7 @@ import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Inventory — VYRON FINANCE",
+  title: "Inventory — PRECISIA",
 };
 
 export default async function InventoryPage({ params }: { params: Promise<{ companyId: string }> }) {

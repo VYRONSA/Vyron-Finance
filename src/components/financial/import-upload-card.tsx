@@ -222,12 +222,12 @@ export function ImportUploadCard({
          * supports both CSV and Excel. */}
         <div className="flex flex-wrap items-center gap-2">
           {kind === "bills" ? (
-            <Button variant="subtle" size="sm" onClick={() => downloadCsv("VYRON_Bills_Import_Template.csv", BILLS_IMPORT_TEMPLATE_HEADERS, [])}>
+            <Button variant="subtle" size="sm" onClick={() => downloadCsv("PRECISIA_Bills_Import_Template.csv", BILLS_IMPORT_TEMPLATE_HEADERS, [])}>
               <IconArrowDown className="h-4 w-4" /> Download Template
             </Button>
           ) : (
             <>
-              <Button variant="subtle" size="sm" onClick={() => downloadCsv("VYRON_Bank_Transactions_Import_Template.csv", STANDARD_HEADERS, [])}>
+              <Button variant="subtle" size="sm" onClick={() => downloadCsv("PRECISIA_Bank_Transactions_Import_Template.csv", STANDARD_HEADERS, [])}>
                 <IconArrowDown className="h-4 w-4" /> Download CSV Template
               </Button>
               <Button variant="subtle" size="sm" onClick={() => window.open(`/api/companies/${companyId}/import-centre/bank-transactions/template`, "_blank")}>

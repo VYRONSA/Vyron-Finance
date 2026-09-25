@@ -61,7 +61,7 @@ export function parseBankStatementCsv(fileText: string, filename: string, import
       rowNumber: headerIndex + 1,
       exceptionType: "Invalid Template",
       description:
-        `File does not match the VYRON Standard Bank Import Template. ` +
+        `File does not match the PRECISIA Standard Bank Import Template. ` +
         `Expected columns (in order): ${STANDARD_HEADERS.join(", ")}. Found: ${headers.join(", ")}. ` +
         `Download the Bank Transactions Import Template and use it as-is, or paste your data into it.`,
     });

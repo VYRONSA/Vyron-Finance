@@ -315,7 +315,7 @@ export function reconciliationReadiness(summary: ReconciliationSummary): string[
     notes.push(`${summary.unreconciledCount} transaction${summary.unreconciledCount === 1 ? "" : "s"} in this period have not been marked cleared against the statement.`);
   }
   if (!summary.glMatchesStatement) {
-    notes.push(`VYRON's General Ledger balance differs from the statement closing balance by ${summary.difference.toFixed(2)}.`);
+    notes.push(`PRECISIA's General Ledger balance differs from the statement closing balance by ${summary.difference.toFixed(2)}.`);
   }
   return notes;
 }

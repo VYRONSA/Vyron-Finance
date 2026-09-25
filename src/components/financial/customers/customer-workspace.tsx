@@ -234,7 +234,7 @@ export function CustomerWorkspace({ companyId, customers, previewMode }: { compa
         </Button>
         {/* Phase 32 — headers come straight from the parser's own
          * exported constant, never a hand-copied list. */}
-        <DownloadTemplateButton filename="VYRON_Customer_Import_Template.csv" headers={CUSTOMER_IMPORT_TEMPLATE_HEADERS} />
+        <DownloadTemplateButton filename="PRECISIA_Customer_Import_Template.csv" headers={CUSTOMER_IMPORT_TEMPLATE_HEADERS} />
         <label className={`inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-full border border-vf-paper-border px-4 py-2 text-sm font-medium text-vf-ink-soft hover:border-vf-red-500 hover:text-vf-red-600 ${previewMode ? "pointer-events-none opacity-50" : ""}`} title={disabledTitle}>
           <IconArrowUp className="h-4 w-4" /> Import CSV
           <input

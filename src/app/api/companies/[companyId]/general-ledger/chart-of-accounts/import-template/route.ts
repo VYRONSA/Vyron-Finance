@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
   return new NextResponse(CHART_OF_ACCOUNTS_IMPORT_TEMPLATE_HEADERS.join(",") + "\r\n", {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="VYRON_Chart_of_Accounts_Import_Template.csv"`,
+      "Content-Disposition": `attachment; filename="PRECISIA_Chart_of_Accounts_Import_Template.csv"`,
     },
   });
 }

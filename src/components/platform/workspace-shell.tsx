@@ -1,32 +1,41 @@
-import type { ReactNode } from "react";
+"use client";
+
+import type { ComponentType, ReactNode, SVGProps } from "react";
 import Link from "next/link";
-import { BrandMark } from "@/components/ui/brand-mark";
+import { usePathname } from "next/navigation";
+import { cn, getInitials } from "@/lib/utils";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { SessionExpiryGuard } from "@/components/auth/session-expiry-guard";
-import { getInitials } from "@/lib/utils";
+import { PrecisiaWordmark, VyronsoftAttribution } from "@/components/ui/precisia-wordmark";
+import { PIconBilling, PIconHome, PIconLock, PIconOffice, PIconOperations, PIconUsers } from "@/components/ui/precisia-icons";
+import { IconFileText, IconHelpCircle } from "@/components/ui/icons";
 
-const NAV_SECTIONS: { label: string; items: { label: string; href: string }[] }[] = [
+type NavItem = { label: string; href: string; icon: ComponentType<SVGProps<SVGSVGElement>> };
+
+// Sections and items exactly as the "Precisia Platform Workspace"
+// reference lists them (unchanged destinations from before the rebrand).
+const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: "Workspace",
     items: [
-      { label: "Overview", href: "/platform" },
-      { label: "Operations Centre", href: "/platform/operations" },
-      { label: "Billing Operations", href: "/platform/billing" },
+      { label: "Overview", href: "/platform", icon: PIconHome },
+      { label: "Operations Centre", href: "/platform/operations", icon: PIconOperations },
+      { label: "Billing Operations", href: "/platform/billing", icon: PIconBilling },
     ],
   },
   {
     label: "Manage",
     items: [
-      { label: "My Companies", href: "/platform#companies" },
-      { label: "Subscription & Billing", href: "/platform#subscription" },
+      { label: "My Companies", href: "/platform#companies", icon: PIconOffice },
+      { label: "Subscription & Billing", href: "/platform#subscription", icon: IconFileText },
     ],
   },
   {
     label: "Account",
     items: [
-      { label: "Profile & Platform Settings", href: "/platform#profile" },
-      { label: "Change Password", href: "/platform/account" },
-      { label: "Support", href: "/platform#support" },
+      { label: "Profile & Platform Settings", href: "/platform#profile", icon: PIconUsers },
+      { label: "Change Password", href: "/platform/account", icon: PIconLock },
+      { label: "Support", href: "/platform#support", icon: IconHelpCircle },
     ],
   },
 ];
@@ -40,8 +49,10 @@ export function WorkspaceShell({
   userEmail?: string;
   previewMode?: boolean;
 }) {
+  const pathname = usePathname();
+
   return (
-    <div className="min-h-screen bg-vf-canvas">
+    <div className="min-h-screen bg-[#020b16] font-sans text-[#f3f7fd]">
       {!previewMode && <SessionExpiryGuard />}
       {previewMode && (
         <div className="border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-300">
@@ -51,50 +62,63 @@ export function WorkspaceShell({
       )}
 
       <div className="flex min-h-screen">
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-vf-dark-border bg-vf-canvas-raised px-4 py-6 lg:flex">
-          <Link href="/" className="mb-8 flex items-center gap-2.5 px-2 font-display text-lg text-vf-on-dark">
-            <BrandMark className="h-8 w-8" />
-            VYRON FINANCE
+        <aside className="sticky top-0 hidden h-screen w-[222px] shrink-0 flex-col overflow-hidden border-r border-[#12325a]/60 bg-gradient-to-b from-[#031428] via-[#021a36] to-[#011a3a] lg:flex">
+          {/* EXACT SOURCE IMAGE UNAVAILABLE — the reference's light-wave
+              detail at the bottom of the rail is not shown. */}
+          <Link href="/" className="relative px-6 pt-6 pb-5" aria-label="PRECISIA — home">
+            <PrecisiaWordmark size="md" />
           </Link>
 
-          <nav className="flex flex-1 flex-col gap-7">
-            {NAV_SECTIONS.map((section) => (
-              <div key={section.label}>
-                <p className="px-2 text-[0.65rem] font-semibold tracking-[0.14em] text-vf-on-dark-faint/80 uppercase">
-                  {section.label}
-                </p>
-                <ul className="mt-2.5 flex flex-col gap-1">
-                  {section.items.map((item) => (
-                    <li key={item.label}>
-                      <Link
-                        href={item.href}
-                        className="block rounded-vf-sm px-3 py-2 text-sm font-medium text-vf-on-dark-soft transition-[background-color,color,box-shadow] duration-150 ease-vf-out hover:bg-white/8 hover:text-vf-on-dark hover:shadow-[inset_2px_0_0_rgba(255,255,255,0.2)]"
-                      >
-                        {item.label}
-                      </Link>
-                    </li>
-                  ))}
+          <nav className="relative flex flex-1 flex-col gap-2 overflow-y-auto pb-6">
+            {NAV_SECTIONS.map((section, i) => (
+              <div key={section.label} className="pt-2 pb-1.5">
+                {i > 0 && <div aria-hidden className="mx-6 mb-5 h-px bg-white/10" />}
+                <p className="px-6 pb-2 text-[0.66rem] font-semibold tracking-[0.14em] text-[#a9b8cc] uppercase">{section.label}</p>
+                <ul className="flex flex-col gap-1">
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = !item.href.includes("#") && pathname === item.href;
+                    return (
+                      <li key={item.label}>
+                        <Link
+                          href={item.href}
+                          className={cn(
+                            "mr-3 flex items-center gap-3 rounded-r-[10px] px-6 py-2 text-[0.8rem] font-medium whitespace-nowrap transition-colors duration-150",
+                            active ? "pc-nav-active" : "text-[#e6ecf5] hover:bg-white/5 hover:text-white",
+                          )}
+                        >
+                          <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-white" : "text-[#3f9bff]")} />
+                          {item.label}
+                        </Link>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}
           </nav>
 
-          <p className="px-2 text-xs text-vf-on-dark-faint">Part of the VYRON ecosystem.</p>
+          <VyronsoftAttribution stacked className="relative px-6 pb-7 text-[#dbe4f1]" />
         </aside>
 
-        <div className="flex flex-1 flex-col">
-          <header className="vf-glass sticky top-0 z-10 flex items-center justify-between border-b border-vf-dark-border px-6 py-3.5 shadow-[0_8px_24px_-16px_rgba(0,0,0,0.6)]">
-            <p className="text-sm font-medium text-vf-on-dark">Platform Workspace</p>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-vf-on-dark-soft">{userEmail ?? "preview@vyron.finance"}</span>
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-vf-red-500 to-vf-red-800 text-xs font-medium text-vf-on-dark">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-20 flex h-[64px] items-center justify-between gap-4 border-b border-[#12325a]/70 bg-[#031321]/95 px-6 backdrop-blur-md">
+            <div className="flex items-center gap-4">
+              <Link href="/" className="lg:hidden" aria-label="PRECISIA — home">
+                <PrecisiaWordmark size="sm" subtitle={false} />
+              </Link>
+              <p className="truncate text-[1rem] font-semibold text-white">Platform Workspace</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-4">
+              <span className="hidden border-r border-white/12 pr-5 text-[0.9rem] text-[#e6ecf5] sm:inline">{userEmail ?? "preview@precisia.app"}</span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-b from-[#1b7cff] to-[#0b4fc4] text-xs font-semibold text-white shadow-[0_0_0_2px_rgba(47,155,255,0.25)]">
                 {getInitials(userEmail, "P")}
               </span>
-              {userEmail && <SignOutButton />}
+              {userEmail && <SignOutButton className="text-[0.9rem] font-medium text-[#e6ecf5] transition hover:text-white" />}
             </div>
           </header>
 
-          <main className="flex-1 px-6 py-8">{children}</main>
+          <main className="min-w-0 flex-1 px-4 py-5 sm:px-5">{children}</main>
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { BackLink } from "@/components/ui/back-link";
 import { XeroImportPanel } from "@/components/financial/xero-import/xero-import-panel";
 
 export const metadata: Metadata = {
-  title: "Xero Migration — VYRON FINANCE",
+  title: "Xero Migration — PRECISIA",
 };
 
 /**

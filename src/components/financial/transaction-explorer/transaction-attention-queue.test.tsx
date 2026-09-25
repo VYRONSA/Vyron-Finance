@@ -117,7 +117,7 @@ describe("TransactionAttentionQueue", () => {
   it("shows a positive empty state with real navigation links when nothing needs attention", () => {
     render(<TransactionAttentionQueue companyId="co_1" previewMode={false} initialItems={[READY]} openExceptions={[]} />);
     expect(screen.getByText("You're all caught up.")).toBeInTheDocument();
-    expect(screen.getByText("VYRON has no transactions currently requiring review.")).toBeInTheDocument();
+    expect(screen.getByText("PRECISIA has no transactions currently requiring review.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View All Transactions" })).toHaveAttribute("href", "#all-transactions");
     expect(screen.getByRole("link", { name: "Go to Banking" })).toHaveAttribute("href", "/company/co_1/bank-accounts");
     expect(screen.getByRole("link", { name: "Import Statement" })).toHaveAttribute("href", "/company/co_1/import-centre");

@@ -21,7 +21,7 @@ import { MOCK_BRANCHES, MOCK_COST_CENTRES, MOCK_DEPARTMENTS } from "@/lib/mock/c
 import type { GlInquiryFilters } from "@/server/general-ledger/types";
 
 export const metadata: Metadata = {
-  title: "General Ledger — VYRON FINANCE",
+  title: "General Ledger — PRECISIA",
 };
 
 const EMPTY_GL_FILTERS: GlInquiryFilters = {

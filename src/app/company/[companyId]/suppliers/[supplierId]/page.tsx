@@ -23,7 +23,7 @@ import type { SupplierRiskRating } from "@/server/accounting/types";
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Supplier — VYRON FINANCE",
+  title: "Supplier — PRECISIA",
 };
 
 const RISK_TONE: Record<SupplierRiskRating, "good" | "warn" | "danger"> = { Low: "good", Medium: "warn", High: "danger" };

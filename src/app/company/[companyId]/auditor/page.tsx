@@ -23,7 +23,7 @@ import { MOCK_AUDIT_READINESS_SCORE } from "@/lib/mock/financial-reporting-data"
 import type { AuditProgrammeStep } from "@/server/audit/types";
 
 export const metadata: Metadata = {
-  title: "Auditor Workspace — VYRON FINANCE",
+  title: "Auditor Workspace — PRECISIA",
 };
 
 export default async function AuditorPage({ params }: { params: Promise<{ companyId: string }> }) {

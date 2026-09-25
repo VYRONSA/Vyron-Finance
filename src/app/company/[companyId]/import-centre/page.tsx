@@ -17,7 +17,7 @@ import type { ImportBatch } from "@/server/accounting/types";
 import { formatDateTime } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Import Centre — VYRON FINANCE",
+  title: "Import Centre — PRECISIA",
 };
 
 export default async function ImportCentrePage({ params }: { params: Promise<{ companyId: string }> }) {
@@ -52,7 +52,7 @@ export default async function ImportCentrePage({ params }: { params: Promise<{ c
             </span>
             <h1 className="mt-2 text-3xl font-medium text-vf-on-dark sm:text-4xl">Import Centre</h1>
             <p className="mt-1.5 max-w-[56ch] text-sm text-vf-on-dark-soft">
-              Import supplier Bills / Credit Notes and bank statements using the Standard VYRON templates —
+              Import supplier Bills / Credit Notes and bank statements using the Standard PRECISIA templates —
               every row is validated, duplicates are skipped automatically, and every file becomes a permanent
               import record.
             </p>

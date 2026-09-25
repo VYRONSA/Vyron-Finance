@@ -14,7 +14,7 @@ import { MOCK_BANKING_EXCEPTIONS } from "@/lib/mock/banking-automation-data";
 import { MOCK_BANKING_AGGREGATE } from "@/lib/mock/transaction-explorer-data";
 
 export const metadata: Metadata = {
-  title: "Automation Dashboard — VYRON FINANCE",
+  title: "Automation Dashboard — PRECISIA",
 };
 
 export default async function AutomationDashboardPage({ params }: { params: Promise<{ companyId: string }> }) {

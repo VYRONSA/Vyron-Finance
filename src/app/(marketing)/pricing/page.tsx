@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
-  title: "Pricing — VYRON FINANCE",
+  title: "Pricing — PRECISIA",
   description: "Plans priced for how many companies you run.",
 };
 

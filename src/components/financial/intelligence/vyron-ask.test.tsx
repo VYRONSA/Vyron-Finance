@@ -14,7 +14,7 @@ function answer(overrides: Partial<CopilotAnswer> = {}): CopilotAnswer {
     calculationsUsed: "Reused financial-intelligence-engine.ts.",
     transactionsConsulted: [],
     journalsConsulted: [],
-    documentsConsulted: ["VYRON Intelligence Centre"],
+    documentsConsulted: ["PRECISIA Intelligence Centre"],
     suggestedActions: ["Review Banking Exceptions"],
     alternativeExplanations: [],
     keyPoints: ["[Critical] 3 possible duplicates detected"],
@@ -28,10 +28,10 @@ describe("VyronAsk", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows the VYRON Ask header, subtitle, and every example prompt", () => {
+  it("shows the PRECISIA Ask header, subtitle, and every example prompt", () => {
     render(<VyronAsk companyId="co_1" previewMode={false} />);
-    expect(screen.getByText("VYRON Ask")).toBeInTheDocument();
-    expect(screen.getByText("Ask a fixed question for an instant VYRON Intelligence answer, or ask anything else and VYRON AI will explain it.")).toBeInTheDocument();
+    expect(screen.getByText("PRECISIA Ask")).toBeInTheDocument();
+    expect(screen.getByText("Ask a fixed question for an instant PRECISIA Intelligence answer, or ask anything else and PRECISIA AI will explain it.")).toBeInTheDocument();
     for (const prompt of [
       "What needs my attention?",
       "Why are there banking warnings?",
@@ -48,7 +48,7 @@ describe("VyronAsk", () => {
     for (const prompt of [
       "What situations need my attention?",
       "Are any of the warnings related?",
-      "Why is VYRON concerned about cash?",
+      "Why is PRECISIA concerned about cash?",
       "What are the main risks in my business?",
       "What are my biggest financial problems?",
       "What should I deal with first?",
@@ -59,12 +59,12 @@ describe("VyronAsk", () => {
 
   it("shows an empty conversation state before anything is asked", () => {
     render(<VyronAsk companyId="co_1" previewMode={false} />);
-    expect(screen.getByText("Ask a question above, or click one of the suggested prompts. Anything not on the list is answered by VYRON AI.")).toBeInTheDocument();
+    expect(screen.getByText("Ask a question above, or click one of the suggested prompts. Anything not on the list is answered by PRECISIA AI.")).toBeInTheDocument();
   });
 
   it("shows the AI disclosure line", () => {
     render(<VyronAsk companyId="co_1" previewMode={false} />);
-    expect(screen.getByText(/VYRON AI answers using your company.s financial intelligence and available evidence/)).toBeInTheDocument();
+    expect(screen.getByText(/PRECISIA AI answers using your company.s financial intelligence and available evidence/)).toBeInTheDocument();
     expect(screen.getByText(/does not independently audit your business/)).toBeInTheDocument();
   });
 
@@ -132,7 +132,7 @@ describe("VyronAsk", () => {
         ok: true,
         json: async () => ({
           answer: answer({
-            executiveSummary: "VYRON has 1 Data Quality note(s). These don't mean something is financially wrong — they mean VYRON's picture of your business is still incomplete: No bank transactions have been imported yet.",
+            executiveSummary: "PRECISIA has 1 Data Quality note(s). These don't mean something is financially wrong — they mean PRECISIA's picture of your business is still incomplete: No bank transactions have been imported yet.",
             evidence: ["0 import batches found."],
             keyPoints: ["No bank transactions have been imported yet"],
             actionLinks: [{ label: "Import a bank statement", href: "/company/co_1/import-centre" }],
@@ -161,28 +161,28 @@ describe("VyronAsk", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: "Internal error" }) }));
     render(<VyronAsk companyId="co_1" previewMode={false} />);
     fireEvent.click(screen.getByRole("button", { name: "What needs my attention?" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("VYRON Ask is temporarily unavailable."));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("PRECISIA Ask is temporarily unavailable."));
   });
 
   it("fails gracefully when fetch itself rejects (network failure)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
     render(<VyronAsk companyId="co_1" previewMode={false} />);
     fireEvent.click(screen.getByRole("button", { name: "What needs my attention?" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("VYRON Ask is temporarily unavailable."));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("PRECISIA Ask is temporarily unavailable."));
   });
 
   it("fails gracefully and never renders a malformed provider response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ answer: { executiveSummary: 42 } }) }));
     render(<VyronAsk companyId="co_1" previewMode={false} />);
     fireEvent.click(screen.getByRole("button", { name: "What needs my attention?" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("VYRON Ask is temporarily unavailable."));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("PRECISIA Ask is temporarily unavailable."));
     expect(screen.queryByText("42")).not.toBeInTheDocument();
   });
 
   it("disables prompts and the input in preview mode", () => {
     render(<VyronAsk companyId="co_1" previewMode />);
     expect(screen.getByRole("button", { name: "What needs my attention?" })).toBeDisabled();
-    expect(screen.getByPlaceholderText("Ask VYRON anything about your financial intelligence…")).toBeDisabled();
+    expect(screen.getByPlaceholderText("Ask PRECISIA anything about your financial intelligence…")).toBeDisabled();
   });
 
   it("has no obvious accessibility violations with an answered conversation", async () => {
@@ -194,20 +194,20 @@ describe("VyronAsk", () => {
   });
 });
 
-describe("VyronAsk — Phase 15 VYRON AI", () => {
+describe("VyronAsk — Phase 15 PRECISIA AI", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("badges a deterministic answer 'VYRON Intelligence'", async () => {
+  it("badges a deterministic answer 'PRECISIA Intelligence'", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ answer: answer({ answeredBy: "VyronIntelligence" }) }) }));
     render(<VyronAsk companyId="co_1" previewMode={false} />);
     fireEvent.click(screen.getByRole("button", { name: "What needs my attention?" }));
-    await waitFor(() => expect(screen.getByText("VYRON Intelligence")).toBeInTheDocument());
-    expect(screen.queryByText("VYRON AI")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("PRECISIA Intelligence")).toBeInTheDocument());
+    expect(screen.queryByText("PRECISIA AI")).not.toBeInTheDocument();
   });
 
-  it("badges an AI-generated answer 'VYRON AI', distinct from a deterministic one", async () => {
+  it("badges an AI-generated answer 'PRECISIA AI', distinct from a deterministic one", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -217,7 +217,7 @@ describe("VyronAsk — Phase 15 VYRON AI", () => {
             answeredBy: "VyronAI",
             questionId: "vyron-ai",
             question: "What's worrying you most?",
-            executiveSummary: "VYRON currently identifies two business situations requiring attention.",
+            executiveSummary: "PRECISIA currently identifies two business situations requiring attention.",
             keyPoints: [],
             evidence: [],
             actionLinks: [],
@@ -226,11 +226,11 @@ describe("VyronAsk — Phase 15 VYRON AI", () => {
       }),
     );
     render(<VyronAsk companyId="co_1" previewMode={false} />);
-    fireEvent.change(screen.getByPlaceholderText("Ask VYRON anything about your financial intelligence…"), { target: { value: "What's worrying you most?" } });
+    fireEvent.change(screen.getByPlaceholderText("Ask PRECISIA anything about your financial intelligence…"), { target: { value: "What's worrying you most?" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
-    await waitFor(() => expect(screen.getByText("VYRON currently identifies two business situations requiring attention.")).toBeInTheDocument());
-    expect(screen.getByText("VYRON AI")).toBeInTheDocument();
-    expect(screen.queryByText("VYRON Intelligence")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("PRECISIA currently identifies two business situations requiring attention.")).toBeInTheDocument());
+    expect(screen.getByText("PRECISIA AI")).toBeInTheDocument();
+    expect(screen.queryByText("PRECISIA Intelligence")).not.toBeInTheDocument();
   });
 
   it("renders clickable evidence references distinct from the plain evidence list (citations)", async () => {
@@ -241,7 +241,7 @@ describe("VyronAsk — Phase 15 VYRON AI", () => {
         json: async () => ({
           answer: answer({
             answeredBy: "VyronAI",
-            evidenceReferences: [{ label: "VYRON Intelligence — Cash Collection Pressure", href: "/company/co_1/intelligence" }],
+            evidenceReferences: [{ label: "PRECISIA Intelligence — Cash Collection Pressure", href: "/company/co_1/intelligence" }],
             evidence: [],
             actionLinks: [],
           }),
@@ -250,11 +250,11 @@ describe("VyronAsk — Phase 15 VYRON AI", () => {
     );
     render(<VyronAsk companyId="co_1" previewMode={false} />);
     fireEvent.click(screen.getByRole("button", { name: "What needs my attention?" }));
-    await waitFor(() => expect(screen.getByRole("link", { name: "VYRON Intelligence — Cash Collection Pressure" })).toBeInTheDocument());
-    expect(screen.getByRole("link", { name: "VYRON Intelligence — Cash Collection Pressure" })).toHaveAttribute("href", "/company/co_1/intelligence");
+    await waitFor(() => expect(screen.getByRole("link", { name: "PRECISIA Intelligence — Cash Collection Pressure" })).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: "PRECISIA Intelligence — Cash Collection Pressure" })).toHaveAttribute("href", "/company/co_1/intelligence");
   });
 
-  it("renders VYRON AI's own flagged uncertainties, honestly labeled, when present", async () => {
+  it("renders PRECISIA AI's own flagged uncertainties, honestly labeled, when present", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -264,7 +264,7 @@ describe("VyronAsk — Phase 15 VYRON AI", () => {
     );
     render(<VyronAsk companyId="co_1" previewMode={false} />);
     fireEvent.click(screen.getByRole("button", { name: "What needs my attention?" }));
-    await waitFor(() => expect(screen.getByText(/What VYRON AI isn.t certain about/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/What PRECISIA AI isn.t certain about/)).toBeInTheDocument());
     expect(screen.getByText("The exact cause of the shortfall isn't captured in the current evidence.")).toBeInTheDocument();
   });
 
@@ -272,8 +272,8 @@ describe("VyronAsk — Phase 15 VYRON AI", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ answer: answer({ answeredBy: "VyronIntelligence" }) }) }));
     render(<VyronAsk companyId="co_1" previewMode={false} />);
     fireEvent.click(screen.getByRole("button", { name: "What needs my attention?" }));
-    await waitFor(() => expect(screen.getByText("VYRON Intelligence")).toBeInTheDocument());
-    expect(screen.queryByText(/What VYRON AI isn.t certain about/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("PRECISIA Intelligence")).toBeInTheDocument());
+    expect(screen.queryByText(/What PRECISIA AI isn.t certain about/)).not.toBeInTheDocument();
   });
 
   it("sends the prior exchange as conversation context on the next question (multi-turn context)", async () => {
@@ -284,7 +284,7 @@ describe("VyronAsk — Phase 15 VYRON AI", () => {
     fireEvent.click(screen.getByRole("button", { name: "What needs my attention?" }));
     await waitFor(() => expect(screen.getByText(/2 item\(s\) currently need attention/)).toBeInTheDocument());
 
-    fireEvent.change(screen.getByPlaceholderText("Ask VYRON anything about your financial intelligence…"), { target: { value: "Tell me more about that." } });
+    fireEvent.change(screen.getByPlaceholderText("Ask PRECISIA anything about your financial intelligence…"), { target: { value: "Tell me more about that." } });
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 

@@ -8,7 +8,7 @@ import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import { MOCK_CURRENCIES } from "@/lib/mock/company-management-data";
 
 export const metadata: Metadata = {
-  title: "Create Bank Account — VYRON FINANCE",
+  title: "Create Bank Account — PRECISIA",
 };
 
 export default async function NewBankAccountPage({ params }: { params: Promise<{ companyId: string }> }) {

@@ -30,18 +30,18 @@ type NotificationContent = { title: string; message: string; severity: Notificat
 export function describeBillingEventForNotification(eventType: BillingEventType, payload: Record<string, unknown>): NotificationContent | null {
   switch (eventType) {
     case "TrialStarted":
-      return { title: "Your free trial has started", message: "Welcome to VYRON FINANCE — your free trial is now active.", severity: "info" };
+      return { title: "Your free trial has started", message: "Welcome to PRECISIA — your free trial is now active.", severity: "info" };
     case "TrialExpired":
-      return { title: "Your free trial has ended", message: "Your VYRON FINANCE free trial has expired. Choose a plan to keep using the platform.", severity: "critical" };
+      return { title: "Your free trial has ended", message: "Your PRECISIA free trial has expired. Choose a plan to keep using the platform.", severity: "critical" };
     case "SubscriptionCreated":
-      return { title: "Your subscription is active", message: "Your VYRON FINANCE subscription has started.", severity: "info" };
+      return { title: "Your subscription is active", message: "Your PRECISIA subscription has started.", severity: "info" };
     case "SubscriptionChanged": {
       const from = typeof payload.fromStatus === "string" ? payload.fromStatus : "unknown";
       const to = typeof payload.toStatus === "string" ? payload.toStatus : "unknown";
       return { title: "Your subscription status changed", message: `Your subscription moved from "${from}" to "${to}".`, severity: to === "suspended" || to === "past_due" ? "critical" : "info" };
     }
     case "SubscriptionCancelled":
-      return { title: "Your subscription has been cancelled", message: "Your VYRON FINANCE subscription has been cancelled.", severity: "warning" };
+      return { title: "Your subscription has been cancelled", message: "Your PRECISIA subscription has been cancelled.", severity: "warning" };
     case "PaymentReceived":
       return { title: "Payment received", message: "Thank you — your payment was received successfully.", severity: "info" };
     case "PaymentFailed":

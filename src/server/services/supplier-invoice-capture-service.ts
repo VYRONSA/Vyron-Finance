@@ -164,7 +164,7 @@ export async function runSupplierInvoiceExtractionSweep(
     const gate = await repo.openExtractionGate(companyId, queuedCapture.id);
     if (gate.decision === "circuit_open") {
       outcome.circuitOpen = true;
-      outcome.stoppedReason = "VYRON AI's provider is unavailable. Extraction will resume automatically.";
+      outcome.stoppedReason = "PRECISIA AI's provider is unavailable. Extraction will resume automatically.";
       break;
     }
     if (gate.decision === "daily_cap") {

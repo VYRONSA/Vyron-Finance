@@ -32,19 +32,19 @@ export const PROVIDER_MESSAGE_MAX_LENGTH = 300;
  * developer, not for the person holding the invoice.
  */
 const CATEGORY_MESSAGE: Record<ExtractionErrorCategory, string> = {
-  "missing-api-key": "VYRON AI is not configured for this environment. The document is saved and can be captured by hand.",
-  unauthorized: "VYRON AI could not authenticate with its provider. The document is saved; extraction will be retried once that is resolved.",
-  "payment-required": "VYRON AI's provider account has no remaining credit. The document is saved and can be captured by hand in the meantime.",
-  forbidden: "VYRON AI's provider refused this request. The document is saved; extraction will be retried once that is resolved.",
-  configuration: "VYRON AI is misconfigured for this environment. The document is saved and can be captured by hand.",
-  timeout: "VYRON AI's provider did not respond in time. The document is saved and extraction will be retried.",
-  "rate-limit": "VYRON AI's provider is rate-limiting requests. Extraction will be retried shortly.",
-  "server-error": "VYRON AI's provider reported an error. The document is saved and extraction will be retried.",
-  "provider-error": "VYRON AI's provider reported an error. The document is saved and extraction will be retried.",
-  network: "VYRON AI could not reach its provider. The document is saved and extraction will be retried.",
-  "malformed-response": "VYRON AI returned an answer that could not be read. The document is saved; try extracting it again.",
+  "missing-api-key": "PRECISIA AI is not configured for this environment. The document is saved and can be captured by hand.",
+  unauthorized: "PRECISIA AI could not authenticate with its provider. The document is saved; extraction will be retried once that is resolved.",
+  "payment-required": "PRECISIA AI's provider account has no remaining credit. The document is saved and can be captured by hand in the meantime.",
+  forbidden: "PRECISIA AI's provider refused this request. The document is saved; extraction will be retried once that is resolved.",
+  configuration: "PRECISIA AI is misconfigured for this environment. The document is saved and can be captured by hand.",
+  timeout: "PRECISIA AI's provider did not respond in time. The document is saved and extraction will be retried.",
+  "rate-limit": "PRECISIA AI's provider is rate-limiting requests. Extraction will be retried shortly.",
+  "server-error": "PRECISIA AI's provider reported an error. The document is saved and extraction will be retried.",
+  "provider-error": "PRECISIA AI's provider reported an error. The document is saved and extraction will be retried.",
+  network: "PRECISIA AI could not reach its provider. The document is saved and extraction will be retried.",
+  "malformed-response": "PRECISIA AI returned an answer that could not be read. The document is saved; try extracting it again.",
   "unsupported-document": "This file could not be read as an invoice. Check it opens correctly, or capture it by hand.",
-  unknown: "VYRON AI could not extract this document. It is saved and can be captured by hand.",
+  unknown: "PRECISIA AI could not extract this document. It is saved and can be captured by hand.",
 };
 
 export function operatorMessageFor(category: ExtractionErrorCategory): string {

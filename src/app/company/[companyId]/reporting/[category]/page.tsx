@@ -18,7 +18,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const reportId = typeof sp.report === "string" ? sp.report : null;
   const report = reportId ? REPORT_BY_ID.get(reportId) : undefined;
   const label = isReportCategory(category) ? CATEGORY_INFO[category].label : "Reporting";
-  return { title: `${report ? `${report.title} — ` : ""}${label} Reports — VYRON FINANCE` };
+  return { title: `${report ? `${report.title} — ` : ""}${label} Reports — PRECISIA` };
 }
 
 export default async function ReportingCategoryPage({ params, searchParams }: Props) {

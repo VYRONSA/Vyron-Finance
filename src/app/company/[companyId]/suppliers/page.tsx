@@ -12,7 +12,7 @@ import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 
 export const metadata: Metadata = {
-  title: "Suppliers — VYRON FINANCE",
+  title: "Suppliers — PRECISIA",
 };
 
 export default async function SuppliersPage({ params }: { params: Promise<{ companyId: string }> }) {

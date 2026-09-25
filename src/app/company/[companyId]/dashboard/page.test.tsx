@@ -76,7 +76,7 @@ describe("Dashboard page — Phase 26G compaction", () => {
     expect(screen.queryByText("Quick Launch")).not.toBeInTheDocument();
   });
 
-  it("no longer renders a 'Recovery Alerts' card as a separate element (Needs Attention/VYRON Intelligence covers this)", async () => {
+  it("no longer renders a 'Recovery Alerts' card as a separate element (Needs Attention/PRECISIA Intelligence covers this)", async () => {
     await renderPage();
     expect(screen.queryByText("Recovery Alerts")).not.toBeInTheDocument();
   });
@@ -101,9 +101,9 @@ describe("Dashboard page — Phase 26G compaction", () => {
     expect(screen.queryByText("Bank Accounts")).not.toBeInTheDocument();
   });
 
-  it("still renders VYRON Intelligence (Needs Attention) and Business Setup Progress", async () => {
+  it("still renders PRECISIA Intelligence (Needs Attention) and Business Setup Progress", async () => {
     await renderPage();
-    expect(screen.getByText("VYRON Intelligence")).toBeInTheDocument();
+    expect(screen.getByText("PRECISIA Intelligence")).toBeInTheDocument();
     expect(screen.getByText("Business Setup Progress")).toBeInTheDocument();
   });
 

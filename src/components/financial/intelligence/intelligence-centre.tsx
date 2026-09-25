@@ -150,7 +150,7 @@ function FindingDetailPanel({ finding, onClose }: { finding: Finding | null; onC
 
         <div className="mt-6 flex flex-col gap-5">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-vf-ink-faint">What VYRON Found</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-vf-ink-faint">What PRECISIA Found</p>
             <p className="mt-1 text-sm text-vf-ink-soft">{finding.title}</p>
           </div>
           <div>
@@ -215,7 +215,7 @@ export function IntelligenceCentre({ findings, situations }: { companyId: string
             <IconListChecks className="h-4 w-4 text-vf-red-600" />
             <div>
               <CardTitle>Business Situations</CardTitle>
-              <CardDescription>Related conditions VYRON noticed occurring together — not a claim that one caused another.</CardDescription>
+              <CardDescription>Related conditions PRECISIA noticed occurring together — not a claim that one caused another.</CardDescription>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
@@ -285,7 +285,7 @@ export function IntelligenceCentre({ findings, situations }: { companyId: string
             <div>
               <CardTitle>Data Quality</CardTitle>
               <CardDescription>
-                These notes don&rsquo;t necessarily mean something is financially wrong — they just mean VYRON&rsquo;s picture of your business is still incomplete.
+                These notes don&rsquo;t necessarily mean something is financially wrong — they just mean PRECISIA&rsquo;s picture of your business is still incomplete.
               </CardDescription>
             </div>
           </CardHeader>

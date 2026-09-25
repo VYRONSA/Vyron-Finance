@@ -16,7 +16,7 @@ import type { AssetLifecycleEvent } from "@/server/assets/types";
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Fixed Assets — VYRON FINANCE",
+  title: "Fixed Assets — PRECISIA",
 };
 
 function money(value: number): string {

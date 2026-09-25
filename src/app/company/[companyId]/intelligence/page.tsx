@@ -17,7 +17,7 @@ import { FINDING_SEVERITY_LABEL, FINDING_SEVERITY_ORDER, type FindingSeverity } 
 import { buildBusinessSituations } from "@/server/financial-intelligence/business-situation-engine";
 
 export const metadata: Metadata = {
-  title: "VYRON Intelligence — VYRON FINANCE",
+  title: "PRECISIA Intelligence — PRECISIA",
 };
 
 const SEVERITY_TILE_TONE: Record<FindingSeverity, string> = {
@@ -69,9 +69,9 @@ export default async function IntelligenceCentrePage({ params }: { params: Promi
           <div>
             <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-vf-on-dark-soft">
               <IconSparkles className="h-3.5 w-3.5" />
-              VYRON Intelligence
+              PRECISIA Intelligence
             </span>
-            <h1 className="mt-2 text-3xl font-medium text-vf-on-dark sm:text-4xl">VYRON Intelligence</h1>
+            <h1 className="mt-2 text-3xl font-medium text-vf-on-dark sm:text-4xl">PRECISIA Intelligence</h1>
             <p className="mt-1.5 max-w-[58ch] text-sm text-vf-on-dark-soft">Understand what needs attention across your business.</p>
           </div>
 
@@ -120,7 +120,7 @@ export default async function IntelligenceCentrePage({ params }: { params: Promi
           <EmptyState
             icon={<IconShieldCheck className="h-5 w-5" />}
             title="Everything looks good."
-            description="VYRON currently has no financial intelligence findings requiring attention."
+            description="PRECISIA currently has no financial intelligence findings requiring attention."
             action={
               <div className="flex flex-wrap items-center gap-3">
                 <Button href={`/company/${companyId}/dashboard`} variant="primary" size="sm">

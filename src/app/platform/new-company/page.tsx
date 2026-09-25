@@ -6,7 +6,7 @@ import { listCurrencies } from "@/server/services/currency-service";
 import { MOCK_CURRENCIES } from "@/lib/mock/company-management-data";
 
 export const metadata: Metadata = {
-  title: "Create Company — VYRON FINANCE",
+  title: "Create Company — PRECISIA",
 };
 
 export default async function NewCompanyPage() {

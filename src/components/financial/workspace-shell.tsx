@@ -233,7 +233,7 @@ export function FinancialWorkspaceShell({
               (background, glow, and glass edge all baked in), so it's
               rendered directly at its full outer size rather than
               wrapped in a separate background container. */}
-          <Link href="/" className="group mb-1 flex flex-col items-start gap-3 px-1 pt-1" title="VYRON FINANCE — Financial Workspace">
+          <Link href="/" className="group mb-1 flex flex-col items-start gap-3 px-1 pt-1" title="PRECISIA — Financial Workspace">
             <BrandMark
               className={cn(
                 "shrink-0 transition-transform duration-200 group-hover:scale-[1.03]",
@@ -242,8 +242,8 @@ export function FinancialWorkspaceShell({
             />
             {!collapsed && (
               <div className="flex flex-col">
-                <span className="font-display text-xl leading-[1.1] font-semibold tracking-tight text-vf-on-dark">VYRON</span>
-                <span className="font-display text-xl leading-[1.1] font-light tracking-[0.06em] text-vf-red-300">FINANCE</span>
+                <span className="font-display text-xl leading-[1.1] font-semibold tracking-tight text-vf-on-dark">PRECISIA</span>
+                <span className="font-display text-xl leading-[1.1] font-light tracking-[0.06em] text-vf-red-300">FINANCIAL INTELLIGENCE</span>
                 <span className="mt-2.5 text-[0.6rem] leading-tight font-medium tracking-[0.16em] text-vf-on-dark-faint uppercase">
                   Enterprise Financial
                   <br />

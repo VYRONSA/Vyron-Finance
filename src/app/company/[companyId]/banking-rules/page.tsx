@@ -7,7 +7,7 @@ import { listBankingRules } from "@/server/services/banking-rule-service";
 import { MOCK_BANKING_RULES } from "@/lib/mock/banking-automation-data";
 
 export const metadata: Metadata = {
-  title: "Automation Rules — VYRON FINANCE",
+  title: "Automation Rules — PRECISIA",
 };
 
 export default async function BankingRulesPage({ params }: { params: Promise<{ companyId: string }> }) {

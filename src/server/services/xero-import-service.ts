@@ -152,7 +152,7 @@ export async function reconcileChartOfAccounts(companyId: string): Promise<Chart
         account_type: mapping.accountType,
         normal_balance: mapping.normalBalance,
         category: mapping.category,
-        notes: `Corrected from VYRON's generic starter chart to this client's real Xero account (was "${current.description}"). Migrated from Xero.`,
+        notes: `Corrected from PRECISIA's generic starter chart to this client's real Xero account (was "${current.description}"). Migrated from Xero.`,
       });
       result.updated.push(`${mapping.code}: "${current.description}" -> "${mapping.name}"`);
       continue;

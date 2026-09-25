@@ -25,7 +25,7 @@ import type { GlInquiryFilters } from "@/server/general-ledger/types";
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Account Activity — VYRON FINANCE",
+  title: "Account Activity — PRECISIA",
 };
 
 function defaultDateRange(financialYears: { isCurrent: boolean; startDate: string; endDate: string }[]): { dateFrom: string; dateTo: string } {

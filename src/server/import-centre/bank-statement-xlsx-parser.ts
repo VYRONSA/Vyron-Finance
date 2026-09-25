@@ -41,7 +41,7 @@ export async function parseBankStatementXlsx(buffer: ArrayBuffer, filename: stri
       rowNumber: 1,
       exceptionType: "Invalid Template",
       description:
-        `File does not match the VYRON Standard Bank Import Template. Expected columns (in order): ${STANDARD_HEADERS.join(", ")}. Found: ${headers.join(", ")}. ` +
+        `File does not match the PRECISIA Standard Bank Import Template. Expected columns (in order): ${STANDARD_HEADERS.join(", ")}. Found: ${headers.join(", ")}. ` +
         `Download the Bank Transactions Import Template and use it as-is, or paste your data into it.`,
     });
     return { transactions, exceptions, outcome: { filename, rowsRead: 0, rowsImported: 0, rowsSkipped: 0 } };

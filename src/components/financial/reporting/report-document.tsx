@@ -44,7 +44,7 @@ export function ReportDocument({ result, letterhead, companyId, reportHome }: { 
         <p className="text-right text-xs text-vf-ink-faint">
           Generated {result.generatedAt.slice(0, 10)} {result.generatedAt.slice(11, 16)} UTC
           <br />
-          Prepared with VYRON Finance
+          Prepared with PRECISIA
         </p>
       </header>
       <ReportSummary items={result.summary} />

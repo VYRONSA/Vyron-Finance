@@ -212,7 +212,7 @@ async function processInboundEmailMessage(message: InboundEmailMessage): Promise
   // recipient-resolution.ts's own docstring.
   const stableIdentifier = resolveStableIdentifierForMessage(message);
   if (!stableIdentifier) {
-    return rejectEvent(eventRow.id, null, "No recipient on this email matched a configured VYRON bank statement email address.");
+    return rejectEvent(eventRow.id, null, "No recipient on this email matched a configured PRECISIA bank statement email address.");
   }
 
   // Phase 25I — these two calls used to be unguarded: a transient

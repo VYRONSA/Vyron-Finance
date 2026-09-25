@@ -244,8 +244,8 @@ function finding(overrides: Partial<AskableFinding> & Pick<AskableFinding, "cate
   };
 }
 
-describe("matchCopilotQuestion — VYRON Ask questions", () => {
-  it("matches every VYRON Ask example prompt from the brief to exactly the intended question, unambiguously", () => {
+describe("matchCopilotQuestion — PRECISIA Ask questions", () => {
+  it("matches every PRECISIA Ask example prompt from the brief to exactly the intended question, unambiguously", () => {
     expect(matchCopilotQuestion("What needs my attention?")).toBe("needs-attention");
     expect(matchCopilotQuestion("Why are there banking warnings?")).toBe("banking-warnings");
     expect(matchCopilotQuestion("What should I do next?")).toBe("next-actions");
@@ -258,7 +258,7 @@ describe("matchCopilotQuestion — VYRON Ask questions", () => {
     expect(matchCopilotQuestion("Are customers paying late?")).toBe("customers-paying-late");
     expect(matchCopilotQuestion("Do I have supplier payments that need attention?")).toBe("supplier-payments-attention");
     expect(matchCopilotQuestion("How is profitability looking?")).toBe("profitability-status");
-    expect(matchCopilotQuestion("What GL issues has VYRON found?")).toBe("gl-issues");
+    expect(matchCopilotQuestion("What GL issues has PRECISIA found?")).toBe("gl-issues");
     expect(matchCopilotQuestion("What VAT issues need attention?")).toBe("vat-issues");
     expect(matchCopilotQuestion("What data is missing from my financial picture?")).toBe("missing-data");
   });
@@ -272,7 +272,7 @@ describe("matchCopilotQuestion — VYRON Ask questions", () => {
   it("matches every Phase 14 Business Situation example prompt from the brief to exactly the intended question, unambiguously", () => {
     expect(matchCopilotQuestion("What situations need my attention?")).toBe("situations-attention");
     expect(matchCopilotQuestion("Are any of the warnings related?")).toBe("related-warnings");
-    expect(matchCopilotQuestion("Why is VYRON concerned about cash?")).toBe("cash-concern-why");
+    expect(matchCopilotQuestion("Why is PRECISIA concerned about cash?")).toBe("cash-concern-why");
     expect(matchCopilotQuestion("What are the main risks in my business?")).toBe("main-risks");
     expect(matchCopilotQuestion("What should I deal with first?")).toBe("deal-with-first");
   });
@@ -337,7 +337,7 @@ describe("answerBankingWarnings", () => {
       finding({ category: "VAT", severity: "Medium", title: "Unrelated VAT item" }),
     ];
     const answer = answerBankingWarnings(findings);
-    expect(answer.executiveSummary).toBe("VYRON has flagged 2 banking finding(s): 2 possible duplicates detected; 1 large unusual payment detected.");
+    expect(answer.executiveSummary).toBe("PRECISIA has flagged 2 banking finding(s): 2 possible duplicates detected; 1 large unusual payment detected.");
     expect(answer.evidence).toEqual(["2 open PossibleDuplicate exception(s).", "1 open LargeUnusualPayment exception(s)."]);
     expect(answer.evidence.every((e) => e.length > 0)).toBe(true);
   });
@@ -535,7 +535,7 @@ function situationFinding(overrides: Partial<import("@/server/financial-intellig
 
 function situation(overrides: Partial<BusinessSituation> & Pick<BusinessSituation, "id" | "title" | "contributingFindings">): BusinessSituation {
   return {
-    summary: "VYRON identified two related conditions: a test condition and another test condition.",
+    summary: "PRECISIA identified two related conditions: a test condition and another test condition.",
     severity: "High",
     category: "WorkingCapital",
     evidence: overrides.contributingFindings.map((f) => f.evidence),
@@ -719,9 +719,9 @@ describe("answerMissingData", () => {
 
 function vyronAiResponse(overrides: Partial<VyronAiStructuredResponse> = {}): VyronAiStructuredResponse {
   return {
-    answer: "VYRON found a negative cash balance.",
+    answer: "PRECISIA found a negative cash balance.",
     keyPoints: ["Cash balance is negative"],
-    evidenceReferences: [{ label: "VYRON Intelligence — Cash Flow", href: "/company/co_1/intelligence" }],
+    evidenceReferences: [{ label: "PRECISIA Intelligence — Cash Flow", href: "/company/co_1/intelligence" }],
     recommendedActions: [{ label: "Review Banking", href: "/company/co_1/bank-accounts" }],
     uncertainties: [],
     ...overrides,
@@ -730,11 +730,11 @@ function vyronAiResponse(overrides: Partial<VyronAiStructuredResponse> = {}): Vy
 
 describe("toCopilotAnswerFromVyronAi", () => {
   it("maps the real question text, answer, keyPoints, evidenceReferences, actions, and uncertainties straight through", () => {
-    const result = toCopilotAnswerFromVyronAi("Why is VYRON worried about cash?", vyronAiResponse({ uncertainties: ["Not fully certain."] }));
-    expect(result.question).toBe("Why is VYRON worried about cash?");
-    expect(result.executiveSummary).toBe("VYRON found a negative cash balance.");
+    const result = toCopilotAnswerFromVyronAi("Why is PRECISIA worried about cash?", vyronAiResponse({ uncertainties: ["Not fully certain."] }));
+    expect(result.question).toBe("Why is PRECISIA worried about cash?");
+    expect(result.executiveSummary).toBe("PRECISIA found a negative cash balance.");
     expect(result.keyPoints).toEqual(["Cash balance is negative"]);
-    expect(result.evidenceReferences).toEqual([{ label: "VYRON Intelligence — Cash Flow", href: "/company/co_1/intelligence" }]);
+    expect(result.evidenceReferences).toEqual([{ label: "PRECISIA Intelligence — Cash Flow", href: "/company/co_1/intelligence" }]);
     expect(result.actionLinks).toEqual([{ label: "Review Banking", href: "/company/co_1/bank-accounts" }]);
     expect(result.uncertainties).toEqual(["Not fully certain."]);
   });
@@ -743,21 +743,21 @@ describe("toCopilotAnswerFromVyronAi", () => {
     expect(toCopilotAnswerFromVyronAi("q", vyronAiResponse()).answeredBy).toBe("VyronAI");
   });
 
-  it("never invents a raw evidence string — evidence stays empty, only evidenceReferences carries VYRON AI's citations", () => {
+  it("never invents a raw evidence string — evidence stays empty, only evidenceReferences carries PRECISIA AI's citations", () => {
     expect(toCopilotAnswerFromVyronAi("q", vyronAiResponse()).evidence).toEqual([]);
   });
 });
 
 describe("answerVyronAiUnavailable", () => {
-  it("honestly says VYRON AI is unavailable and points back to the deterministic catalog (provider failure fallback)", () => {
+  it("honestly says PRECISIA AI is unavailable and points back to the deterministic catalog (provider failure fallback)", () => {
     const answer = answerVyronAiUnavailable("What's worrying you most?");
-    expect(answer.executiveSummary).toContain("VYRON AI is temporarily unavailable");
+    expect(answer.executiveSummary).toContain("PRECISIA AI is temporarily unavailable");
     expect(answer.executiveSummary).toContain(`${SUPPORTED_COPILOT_QUESTIONS.length}`);
     expect(answer.answeredBy).toBe("VyronAI");
     expect(answer.confidence).toBe(0);
   });
 
   it("echoes the real question text the user asked", () => {
-    expect(answerVyronAiUnavailable("Why is VYRON concerned?").question).toBe("Why is VYRON concerned?");
+    expect(answerVyronAiUnavailable("Why is PRECISIA concerned?").question).toBe("Why is PRECISIA concerned?");
   });
 });

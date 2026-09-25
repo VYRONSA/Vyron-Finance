@@ -81,7 +81,7 @@ function friendlyFirstName(email: string | null): string {
 }
 
 export const metadata: Metadata = {
-  title: "Platform Workspace — VYRON FINANCE",
+  title: "Platform Workspace — PRECISIA",
 };
 
 const STATUS_LABEL: Record<CompanyStatus, string> = {
@@ -295,7 +295,7 @@ export default async function PlatformOverviewPage() {
       ? { tone: "good", icon: IconShieldCheck, title: "No financial risks detected", description: "Every company you manage has a clean notification queue right now." }
       : { tone: "warn", icon: IconAlertTriangle, title: `${notifications.length} item${notifications.length === 1 ? "" : "s"} need attention`, description: "Unread notifications are waiting across your companies — see below." },
     companies.length === 0
-      ? { tone: "info", icon: IconTarget, title: "Your workspace is ready", description: "Create your first company to start putting VYRON FINANCE to work." }
+      ? { tone: "info", icon: IconTarget, title: "Your workspace is ready", description: "Create your first company to start putting PRECISIA to work." }
       : { tone: "good", icon: IconBuilding, title: "Your workspace is active", description: `${companies.length} compan${companies.length === 1 ? "y is" : "ies are"} under management.` },
     onboardingCompanies === 0
       ? { tone: "good", icon: IconClock, title: "No overdue onboarding tasks", description: "Every company you manage has completed its initial setup." }
@@ -642,7 +642,7 @@ export default async function PlatformOverviewPage() {
         <Card id="support">
           <CardHeader>
             <CardTitle>Support</CardTitle>
-            <CardDescription>Reach the VYRON FINANCE team directly.</CardDescription>
+            <CardDescription>Reach the PRECISIA team directly.</CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
             <Button variant="subtle" size="sm" disabled title="A direct support contact channel is not configured yet — an honest 'not available' rather than a dead button.">

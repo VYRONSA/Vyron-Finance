@@ -16,7 +16,7 @@ import { MOCK_BALANCE_SHEET, MOCK_CASH_FLOW_STATEMENT, MOCK_INCOME_STATEMENT } f
 import { MOCK_DISCLOSURE_NOTES, MOCK_REPORTING_PACKAGES, MOCK_REPORTING_READINESS, MOCK_STATEMENT_OF_CHANGES_IN_EQUITY } from "@/lib/mock/financial-statements-data";
 
 export const metadata: Metadata = {
-  title: "Financial Statements — VYRON FINANCE",
+  title: "Financial Statements — PRECISIA",
 };
 
 export default async function FinancialStatementsPage({ params }: { params: Promise<{ companyId: string }> }) {

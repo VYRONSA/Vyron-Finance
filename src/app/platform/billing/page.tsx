@@ -22,7 +22,7 @@ import { MOCK_COMPANY } from "@/lib/mock/financial-data";
 import type { Subscription } from "@/server/billing-platform/types";
 
 export const metadata: Metadata = {
-  title: "Internal Billing Console — VYRON FINANCE",
+  title: "Internal Billing Console — PRECISIA",
 };
 
 export type ConsoleSubscriptionRow = {
@@ -145,7 +145,7 @@ function ConsoleHero() {
       />
       <CardContent className="relative flex flex-wrap items-center justify-between gap-6 p-8 lg:p-10">
         <div>
-          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-vf-on-dark-soft">Internal — VYRON staff only</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-vf-on-dark-soft">Internal — Vyronsoft staff only</span>
           <h1 className="mt-2 text-3xl font-medium text-vf-on-dark sm:text-4xl">Billing Operations</h1>
           <p className="mt-1.5 max-w-[64ch] text-sm text-vf-on-dark-soft">
             Every subscription, payment, and billing event across the platform — one view, no fabricated figures.

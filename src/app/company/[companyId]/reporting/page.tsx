@@ -8,7 +8,7 @@ import { REPORTS, reportHomeMap, reportsInCategory } from "@/server/report-centr
 import { REPORT_CATEGORIES } from "@/server/report-centre/types";
 
 export const metadata: Metadata = {
-  title: "Reporting Centre — VYRON FINANCE",
+  title: "Reporting Centre — PRECISIA",
 };
 
 const TRAIL: { label: string; reportId: string }[] = [
@@ -34,7 +34,7 @@ export default async function ReportingCentrePage({ params }: { params: Promise<
         <div aria-hidden className="pointer-events-none absolute -top-1/3 -right-1/4 h-[80%] w-[60%] rounded-full opacity-40" style={{ background: "radial-gradient(circle, rgba(255,255,255,0.18), transparent 70%)" }} />
         <CardContent className="relative flex flex-wrap items-end justify-between gap-6 p-8 lg:p-10">
           <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-vf-on-dark-soft">VYRON Reporting</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-vf-on-dark-soft">PRECISIA Reporting</span>
             <h1 className="mt-2 text-3xl font-medium text-vf-on-dark sm:text-4xl">Reporting Centre</h1>
             <p className="mt-1.5 max-w-[68ch] text-sm text-vf-on-dark-soft">
               {REPORTS.length} read-only reports on one engine — every figure drawn from the live ledger, reconciled to the General Ledger on the page, drillable

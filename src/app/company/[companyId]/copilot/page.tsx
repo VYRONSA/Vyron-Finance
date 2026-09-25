@@ -17,7 +17,7 @@ import { MOCK_COPILOT_BRIEFING, MOCK_COPILOT_NARRATIVES, MOCK_COPILOT_SCENARIOS 
 import type { ExecutiveBriefing } from "@/server/copilot/executive-briefing-engine";
 
 export const metadata: Metadata = {
-  title: "AI Executive Copilot — VYRON FINANCE",
+  title: "AI Executive Copilot — PRECISIA",
 };
 
 export default async function CopilotPage({ params }: { params: Promise<{ companyId: string }> }) {

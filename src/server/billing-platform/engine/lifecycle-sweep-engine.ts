@@ -66,7 +66,7 @@ async function processCompanySubscription(companyId: string, subscription: Subsc
       await createNotification(companyId, {
         notificationType: "BillingAlert",
         title: "Your free trial is ending soon",
-        message: `Your VYRON FINANCE free trial ends on ${subscription.trialEndsAt.slice(0, 10)}. Choose a plan to avoid any interruption.`,
+        message: `Your PRECISIA free trial ends on ${subscription.trialEndsAt.slice(0, 10)}. Choose a plan to avoid any interruption.`,
         severity: "warning",
         relatedType: "Subscription",
       });

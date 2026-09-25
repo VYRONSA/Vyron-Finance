@@ -23,7 +23,7 @@ import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Sales — VYRON FINANCE",
+  title: "Sales — PRECISIA",
 };
 
 export default async function SalesPage({ params }: { params: Promise<{ companyId: string }> }) {

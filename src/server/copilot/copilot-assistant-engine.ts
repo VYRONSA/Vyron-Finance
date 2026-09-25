@@ -102,7 +102,7 @@ export const SUPPORTED_COPILOT_QUESTIONS: SupportedCopilotQuestion[] = [
   { id: "customers-paying-late", label: "Are customers paying late?", keywords: ["paying", "late"] },
   { id: "supplier-payments-attention", label: "Do I have supplier payments that need attention?", keywords: ["payments", "attention"] },
   { id: "profitability-status", label: "How is profitability looking?", keywords: ["profitability", "looking"] },
-  { id: "gl-issues", label: "What GL issues has VYRON found?", keywords: ["gl", "issues"] },
+  { id: "gl-issues", label: "What GL issues has PRECISIA found?", keywords: ["gl", "issues"] },
   { id: "vat-issues", label: "What VAT issues need attention?", keywords: ["vat", "issues"] },
   { id: "missing-data", label: "What data is missing from my financial picture?", keywords: ["missing", "data"] },
   // Phase 14 — Business Situations (business-situation-engine.ts).
@@ -117,7 +117,7 @@ export const SUPPORTED_COPILOT_QUESTIONS: SupportedCopilotQuestion[] = [
   // "biggest"/"financial") with nothing else scoring above 0.
   { id: "situations-attention", label: "What situations need my attention?", keywords: ["situations", "need"] },
   { id: "related-warnings", label: "Are any of the warnings related?", keywords: ["related", "warnings"] },
-  { id: "cash-concern-why", label: "Why is VYRON concerned about cash?", keywords: ["concerned", "cash"] },
+  { id: "cash-concern-why", label: "Why is PRECISIA concerned about cash?", keywords: ["concerned", "cash"] },
   { id: "main-risks", label: "What are the main risks in my business?", keywords: ["main", "risks"] },
   { id: "deal-with-first", label: "What should I deal with first?", keywords: ["deal", "first"] },
 ];
@@ -573,14 +573,14 @@ export function answerNeedsAttention(findings: AskableFinding[]): CopilotAnswer 
     return {
       questionId: "needs-attention",
       question: "What needs my attention?",
-      executiveSummary: "Nothing currently needs your attention — VYRON Intelligence has no active findings.",
+      executiveSummary: "Nothing currently needs your attention — PRECISIA Intelligence has no active findings.",
       confidence: 0.9,
       keyPoints: [],
       evidence: [],
-      calculationsUsed: "Reused financial-intelligence-engine.ts::buildFinancialIntelligenceSummary — the same findings shown on the VYRON Intelligence Centre, not a new detector.",
+      calculationsUsed: "Reused financial-intelligence-engine.ts::buildFinancialIntelligenceSummary — the same findings shown on the PRECISIA Intelligence Centre, not a new detector.",
       transactionsConsulted: [],
       journalsConsulted: [],
-      documentsConsulted: ["VYRON Intelligence Centre"],
+      documentsConsulted: ["PRECISIA Intelligence Centre"],
       suggestedActions: [],
       actionLinks: [],
       alternativeExplanations: [],
@@ -598,7 +598,7 @@ export function answerNeedsAttention(findings: AskableFinding[]): CopilotAnswer 
     calculationsUsed: "Reused financial-intelligence-engine.ts::buildFinancialIntelligenceSummary, sorted by its own Critical -> High -> Medium -> Low severity order — no new detector.",
     transactionsConsulted: [],
     journalsConsulted: [],
-    documentsConsulted: ["VYRON Intelligence Centre"],
+    documentsConsulted: ["PRECISIA Intelligence Centre"],
     suggestedActions: findingSuggestedActions(top),
     actionLinks: findingActionLinks(top),
     alternativeExplanations: [],
@@ -627,7 +627,7 @@ export function answerBankingWarnings(findings: AskableFinding[]): CopilotAnswer
   return {
     questionId: "banking-warnings",
     question: "Why are there banking warnings?",
-    executiveSummary: `VYRON has flagged ${banking.length} banking finding(s): ${banking.map((f) => f.title).join("; ")}.`,
+    executiveSummary: `PRECISIA has flagged ${banking.length} banking finding(s): ${banking.map((f) => f.title).join("; ")}.`,
     confidence: 0.85,
     keyPoints: banking.map((f) => `[${f.severity}] ${f.title}`),
     evidence: banking.map((f) => f.evidence),
@@ -654,7 +654,7 @@ export function answerNextActions(findings: AskableFinding[]): CopilotAnswer {
       calculationsUsed: "Reused financial-intelligence-engine.ts::buildFinancialIntelligenceSummary.",
       transactionsConsulted: [],
       journalsConsulted: [],
-      documentsConsulted: ["VYRON Intelligence Centre"],
+      documentsConsulted: ["PRECISIA Intelligence Centre"],
       suggestedActions: [],
       actionLinks: [],
       alternativeExplanations: [],
@@ -671,7 +671,7 @@ export function answerNextActions(findings: AskableFinding[]): CopilotAnswer {
     calculationsUsed: "Ranked active findings by financial-intelligence-engine.ts's own Critical -> High -> Medium -> Low severity order and listed each one's real recommended action.",
     transactionsConsulted: [],
     journalsConsulted: [],
-    documentsConsulted: ["VYRON Intelligence Centre"],
+    documentsConsulted: ["PRECISIA Intelligence Centre"],
     suggestedActions: findingSuggestedActions(top),
     actionLinks: findingActionLinks(top),
     alternativeExplanations: [],
@@ -684,7 +684,7 @@ export function answerDataQualityWarnings(findings: AskableFinding[]): CopilotAn
     return {
       questionId: "data-quality-warnings",
       question: "Why is my company showing Data Quality warnings?",
-      executiveSummary: "There are no Data Quality warnings right now — VYRON's picture of your business is complete.",
+      executiveSummary: "There are no Data Quality warnings right now — PRECISIA's picture of your business is complete.",
       confidence: 0.9,
       keyPoints: [],
       evidence: [],
@@ -700,7 +700,7 @@ export function answerDataQualityWarnings(findings: AskableFinding[]): CopilotAn
   return {
     questionId: "data-quality-warnings",
     question: "Why is my company showing Data Quality warnings?",
-    executiveSummary: `VYRON has ${dataQuality.length} Data Quality note(s). These don't mean something is financially wrong — they mean VYRON's picture of your business is still incomplete: ${dataQuality.map((f) => f.title).join("; ")}.`,
+    executiveSummary: `PRECISIA has ${dataQuality.length} Data Quality note(s). These don't mean something is financially wrong — they mean PRECISIA's picture of your business is still incomplete: ${dataQuality.map((f) => f.title).join("; ")}.`,
     confidence: 0.9,
     keyPoints: dataQuality.map((f) => f.title),
     evidence: dataQuality.map((f) => f.evidence),
@@ -755,7 +755,7 @@ function answerCategoryFindings(
   return {
     questionId,
     question,
-    executiveSummary: `VYRON has ${matches.length} ${category} finding(s): ${matches.map((f) => f.title).join("; ")}.`,
+    executiveSummary: `PRECISIA has ${matches.length} ${category} finding(s): ${matches.map((f) => f.title).join("; ")}.`,
     confidence: 0.85,
     keyPoints: matches.map((f) => `[${f.severity}] ${f.title}`),
     evidence: matches.map((f) => f.evidence),
@@ -800,8 +800,8 @@ export function answerGlIssues(findings: AskableFinding[]): CopilotAnswer {
     findings,
     "GeneralLedger",
     "gl-issues",
-    "What GL issues has VYRON found?",
-    "VYRON hasn't found any General Ledger issues right now (no possible duplicate journals, and nothing stuck as Draft or unposted beyond the usual threshold).",
+    "What GL issues has PRECISIA found?",
+    "PRECISIA hasn't found any General Ledger issues right now (no possible duplicate journals, and nothing stuck as Draft or unposted beyond the usual threshold).",
     ["Financial Intelligence"],
   );
 }
@@ -839,7 +839,7 @@ export function answerCashStatus(findings: AskableFinding[], totalCash: number |
     question: "What is happening with my cash?",
     executiveSummary:
       cashFindings.length > 0
-        ? `Total cash across your active bank accounts is ${money(totalCash)}. VYRON has flagged: ${cashFindings.map((f) => f.title).join("; ")}.`
+        ? `Total cash across your active bank accounts is ${money(totalCash)}. PRECISIA has flagged: ${cashFindings.map((f) => f.title).join("; ")}.`
         : `Total cash across your active bank accounts is ${money(totalCash)}. No cash-flow findings are currently flagged.`,
     confidence: 0.85,
     keyPoints: cashFindings.map((f) => `[${f.severity}] ${f.title}`),
@@ -851,7 +851,7 @@ export function answerCashStatus(findings: AskableFinding[], totalCash: number |
     suggestedActions: findingSuggestedActions(cashFindings),
     actionLinks: findingActionLinks(cashFindings),
     alternativeExplanations: [
-      "This is the current total balance, not a trend — VYRON only reports a cash-flow trend where a real forecast (the Cashflow Forecast) already provides one; see 'Where am I likely to experience cash-flow pressure?'.",
+      "This is the current total balance, not a trend — PRECISIA only reports a cash-flow trend where a real forecast (the Cashflow Forecast) already provides one; see 'Where am I likely to experience cash-flow pressure?'.",
     ],
   };
 }
@@ -880,7 +880,7 @@ export function answerProfitabilityStatus(findings: AskableFinding[], netProfit:
     question: "How is profitability looking?",
     executiveSummary:
       profitFindings.length > 0
-        ? `Net Profit this period is ${money(netProfit)}. VYRON has flagged: ${profitFindings.map((f) => f.title).join("; ")}.`
+        ? `Net Profit this period is ${money(netProfit)}. PRECISIA has flagged: ${profitFindings.map((f) => f.title).join("; ")}.`
         : `Net Profit this period is ${money(netProfit)}. No profitability findings are currently flagged.`,
     confidence: 0.85,
     keyPoints: profitFindings.map((f) => `[${f.severity}] ${f.title}`),
@@ -892,7 +892,7 @@ export function answerProfitabilityStatus(findings: AskableFinding[], netProfit:
     suggestedActions: findingSuggestedActions(profitFindings),
     actionLinks: findingActionLinks(profitFindings),
     alternativeExplanations: [
-      "This is the current period's figure, not a trend — VYRON only reports a period-over-period profitability trend where the Margin Reduction signal already provides one.",
+      "This is the current period's figure, not a trend — PRECISIA only reports a period-over-period profitability trend where the Margin Reduction signal already provides one.",
     ],
   };
 }
@@ -931,14 +931,14 @@ export function answerSituationsAttention(situations: BusinessSituation[]): Copi
     return {
       questionId: "situations-attention",
       question: "What situations need my attention?",
-      executiveSummary: "VYRON hasn't identified any related conditions among your current findings — see 'What needs my attention?' for individual findings.",
+      executiveSummary: "PRECISIA hasn't identified any related conditions among your current findings — see 'What needs my attention?' for individual findings.",
       confidence: 0.85,
       keyPoints: [],
       evidence: [],
-      calculationsUsed: "Reused business-situation-engine.ts::buildBusinessSituations over the same findings the VYRON Intelligence Centre shows — no new detector.",
+      calculationsUsed: "Reused business-situation-engine.ts::buildBusinessSituations over the same findings the PRECISIA Intelligence Centre shows — no new detector.",
       transactionsConsulted: [],
       journalsConsulted: [],
-      documentsConsulted: ["VYRON Intelligence Centre"],
+      documentsConsulted: ["PRECISIA Intelligence Centre"],
       suggestedActions: [],
       actionLinks: [],
       alternativeExplanations: [],
@@ -948,14 +948,14 @@ export function answerSituationsAttention(situations: BusinessSituation[]): Copi
   return {
     questionId: "situations-attention",
     question: "What situations need my attention?",
-    executiveSummary: `VYRON identified ${situations.length} situation(s) — related conditions across your findings, not a claim that one caused another. The most significant is "${situations[0].title}" (${situations[0].severity}).`,
+    executiveSummary: `PRECISIA identified ${situations.length} situation(s) — related conditions across your findings, not a claim that one caused another. The most significant is "${situations[0].title}" (${situations[0].severity}).`,
     confidence: 0.85,
     keyPoints: top.map((s) => `[${s.severity}] ${s.title} — ${s.contributingFindings.length} related finding(s)`),
     evidence: top.flatMap((s) => s.evidence),
     calculationsUsed: "Reused business-situation-engine.ts::buildBusinessSituations, already ordered by severity, then by how many real findings support it, then by whether a real action exists — no invented risk score.",
     transactionsConsulted: [],
     journalsConsulted: [],
-    documentsConsulted: ["VYRON Intelligence Centre"],
+    documentsConsulted: ["PRECISIA Intelligence Centre"],
     suggestedActions: [...new Set(top.flatMap((s) => s.recommendedActions.map((a) => a.label)))],
     actionLinks: situationActionLinks(top),
     alternativeExplanations: ["A situation groups findings that occur together — it is not a claim that one caused another."],
@@ -967,14 +967,14 @@ export function answerRelatedWarnings(situations: BusinessSituation[]): CopilotA
     return {
       questionId: "related-warnings",
       question: "Are any of the warnings related?",
-      executiveSummary: "No — VYRON hasn't identified any related conditions among your current findings. Each active finding currently stands on its own.",
+      executiveSummary: "No — PRECISIA hasn't identified any related conditions among your current findings. Each active finding currently stands on its own.",
       confidence: 0.85,
       keyPoints: [],
       evidence: [],
       calculationsUsed: "Reused business-situation-engine.ts::buildBusinessSituations — checks a fixed set of known real relationships between findings, not a fabricated correlation.",
       transactionsConsulted: [],
       journalsConsulted: [],
-      documentsConsulted: ["VYRON Intelligence Centre"],
+      documentsConsulted: ["PRECISIA Intelligence Centre"],
       suggestedActions: [],
       actionLinks: [],
       alternativeExplanations: [],
@@ -983,14 +983,14 @@ export function answerRelatedWarnings(situations: BusinessSituation[]): CopilotA
   return {
     questionId: "related-warnings",
     question: "Are any of the warnings related?",
-    executiveSummary: `Yes — VYRON identified ${situations.length} related condition(s): ${situations.map((s) => s.title).join("; ")}. These are findings observed occurring together, not one causing another.`,
+    executiveSummary: `Yes — PRECISIA identified ${situations.length} related condition(s): ${situations.map((s) => s.title).join("; ")}. These are findings observed occurring together, not one causing another.`,
     confidence: 0.85,
     keyPoints: situations.map((s) => `${s.title}: ${s.contributingFindings.map((f) => f.title).join(" + ")}`),
     evidence: situations.flatMap((s) => s.evidence),
     calculationsUsed: "Reused business-situation-engine.ts::buildBusinessSituations, which only fires when a fixed, real set of finding ids co-occur — never a fabricated correlation.",
     transactionsConsulted: [],
     journalsConsulted: [],
-    documentsConsulted: ["VYRON Intelligence Centre"],
+    documentsConsulted: ["PRECISIA Intelligence Centre"],
     suggestedActions: [...new Set(situations.flatMap((s) => s.recommendedActions.map((a) => a.label)))],
     actionLinks: situationActionLinks(situations),
     alternativeExplanations: ["'Related' means these findings were observed together, not that one caused another."],
@@ -1004,11 +1004,11 @@ export function answerCashConcernWhy(findings: AskableFinding[], situations: Bus
   if (cashFindings.length === 0) {
     return {
       questionId: "cash-concern-why",
-      question: "Why is VYRON concerned about cash?",
+      question: "Why is PRECISIA concerned about cash?",
       executiveSummary:
         totalCash !== null
-          ? `VYRON isn't currently concerned about cash — total cash across your active bank accounts is ${money(totalCash)} and no cash-flow findings are flagged.`
-          : "VYRON isn't currently concerned about cash — no cash-flow findings are flagged (bank account data isn't available to state a total).",
+          ? `PRECISIA isn't currently concerned about cash — total cash across your active bank accounts is ${money(totalCash)} and no cash-flow findings are flagged.`
+          : "PRECISIA isn't currently concerned about cash — no cash-flow findings are flagged (bank account data isn't available to state a total).",
       confidence: 0.85,
       keyPoints: [],
       evidence: [],
@@ -1023,8 +1023,8 @@ export function answerCashConcernWhy(findings: AskableFinding[], situations: Bus
   }
   return {
     questionId: "cash-concern-why",
-    question: "Why is VYRON concerned about cash?",
-    executiveSummary: `VYRON has flagged: ${cashFindings.map((f) => f.title).join("; ")}.${totalCash !== null ? ` Total cash across your active bank accounts is ${money(totalCash)}.` : ""}${cashSituations.length > 0 ? ` This is also part of a broader situation VYRON identified: ${cashSituations.map((s) => s.title).join("; ")}.` : ""}`,
+    question: "Why is PRECISIA concerned about cash?",
+    executiveSummary: `PRECISIA has flagged: ${cashFindings.map((f) => f.title).join("; ")}.${totalCash !== null ? ` Total cash across your active bank accounts is ${money(totalCash)}.` : ""}${cashSituations.length > 0 ? ` This is also part of a broader situation PRECISIA identified: ${cashSituations.map((s) => s.title).join("; ")}.` : ""}`,
     confidence: 0.85,
     keyPoints: cashFindings.map((f) => `[${f.severity}] ${f.title}`),
     evidence: [...(totalCash !== null ? [`Total cash: ${money(totalCash)}.`] : []), ...cashFindings.map((f) => f.evidence)],
@@ -1043,14 +1043,14 @@ export function answerMainRisks(findings: AskableFinding[], situations: Business
     return {
       questionId: "main-risks",
       question: "What are the main risks in my business?",
-      executiveSummary: "VYRON currently has no active findings — no risks to report.",
+      executiveSummary: "PRECISIA currently has no active findings — no risks to report.",
       confidence: 0.85,
       keyPoints: [],
       evidence: [],
-      calculationsUsed: "Reused financial-intelligence-engine.ts::buildFinancialIntelligenceSummary — the same findings shown on the VYRON Intelligence Centre.",
+      calculationsUsed: "Reused financial-intelligence-engine.ts::buildFinancialIntelligenceSummary — the same findings shown on the PRECISIA Intelligence Centre.",
       transactionsConsulted: [],
       journalsConsulted: [],
-      documentsConsulted: ["VYRON Intelligence Centre"],
+      documentsConsulted: ["PRECISIA Intelligence Centre"],
       suggestedActions: [],
       actionLinks: [],
       alternativeExplanations: [],
@@ -1061,14 +1061,14 @@ export function answerMainRisks(findings: AskableFinding[], situations: Business
   return {
     questionId: "main-risks",
     question: "What are the main risks in my business?",
-    executiveSummary: `The main risk right now is [${sorted[0].severity}] ${sorted[0].title}.${situations.length > 0 ? ` VYRON also identified ${situations.length} related condition(s) across these findings — see "Are any of the warnings related?" for details.` : ""}`,
+    executiveSummary: `The main risk right now is [${sorted[0].severity}] ${sorted[0].title}.${situations.length > 0 ? ` PRECISIA also identified ${situations.length} related condition(s) across these findings — see "Are any of the warnings related?" for details.` : ""}`,
     confidence: 0.85,
     keyPoints: top.map((f) => `[${f.severity}] ${f.title}`),
     evidence: top.map((f) => f.evidence),
     calculationsUsed: "Reused financial-intelligence-engine.ts::buildFinancialIntelligenceSummary, sorted by its own Critical -> High -> Medium -> Low severity order — no new detector or invented risk score.",
     transactionsConsulted: [],
     journalsConsulted: [],
-    documentsConsulted: ["VYRON Intelligence Centre"],
+    documentsConsulted: ["PRECISIA Intelligence Centre"],
     suggestedActions: findingSuggestedActions(top),
     actionLinks: findingActionLinks(top),
     alternativeExplanations: [],
@@ -1088,14 +1088,14 @@ export function answerDealWithFirst(findings: AskableFinding[], situations: Busi
     return {
       questionId: "deal-with-first",
       question: "What should I deal with first?",
-      executiveSummary: `Deal with "${top.title}" first — VYRON identified ${top.contributingFindings.length} related condition(s): ${top.contributingFindings.map((f) => f.title).join("; ")}.`,
+      executiveSummary: `Deal with "${top.title}" first — PRECISIA identified ${top.contributingFindings.length} related condition(s): ${top.contributingFindings.map((f) => f.title).join("; ")}.`,
       confidence: 0.85,
       keyPoints: top.contributingFindings.map((f) => `[${f.severity}] ${f.title}`),
       evidence: top.evidence,
       calculationsUsed: "Reused business-situation-engine.ts::buildBusinessSituations, which orders situations by severity, then by how many real findings support them, then by whether a real recommended action exists.",
       transactionsConsulted: [],
       journalsConsulted: [],
-      documentsConsulted: ["VYRON Intelligence Centre"],
+      documentsConsulted: ["PRECISIA Intelligence Centre"],
       suggestedActions: top.recommendedActions.map((a) => a.label),
       actionLinks: top.recommendedActions,
       alternativeExplanations: ["This is the highest-priority related situation, not necessarily a single largest number — a well-evidenced situation can outrank a standalone finding of the same severity."],
@@ -1114,7 +1114,7 @@ export function answerDealWithFirst(findings: AskableFinding[], situations: Busi
       calculationsUsed: "Reused financial-intelligence-engine.ts::buildFinancialIntelligenceSummary.",
       transactionsConsulted: [],
       journalsConsulted: [],
-      documentsConsulted: ["VYRON Intelligence Centre"],
+      documentsConsulted: ["PRECISIA Intelligence Centre"],
       suggestedActions: [],
       actionLinks: [],
       alternativeExplanations: [],
@@ -1131,7 +1131,7 @@ export function answerDealWithFirst(findings: AskableFinding[], situations: Busi
     calculationsUsed: "Reused financial-intelligence-engine.ts's own Critical -> High -> Medium -> Low severity order — the single most severe finding with a real recommended action.",
     transactionsConsulted: [],
     journalsConsulted: [],
-    documentsConsulted: ["VYRON Intelligence Centre"],
+    documentsConsulted: ["PRECISIA Intelligence Centre"],
     suggestedActions: top.recommendedAction ? [top.recommendedAction] : [],
     actionLinks: top.recommendedAction && top.actionHref ? [{ label: top.recommendedAction, href: top.actionHref }] : [],
     alternativeExplanations: [],
@@ -1166,10 +1166,10 @@ export function toCopilotAnswerFromVyronAi(freeText: string, structured: VyronAi
     confidence: 0.75,
     keyPoints: structured.keyPoints,
     evidence: [],
-    calculationsUsed: "Explained by VYRON AI from the Evidence Package built by financial-intelligence-engine.ts and business-situation-engine.ts — VYRON AI computes nothing itself.",
+    calculationsUsed: "Explained by PRECISIA AI from the Evidence Package built by financial-intelligence-engine.ts and business-situation-engine.ts — PRECISIA AI computes nothing itself.",
     transactionsConsulted: [],
     journalsConsulted: [],
-    documentsConsulted: ["VYRON Intelligence Centre"],
+    documentsConsulted: ["PRECISIA Intelligence Centre"],
     suggestedActions: structured.recommendedActions.map((a) => a.label),
     actionLinks: structured.recommendedActions,
     alternativeExplanations: [],
@@ -1184,7 +1184,7 @@ export function answerVyronAiUnavailable(freeText: string): CopilotAnswer {
     ...unavailableAnswer(
       "vyron-ai-unavailable",
       freeText,
-      `VYRON AI is temporarily unavailable, so this question couldn't be answered right now. VYRON's deterministic questions (see the ${SUPPORTED_COPILOT_QUESTIONS.length} suggested prompts above) still work normally.`,
+      `PRECISIA AI is temporarily unavailable, so this question couldn't be answered right now. PRECISIA's deterministic questions (see the ${SUPPORTED_COPILOT_QUESTIONS.length} suggested prompts above) still work normally.`,
     ),
     answeredBy: "VyronAI",
   };

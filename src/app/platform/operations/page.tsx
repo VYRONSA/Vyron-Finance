@@ -11,7 +11,7 @@ import { MOCK_OPERATIONS_SNAPSHOT } from "@/lib/mock/operations-data";
 import { IconImport } from "@/components/ui/icons";
 
 export const metadata: Metadata = {
-  title: "Operations Centre — VYRON FINANCE",
+  title: "Operations Centre — PRECISIA",
 };
 
 export default async function OperationsCentrePage() {
@@ -40,10 +40,10 @@ export default async function OperationsCentrePage() {
         />
         <CardContent className="relative flex flex-wrap items-center justify-between gap-6 p-8 lg:p-10">
           <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-vf-on-dark-soft">Internal — VYRON staff only</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-vf-on-dark-soft">Internal — Vyronsoft staff only</span>
             <h1 className="mt-2 text-3xl font-medium text-vf-on-dark sm:text-4xl">Operations Centre</h1>
             <p className="mt-1.5 max-w-[68ch] text-sm text-vf-on-dark-soft">
-              The one operational command centre for running VYRON FINANCE in production — every
+              The one operational command centre for running PRECISIA in production — every
               engine, queue, integration, and security signal reports in here. Live data is marked
               Live, derived signals Calculated, and anything genuinely unmeasured is honestly
               Not Available — never invented.

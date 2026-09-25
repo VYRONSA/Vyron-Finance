@@ -32,7 +32,7 @@ import {
 } from "@/lib/mock/matching-data";
 
 export const metadata: Metadata = {
-  title: "Matching — VYRON FINANCE",
+  title: "Matching — PRECISIA",
 };
 
 export default async function MatchingPage({ params }: { params: Promise<{ companyId: string }> }) {

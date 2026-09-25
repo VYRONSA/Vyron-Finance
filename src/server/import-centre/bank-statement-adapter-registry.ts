@@ -75,13 +75,13 @@ function extensionOf(filename: string): string {
 export const BANK_STATEMENT_ADAPTERS: BankStatementAdapter[] = [
   {
     id: "standard-csv",
-    label: "VYRON Standard Bank Import Template (CSV)",
+    label: "PRECISIA Standard Bank Import Template (CSV)",
     matchesFile: (filename) => extensionOf(filename) === "csv",
     parse: (buffer, filename, importBatch) => parseBankStatementCsv(decodeCsvBuffer(buffer), filename, importBatch),
   },
   {
     id: "standard-xlsx",
-    label: "VYRON Standard Bank Import Template (Excel)",
+    label: "PRECISIA Standard Bank Import Template (Excel)",
     matchesFile: (filename) => extensionOf(filename) === "xlsx",
     parse: (buffer, filename, importBatch) => parseBankStatementXlsx(buffer, filename, importBatch),
   },

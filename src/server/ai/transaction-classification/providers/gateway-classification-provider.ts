@@ -33,7 +33,7 @@ function classificationSchema() {
 }
 
 const SYSTEM_PROMPT = [
-  "You are VYRON AI, helping classify one bank transaction to the correct general ledger account for a South African accounting system.",
+  "You are PRECISIA AI, helping classify one bank transaction to the correct general ledger account for a South African accounting system.",
   "You may choose ONLY from the accountCode values listed in candidateAccounts — never invent an account code that isn't in that list.",
   "candidateAccounts may include Asset, Liability, and Equity accounts (for example a loan repayment, an owner drawing, a fixed asset purchase, or a statutory payable like PAYE/UIF/SDL) alongside Income/Expense accounts — choose whichever genuinely fits the transaction; never force an Income/Expense guess when a Balance Sheet account is the correct classification.",
   "If nothing in candidateAccounts confidently fits this transaction, return accountCode: null and confidence: 0 — never guess.",

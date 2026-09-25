@@ -152,7 +152,7 @@ export function TransactionAttentionQueue({
           <EmptyState
             icon={<IconShieldCheck className="h-5 w-5" />}
             title="You're all caught up."
-            description="VYRON has no transactions currently requiring review."
+            description="PRECISIA has no transactions currently requiring review."
             action={
               <div className="flex flex-wrap items-center gap-3">
                 <Button href="#all-transactions" variant="subtle" size="sm">

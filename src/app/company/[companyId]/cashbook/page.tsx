@@ -17,7 +17,7 @@ import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Cashbook — VYRON FINANCE",
+  title: "Cashbook — PRECISIA",
 };
 
 function money(value: number): string {

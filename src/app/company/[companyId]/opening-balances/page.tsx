@@ -9,7 +9,7 @@ import { listSuppliers } from "@/server/services/supplier-management-service";
 import { listChartOfAccounts } from "@/server/services/chart-of-accounts-service";
 
 export const metadata: Metadata = {
-  title: "Opening Balances — VYRON FINANCE",
+  title: "Opening Balances — PRECISIA",
 };
 
 export default async function OpeningBalancesPage({ params }: { params: Promise<{ companyId: string }> }) {

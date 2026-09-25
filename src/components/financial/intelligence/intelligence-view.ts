@@ -77,5 +77,5 @@ export function distinctMetaGroups(findings: Finding[]): FindingMetaGroup[] {
 export const FINDING_SOURCE_LABEL: Record<FindingSource, string> = {
   Deterministic: "Deterministic — computed directly from your data",
   Derived: "Derived — computed from an existing summary",
-  ExistingIntelligenceSignal: "Existing Intelligence Signal — already detected elsewhere in VYRON",
+  ExistingIntelligenceSignal: "Existing Intelligence Signal — already detected elsewhere in PRECISIA",
 };

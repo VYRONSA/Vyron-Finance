@@ -8,7 +8,7 @@ import { listBankingExceptions } from "@/server/services/banking-exception-servi
 import { MOCK_BANKING_EXCEPTIONS } from "@/lib/mock/banking-automation-data";
 
 export const metadata: Metadata = {
-  title: "Banking Exceptions — VYRON FINANCE",
+  title: "Banking Exceptions — PRECISIA",
 };
 
 export default async function BankingExceptionsPage({ params }: { params: Promise<{ companyId: string }> }) {

@@ -30,7 +30,7 @@ import {
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Purchasing — VYRON FINANCE",
+  title: "Purchasing — PRECISIA",
 };
 
 export default async function PurchasingPage({ params }: { params: Promise<{ companyId: string }> }) {

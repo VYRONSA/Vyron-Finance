@@ -322,7 +322,7 @@ function AssignmentsPanel({ companyId, roles, assignments, previewMode }: { comp
       <div className="flex flex-col gap-2 rounded-vf-md border border-vf-paper-border p-3">
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-[220px] flex-1">
-            <label htmlFor="assign-email" className="mb-1 block text-xs font-medium text-vf-ink-faint">Or grant an existing VYRON user access to this company, by email</label>
+            <label htmlFor="assign-email" className="mb-1 block text-xs font-medium text-vf-ink-faint">Or grant an existing PRECISIA user access to this company, by email</label>
             <Input id="assign-email" type="email" value={assignEmail} onChange={(e) => setAssignEmail(e.target.value)} placeholder="name@company.com" />
           </div>
           <div className="w-56">

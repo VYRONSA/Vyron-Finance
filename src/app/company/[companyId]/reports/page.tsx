@@ -38,7 +38,7 @@ import {
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Reports — VYRON FINANCE",
+  title: "Reports — PRECISIA",
 };
 
 function money(value: number): string {

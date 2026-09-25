@@ -1,83 +1,89 @@
 import type { Metadata } from "next";
+import type { ComponentType, SVGProps } from "react";
 import { Suspense } from "react";
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
 import { LoginForm } from "@/components/auth/login-form";
-import { BrandMark } from "@/components/ui/brand-mark";
+import { PrecisiaWordmark, VyronsoftAttribution } from "@/components/ui/precisia-wordmark";
+import { PIconBrain, PIconShield, PIconTrendUp } from "@/components/ui/precisia-icons";
+import { IconFileText } from "@/components/ui/icons";
 
 export const metadata: Metadata = {
-  title: "Log In — VYRON FINANCE",
+  title: "Sign In — PRECISIA",
 };
 
-const BENEFITS = [
-  "Bank statement intelligence across every company you manage",
-  "Merchant Rules that code themselves — taught once, applied forever",
-  "An audit trail on every coding decision, automatic or manual",
-  "Executive reporting built from live, coded transactions",
+// Copy verbatim from the approved "Precisia Login Page" reference.
+const FEATURES: { icon: ComponentType<SVGProps<SVGSVGElement>>; title: string; body: string }[] = [
+  { icon: PIconTrendUp, title: "Complete Financial Control", body: "From capture to reporting." },
+  { icon: PIconShield, title: "Automated Processing", body: "Less admin. More time." },
+  { icon: IconFileText, title: "Compliance Made Simple", body: "VAT, PAYE and more." },
+  { icon: PIconBrain, title: "AI-Powered Insights", body: "Turn data into action." },
 ];
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-vf-canvas">
-      <div className="mx-auto grid min-h-screen max-w-[1200px] grid-cols-1 lg:grid-cols-2">
-        {/* Dark hero — Part 17: dark hero, red gradients, executive branding */}
-        <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-vf-red-900 via-vf-canvas to-vf-canvas p-12 text-vf-on-dark lg:flex">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -top-[20%] -right-[10%] h-[70%] w-[60%] rounded-full"
-            style={{
-              background: "radial-gradient(circle, rgba(47,151,224,0.35), transparent 70%)",
-            }}
-          />
-          <Link href="/" className="relative flex items-center gap-2.5 font-display text-xl">
-            <BrandMark className="h-9 w-9" />
-            VYRON FINANCE
-          </Link>
+    <div className="relative min-h-screen overflow-hidden bg-[#05080d] font-sans text-white">
+      {/* EXACT SOURCE IMAGE UNAVAILABLE — the reference's background
+          photograph is not available as a standalone image, so none is
+          shown; only the page's own dark treatment remains. */}
+      <div aria-hidden className="absolute inset-0 bg-gradient-to-r from-[#03070d]/70 via-[#03070d]/30 to-transparent" />
 
-          <div className="relative">
-            <h1 className="max-w-md text-3xl font-medium text-vf-on-dark">
-              Your books, understood — the moment you sign in.
+      <div className="relative grid min-h-screen w-full grid-cols-1 items-center gap-12 px-5 py-12 sm:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:gap-10 lg:px-12 lg:py-16 xl:grid-cols-[508px_524px] xl:gap-[62px] xl:py-[72px] xl:pl-[9.2vw]">
+        {/* Brand column */}
+        <div className="flex flex-col justify-between self-stretch lg:py-4">
+          <div>
+            <Link href="/" aria-label="PRECISIA — home" className="inline-block">
+              <PrecisiaWordmark size="xl" />
+            </Link>
+            <div aria-hidden className="mt-8 h-px w-18 bg-[#2f9bff]" />
+            <p className="mt-8 text-[0.84rem] font-semibold tracking-[0.15em] whitespace-nowrap text-[#1d9bf0] uppercase max-sm:whitespace-normal">
+              Real Data. Clearer Insights. Stronger Businesses.
+            </p>
+            <h1 className="pc-brand-heading mt-8 text-[2.3rem] leading-[1.06] font-bold text-white sm:text-[3.1rem] xl:text-[3.55rem]">
+              Your books,
+              <br />
+              understood —
+              <br />
+              <span className="text-[#12a1f8]">
+                the moment you
+                <br />
+                sign in.
+              </span>
             </h1>
-            <ul className="mt-8 flex flex-col gap-4">
-              {BENEFITS.map((benefit) => (
-                <li key={benefit} className="flex items-start gap-3 text-sm text-vf-on-dark-soft">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-4 w-4 shrink-0 text-vf-red-400">
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
-                  {benefit}
-                </li>
-              ))}
+            <ul className="mt-8 hidden flex-col gap-4 lg:flex">
+              {FEATURES.map((feature) => {
+                const Icon = feature.icon;
+                return (
+                  <li key={feature.title} className="flex items-center gap-5">
+                    <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[12px] border border-[#0096f1]/70 bg-[#06111e]/70 text-[#1d9bf0] shadow-[inset_0_0_16px_rgba(0,150,241,0.18)]">
+                      <Icon className="h-9 w-9" strokeWidth={1.9} />
+                    </span>
+                    <span>
+                      <span className="block text-[1.12rem] font-semibold text-white">{feature.title}</span>
+                      <span className="mt-1 block text-[0.98rem] text-[#c9d4e3]">{feature.body}</span>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
-
-          <p className="relative text-xs text-vf-on-dark-soft">
-            Part of the VYRON ecosystem.
-          </p>
+          <div className="mt-10 hidden lg:block">
+            <div aria-hidden className="h-px w-18 bg-[#2f9bff]" />
+            <VyronsoftAttribution className="mt-5 text-[1.02rem] text-[#e6ebf2]" />
+          </div>
         </div>
 
-        {/* White login card, floating on the dark canvas — Part 8's "dark
-            background, white form container" applied to auth. */}
-        <div className="flex flex-col items-center justify-center px-6 py-16 sm:px-12">
-          <Card className="w-full max-w-sm">
-            <CardContent className="p-8 sm:p-10">
-              <Link href="/" className="mb-8 flex items-center gap-2.5 font-display text-lg text-vf-ink lg:hidden">
-                <BrandMark className="h-8 w-8" />
-                VYRON FINANCE
-              </Link>
-
-              <h2 className="text-2xl font-medium text-vf-ink">Welcome back</h2>
-              <p className="mt-1.5 text-sm text-vf-ink-soft">
-                Sign in to your Platform Workspace.
-              </p>
-
-              <div className="mt-8">
-                <Suspense>
-                  <LoginForm />
-                </Suspense>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Glass login card */}
+        <div className="pc-glass w-full rounded-[28px] px-7 py-10 shadow-[0_40px_90px_-30px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.06)] sm:px-[60px] sm:py-[58px]">
+          <h2 className="font-display text-[2.4rem] leading-tight font-medium text-white sm:text-[2.9rem]">Welcome back</h2>
+          <p className="mt-3 text-[1.1rem] text-[#dbe4f1]">Sign in to your PRECISIA workspace.</p>
+          <div className="mt-10">
+            <Suspense>
+              <LoginForm />
+            </Suspense>
+          </div>
         </div>
+
+        <VyronsoftAttribution className="text-center text-[#e6ebf2] lg:hidden" />
       </div>
     </div>
   );

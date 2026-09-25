@@ -376,7 +376,7 @@ export function StepBusinessProfile({ values, set }: { values: WizardValues; set
       <StepHeading
         eyebrow="Step 3 of 5"
         title="Business Profile"
-        description="A quick shape of the business — this helps VYRON FINANCE surface the right modules first."
+        description="A quick shape of the business — this helps PRECISIA surface the right modules first."
       />
 
       <div>
@@ -424,11 +424,11 @@ export function StepAIConfiguration({ values, set }: { values: WizardValues; set
       <StepHeading
         eyebrow="Step 4 of 5"
         title="AI Configuration"
-        description="Meet VYRON AI. Every capability below is on by default — turn off anything you'd rather handle yourself."
+        description="Meet PRECISIA AI. Every capability below is on by default — turn off anything you'd rather handle yourself."
       />
 
       <p className="rounded-vf-sm border border-vf-info/25 bg-vf-info/8 px-4 py-3 text-sm text-vf-info">
-        These are preferences for this company, not a live connection yet — VYRON AI capabilities are rolling out progressively,
+        These are preferences for this company, not a live connection yet — PRECISIA AI capabilities are rolling out progressively,
         and you can revisit this list anytime.
       </p>
 

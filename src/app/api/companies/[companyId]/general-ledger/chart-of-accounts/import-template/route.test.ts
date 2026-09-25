@@ -24,7 +24,7 @@ describe("GET .../chart-of-accounts/import-template (Phase 32)", () => {
   it("1/2 — a template download exists and is served as a CSV attachment with the expected filename", async () => {
     const response = await GET(new Request("http://localhost/x"), params("co_1"));
     expect(response.headers.get("Content-Type")).toContain("text/csv");
-    expect(response.headers.get("Content-Disposition")).toContain('filename="VYRON_Chart_of_Accounts_Import_Template.csv"');
+    expect(response.headers.get("Content-Disposition")).toContain('filename="PRECISIA_Chart_of_Accounts_Import_Template.csv"');
   });
 
   it("3/4/5 — the header row exactly matches the importer's own exported contract, required columns included", async () => {

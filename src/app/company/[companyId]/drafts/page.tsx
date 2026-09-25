@@ -8,7 +8,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { listMyDrafts, type MyDraftModule } from "@/server/services/my-drafts-service";
 
 export const metadata: Metadata = {
-  title: "My Drafts — VYRON FINANCE",
+  title: "My Drafts — PRECISIA",
 };
 
 const MODULE_TONE: Record<MyDraftModule, "info" | "good" | "warn" | "muted"> = {

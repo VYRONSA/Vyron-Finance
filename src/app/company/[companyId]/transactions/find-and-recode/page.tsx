@@ -16,7 +16,7 @@ import { MOCK_CUSTOMERS } from "@/lib/mock/customer-management-data";
 import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 
 export const metadata: Metadata = {
-  title: "Find & Recode — VYRON FINANCE",
+  title: "Find & Recode — PRECISIA",
 };
 
 export default async function FindAndRecodePage({ params }: { params: Promise<{ companyId: string }> }) {

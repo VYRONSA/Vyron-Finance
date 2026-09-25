@@ -13,10 +13,13 @@
 
 :root {
   /* Dark framing — canvas, nav/header bars, dark stat cards */
-  --color-canvas: #0b0909;
-  --color-canvas-raised: #141010;
-  --color-charcoal: #1c1717;
-  --color-charcoal-soft: #251e1e;
+  /* PRECISIA rebrand — deep midnight navy, sampled from the four
+     approved PRECISIA reference images (Landing, Login, Platform
+     Workspace, Software Page). */
+  --color-canvas: #050c18;
+  --color-canvas-raised: #081322;
+  --color-charcoal: #0b1a2b;
+  --color-charcoal-soft: #102236;
 
   /* Executive blue — hero gradients, primary actions, priority indicators.
      Product Review Board "Dashboard Visual Layout Refinement": replaces
@@ -28,12 +31,12 @@
      work is changing colors/backgrounds, do not refactor" constraint.
      Renaming the exposed vf-red-* names themselves to vf-blue-* is
      deferred cleanup, not done here. */
-  --color-red-900: #0b3d66;
-  --color-red-700: #0f5c96;
-  --color-red-600: #106ebe;
-  --color-red-500: #0f6cbd;
-  --color-red-400: #2f97e0;
-  --color-red-300: #6cb8ea;
+  --color-red-900: #04255e;
+  --color-red-700: #0a4fd6;
+  --color-red-600: #1263f0;
+  --color-red-500: #1670ff;
+  --color-red-400: #2f9bff;
+  --color-red-300: #6cc0ff;
 
   /* White operational surfaces — "paper" */
   --color-paper: #fdfbf9;
@@ -56,11 +59,11 @@
   --color-ink-faint: #8c8680;
 
   /* Ink on dark (canvas / charcoal / hero) */
-  --color-on-dark: #f7f4f1;
-  --color-on-dark-soft: #c7c0b8;
-  --color-on-dark-faint: #8f8880;
-  --color-dark-border: rgba(247, 244, 241, 0.12);
-  --color-dark-border-soft: rgba(247, 244, 241, 0.07);
+  --color-on-dark: #f3f7fd;
+  --color-on-dark-soft: #b4c1d6;
+  --color-on-dark-faint: #7f8da6;
+  --color-dark-border: rgba(120, 170, 235, 0.16);
+  --color-dark-border-soft: rgba(120, 170, 235, 0.08);
 
   /* Semantic — used inside white cards; report charts also draw on
      orange/purple for variety per the Reports directive ("avoid
@@ -86,7 +89,7 @@
      `Card`/`Button` now use — never the resting state of anything. */
   --shadow-paper-xl: 0 24px 56px rgba(17, 24, 39, 0.14), 0 8px 20px rgba(17, 24, 39, 0.07), 0 1px 0 rgba(15, 108, 189, 0.05);
   --shadow-dark-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 32px rgba(0, 0, 0, 0.5);
-  --shadow-red-glow: 0 24px 64px -12px rgba(15, 108, 189, 0.45), 0 10px 28px -10px rgba(15, 108, 189, 0.35);
+  --shadow-red-glow: 0 18px 44px -14px rgba(22, 112, 255, 0.55), 0 8px 22px -10px rgba(22, 112, 255, 0.4);
 
   --glass-bg: rgba(255, 255, 255, 0.06);
   --glass-border: rgba(255, 255, 255, 0.14);
@@ -133,6 +136,7 @@
   --color-vf-orange: var(--color-orange);
 
   --font-display: var(--font-source-serif), Georgia, serif;
+  --font-brand: var(--font-montserrat), var(--font-inter), sans-serif;
   --font-sans: var(--font-inter), -apple-system, "Segoe UI", sans-serif;
   --font-mono: var(--font-plex-mono), "SF Mono", Consolas, monospace;
 
@@ -276,4 +280,140 @@ h1, h2, h3, h4 {
 @keyframes vf-pipeline-pulse {
   0%, 4% { color: var(--color-vf-red-400); }
   16%, 100% { color: var(--color-vf-on-dark-soft); }
+}
+
+/* ------------------------------------------------------------------
+ * PRECISIA — shared surface language for the four rebranded screens
+ * (Landing, Login, Platform Workspace, Company Dashboard). Colours are
+ * sampled from the approved PRECISIA reference images: midnight navy
+ * canvas, translucent navy panels with a thin electric-blue rim, pill
+ * buttons, and blue-rimmed icon tiles.
+ * ------------------------------------------------------------------ */
+:root {
+  --pc-bg: #050c18;
+  --pc-bg-deep: #02070f;
+  --pc-panel: rgba(9, 24, 40, 0.78);
+  --pc-panel-solid: #081926;
+  --pc-panel-border: rgba(64, 132, 214, 0.22);
+  --pc-panel-border-strong: rgba(58, 146, 255, 0.45);
+  --pc-blue: #1670ff;
+  --pc-blue-bright: #2f9bff;
+  --pc-cyan: #1fb5f5;
+  --pc-text: #f3f7fd;
+  --pc-text-soft: #b4c1d6;
+  --pc-text-faint: #7f8da6;
+  --pc-green: #25d380;
+  --pc-red: #f0474f;
+  --pc-orange: #f5a524;
+  --pc-chart-income: #1fbf6c;
+  --pc-chart-expenses: #2f8cff;
+  --pc-chart-profit: #e89a1c;
+}
+
+.pc-canvas {
+  background: radial-gradient(1200px 600px at 70% -10%, rgba(22, 90, 190, 0.14), transparent 60%), var(--pc-bg);
+  color: var(--pc-text);
+}
+
+.pc-panel {
+  background: linear-gradient(180deg, rgba(11, 29, 48, 0.82), rgba(7, 20, 35, 0.82));
+  border: 1px solid var(--pc-panel-border);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 14px 34px -18px rgba(0, 0, 0, 0.7);
+}
+
+.pc-panel-glow {
+  border-color: var(--pc-panel-border-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(47, 155, 255, 0.08), 0 18px 48px -20px rgba(22, 112, 255, 0.45);
+}
+
+.pc-row {
+  background: rgba(16, 32, 52, 0.7);
+  border: 1px solid rgba(64, 132, 214, 0.12);
+  border-radius: 10px;
+}
+
+.pc-icon-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: var(--pc-blue-bright);
+  background: linear-gradient(180deg, #0c2b57, #071a38);
+  border: 1px solid rgba(58, 146, 255, 0.45);
+  box-shadow: inset 0 0 14px rgba(47, 155, 255, 0.22), 0 6px 18px -8px rgba(22, 112, 255, 0.5);
+}
+
+.pc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  white-space: nowrap;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: transform 0.15s var(--ease-out-vf), box-shadow 0.15s var(--ease-out-vf), border-color 0.15s var(--ease-out-vf), background-color 0.15s var(--ease-out-vf);
+}
+.pc-btn:active { transform: scale(0.985); }
+.pc-btn[aria-disabled="true"], .pc-btn:disabled { cursor: not-allowed; }
+
+.pc-btn-primary {
+  color: #fff;
+  background: linear-gradient(90deg, #1464fd, #2a8cff);
+  box-shadow: 0 10px 28px -10px rgba(22, 112, 255, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.pc-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 14px 34px -10px rgba(22, 112, 255, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.22); }
+
+.pc-btn-outline {
+  color: var(--pc-text);
+  background: rgba(4, 16, 32, 0.55);
+  border: 1px solid rgba(58, 146, 255, 0.55);
+  box-shadow: inset 0 0 12px rgba(47, 155, 255, 0.08);
+}
+.pc-btn-outline:hover { border-color: rgba(96, 176, 255, 0.9); background: rgba(12, 36, 68, 0.6); }
+
+.pc-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--pc-cyan);
+}
+
+.pc-heading {
+  font-family: var(--font-sans);
+  letter-spacing: -0.02em;
+}
+
+.pc-brand-heading {
+  font-family: var(--font-brand);
+  letter-spacing: -0.02em;
+}
+
+.pc-glass {
+  background: linear-gradient(180deg, rgba(8, 22, 38, 0.78), rgba(5, 16, 30, 0.84));
+  border: 1px solid rgba(88, 150, 225, 0.28);
+  backdrop-filter: blur(22px) saturate(130%);
+  -webkit-backdrop-filter: blur(22px) saturate(130%);
+}
+
+.pc-input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(120, 146, 170, 0.55);
+  background: rgba(8, 25, 40, 0.75);
+  color: var(--pc-text);
+  outline: none;
+  transition: border-color 0.15s var(--ease-out-vf), box-shadow 0.15s var(--ease-out-vf);
+}
+.pc-input::placeholder { color: var(--pc-text-soft); opacity: 0.8; }
+.pc-input:focus { border-color: var(--pc-blue-bright); box-shadow: 0 0 0 3px rgba(47, 155, 255, 0.2); }
+
+/* Workspace sidebar item — the active pill fades from electric blue on
+   the left into the sidebar, exactly as both workspace references show. */
+.pc-nav-active {
+  background: linear-gradient(90deg, rgba(20, 100, 253, 0.55), rgba(10, 60, 170, 0.35) 55%, rgba(8, 40, 120, 0.12));
+  box-shadow: inset 3px 0 0 #2f9bff, 0 8px 24px -14px rgba(22, 112, 255, 0.8);
+  color: #fff;
 }

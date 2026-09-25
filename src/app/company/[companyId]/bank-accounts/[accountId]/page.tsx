@@ -18,7 +18,7 @@ import type { BankAccountStatus } from "@/server/accounting/types";
 import { formatAmount, formatCount, formatDate } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Bank Account — VYRON FINANCE",
+  title: "Bank Account — PRECISIA",
 };
 
 const STATUS_TONE: Record<BankAccountStatus, "good" | "muted"> = {
@@ -205,14 +205,14 @@ export default async function BankAccountDetailPage({
       <Card tone="dark">
         <CardHeader>
           <CardTitle className="text-vf-on-dark">Recent Bank Statement Imports — All Accounts</CardTitle>
-          <CardDescription className="text-vf-on-dark-faint">The most recent Standard VYRON Bank Import Template files imported for this company (not filtered to this account).</CardDescription>
+          <CardDescription className="text-vf-on-dark-faint">The most recent Standard PRECISIA Bank Import Template files imported for this company (not filtered to this account).</CardDescription>
         </CardHeader>
         <CardContent className="pt-0">
           {recentImports.length === 0 ? (
             <EmptyState
               icon={<IconImport className="h-5 w-5" />}
               title="No bank statements have been imported yet."
-              description="Import a Standard VYRON bank statement CSV from the Import Centre to bring transactions into your accounts."
+              description="Import a Standard PRECISIA bank statement CSV from the Import Centre to bring transactions into your accounts."
               action={
                 <Button href={`/company/${companyId}/import-centre`} variant="primary" size="sm">
                   Open Import Centre

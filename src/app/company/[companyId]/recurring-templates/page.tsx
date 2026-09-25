@@ -8,7 +8,7 @@ import { listRecurringTemplates } from "@/server/services/recurring-template-ser
 import { MOCK_RECURRING_TEMPLATES } from "@/lib/mock/automation-data";
 
 export const metadata: Metadata = {
-  title: "Recurring Templates — VYRON FINANCE",
+  title: "Recurring Templates — PRECISIA",
 };
 
 export default async function RecurringTemplatesPage({ params }: { params: Promise<{ companyId: string }> }) {

@@ -11,7 +11,7 @@ type Props = { params: Promise<{ companyId: string; reportId: string }>; searchP
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { reportId } = await params;
-  return { title: `${REPORT_BY_ID.get(reportId)?.title ?? "Report"} — Print — VYRON FINANCE` };
+  return { title: `${REPORT_BY_ID.get(reportId)?.title ?? "Report"} — Print — PRECISIA` };
 }
 
 /** A report's print / PDF view. Print prints this page; Download PDF has

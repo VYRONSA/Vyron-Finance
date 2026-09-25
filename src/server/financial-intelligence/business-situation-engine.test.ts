@@ -98,7 +98,7 @@ describe("buildBusinessSituations", () => {
 
   it("uses only honest, non-causal language — never claims one condition caused another", () => {
     const result = buildBusinessSituations([NEGATIVE_CASH, CUSTOMERS_OVERDUE]);
-    expect(result[0].summary).toMatch(/^VYRON identified/);
+    expect(result[0].summary).toMatch(/^PRECISIA identified/);
     expect(result[0].summary.toLowerCase()).not.toMatch(/caus|result in|lead(ing)? to|because of/);
   });
 

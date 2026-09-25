@@ -441,7 +441,7 @@ export const GENERAL_LEDGER_REPORTS: ReportDefinition[] = [
         summary: [summaryCount("Events", events.length)],
         sections: [section([col("at", "When"), col("area", "Area", "badge"), col("event", "Event"), col("reference", "Reference"), col("detail", "Detail"), col("by", "By")], events.map((e) => row({ at: e.at.slice(0, 16).replace("T", " "), area: e.area, event: e.event, reference: e.reference, detail: e.detail, by: e.by }, { drill: e.drill })), undefined, "No recorded events in this period.")],
         checks: [],
-        notices: ["Built from the timestamps VYRON records on each record; an event with no recorded user shows a blank 'By'."],
+        notices: ["Built from the timestamps PRECISIA records on each record; an event with no recorded user shows a blank 'By'."],
       };
     },
   },

@@ -10,7 +10,7 @@ import { loadLetterhead } from "@/server/report-centre/letterhead";
 type Props = { params: Promise<{ companyId: string; docType: string; docId: string }> };
 
 export const metadata: Metadata = {
-  title: "Document — Document Centre — VYRON FINANCE",
+  title: "Document — Document Centre — PRECISIA",
 };
 
 /** Document Centre — re-open any customer/supplier document for viewing,

@@ -9,7 +9,7 @@ import { MOCK_CUSTOMERS } from "@/lib/mock/customer-management-data";
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Customers — VYRON FINANCE",
+  title: "Customers — PRECISIA",
 };
 
 function money(value: number): string {

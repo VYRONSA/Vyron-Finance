@@ -143,7 +143,7 @@ export function ConnectedBanksCard({ companyId, rows, previewMode }: { companyId
           <EmptyState
             icon={<IconBank className="h-5 w-5" />}
             title="No banks connected yet"
-            description="Connect FNB to sync balances and transactions directly, alongside manual statement import. VYRON never sees your online banking username or password — you authenticate and consent directly with FNB."
+            description="Connect FNB to sync balances and transactions directly, alongside manual statement import. PRECISIA never sees your online banking username or password — you authenticate and consent directly with FNB."
           />
         ) : (
           <ul className="flex flex-col gap-2.5">

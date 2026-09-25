@@ -54,7 +54,7 @@ const CURRENCY_FORMAT = "#,##0.00;[Red]-#,##0.00";
 
 export async function reportToWorkbook(result: ReportResult, company: ReportCompany): Promise<ExcelJS.Workbook> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "VYRON Finance";
+  workbook.creator = "PRECISIA";
   workbook.created = new Date(result.generatedAt);
   const sheet = workbook.addWorksheet(result.title.slice(0, 31).replace(/[\\/?*[\]:]/g, " "));
   const width = Math.max(1, ...result.sections.map((s) => s.columns.length));

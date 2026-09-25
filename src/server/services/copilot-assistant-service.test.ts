@@ -77,12 +77,12 @@ describe("askCopilot — deterministic routing (regression, no behavior change)"
   });
 });
 
-describe("askCopilot — VYRON AI routing for open-ended questions", () => {
+describe("askCopilot — PRECISIA AI routing for open-ended questions", () => {
   it("routes an unmatched, genuinely open-ended question to the supplied AI provider and tags the answer VyronAI", async () => {
     vi.mocked(getCompany).mockResolvedValue(company());
     vi.mocked(getCompanyIntelligenceSummary).mockResolvedValue(summary());
     const provider = mockProvider(async () => ({
-      answer: "VYRON currently identifies no active findings for your business.",
+      answer: "PRECISIA currently identifies no active findings for your business.",
       keyPoints: [],
       evidenceReferences: [],
       recommendedActions: [],
@@ -93,7 +93,7 @@ describe("askCopilot — VYRON AI routing for open-ended questions", () => {
 
     expect(provider.generateResponse).toHaveBeenCalledTimes(1);
     expect(answer.answeredBy).toBe("VyronAI");
-    expect(answer.executiveSummary).toBe("VYRON currently identifies no active findings for your business.");
+    expect(answer.executiveSummary).toBe("PRECISIA currently identifies no active findings for your business.");
   });
 
   it("builds the evidence package ONLY from the requested company's own real data (evidence isolation)", async () => {
@@ -121,7 +121,7 @@ describe("askCopilot — VYRON AI routing for open-ended questions", () => {
     const answer = await askCopilot("co_1", "What's worrying you most?", PERIOD.periodStart, PERIOD.periodEnd, PERIOD.financialYearStartDate, undefined, [], provider);
 
     expect(answer.answeredBy).toBe("VyronAI");
-    expect(answer.executiveSummary).toContain("VYRON AI is temporarily unavailable");
+    expect(answer.executiveSummary).toContain("PRECISIA AI is temporarily unavailable");
     expect(answer.executiveSummary).not.toMatch(/undefined|\[object Object\]/);
   });
 
@@ -132,7 +132,7 @@ describe("askCopilot — VYRON AI routing for open-ended questions", () => {
 
     const answer = await askCopilot("co_1", "What's worrying you most?", PERIOD.periodStart, PERIOD.periodEnd, PERIOD.financialYearStartDate, undefined, [], provider);
 
-    expect(answer.executiveSummary).toContain("VYRON AI is temporarily unavailable");
+    expect(answer.executiveSummary).toContain("PRECISIA AI is temporarily unavailable");
     expect(provider.generateResponse).not.toHaveBeenCalled();
   });
 
@@ -142,7 +142,7 @@ describe("askCopilot — VYRON AI routing for open-ended questions", () => {
     const provider = mockProvider(async () => ({ answer: "ok", keyPoints: [], evidenceReferences: [], recommendedActions: [], uncertainties: [] }));
     const conversation = [
       { role: "user" as const, content: "What's worrying you most?" },
-      { role: "assistant" as const, content: "VYRON currently identifies two business situations requiring attention." },
+      { role: "assistant" as const, content: "PRECISIA currently identifies two business situations requiring attention." },
     ];
 
     await askCopilot("co_1", "Please expand on your previous point.", PERIOD.periodStart, PERIOD.periodEnd, PERIOD.financialYearStartDate, undefined, conversation, provider);

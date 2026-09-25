@@ -26,7 +26,7 @@ describe("GET .../import-centre/bank-transactions/template (Phase 32)", () => {
   it("serves an XLSX attachment with the expected filename", async () => {
     const response = await GET(new Request("http://localhost/x"), params("co_1"));
     expect(response.headers.get("Content-Type")).toContain("spreadsheetml");
-    expect(response.headers.get("Content-Disposition")).toContain('filename="VYRON_Bank_Transactions_Import_Template.xlsx"');
+    expect(response.headers.get("Content-Disposition")).toContain('filename="PRECISIA_Bank_Transactions_Import_Template.xlsx"');
   });
 
   it("the generated workbook's header row exactly matches STANDARD_HEADERS, in order — a real, readable .xlsx file, not just bytes", async () => {

@@ -178,7 +178,7 @@ export function StatementProcessingFlow({
           companyId={companyId}
           kind="bank-transactions"
           title="Bank Statement"
-          description="Standard VYRON Bank Import Template (CSV or Excel), OFX, QIF, or PDF."
+          description="Standard PRECISIA Bank Import Template (CSV or Excel), OFX, QIF, or PDF."
           templateHint="Supported formats: CSV, Excel, OFX, QIF, PDF. The bank account is detected automatically from the statement — there's no separate account picker. PDF statements go through a review step before anything is committed. Balance and VAT are optional but must be numbers if provided."
           previewMode={previewMode}
           onPhaseChange={setPhase}

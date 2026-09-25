@@ -25,7 +25,7 @@ import { MOCK_AUDIT_LOG } from "@/lib/mock/automation-data";
 import { formatAmount } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "VAT — VYRON FINANCE",
+  title: "VAT — PRECISIA",
 };
 
 export default async function VatPage({ params }: { params: Promise<{ companyId: string }> }) {

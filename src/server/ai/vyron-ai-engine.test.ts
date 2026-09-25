@@ -19,9 +19,9 @@ function evidence(overrides: Partial<EvidencePackage> = {}): EvidencePackage {
 
 function structuredResponse(overrides: Partial<VyronAiStructuredResponse> = {}): VyronAiStructuredResponse {
   return {
-    answer: "VYRON found a negative cash balance.",
+    answer: "PRECISIA found a negative cash balance.",
     keyPoints: ["Cash balance is negative"],
-    evidenceReferences: [{ label: "VYRON Intelligence — Cash Flow", href: "/company/co_1/intelligence" }],
+    evidenceReferences: [{ label: "PRECISIA Intelligence — Cash Flow", href: "/company/co_1/intelligence" }],
     recommendedActions: [{ label: "Review Banking", href: "/company/co_1/bank-accounts" }],
     uncertainties: [],
     ...overrides,
@@ -36,7 +36,7 @@ describe("askVyronAi", () => {
   it("returns the provider's validated, sanitized response on success (successful response)", async () => {
     const provider = mockProvider(async () => structuredResponse());
     const result = await askVyronAi(provider, evidence(), []);
-    expect(result.answer).toBe("VYRON found a negative cash balance.");
+    expect(result.answer).toBe("PRECISIA found a negative cash balance.");
     expect(result.recommendedActions).toEqual([{ label: "Review Banking", href: "/company/co_1/bank-accounts" }]);
   });
 
@@ -45,7 +45,7 @@ describe("askVyronAi", () => {
     const provider: AIProvider = { generateResponse };
     const ev = evidence();
     await askVyronAi(provider, ev, []);
-    expect(generateResponse).toHaveBeenCalledWith(expect.objectContaining({ evidence: ev, systemPrompt: expect.stringContaining("You are VYRON AI") }));
+    expect(generateResponse).toHaveBeenCalledWith(expect.objectContaining({ evidence: ev, systemPrompt: expect.stringContaining("You are PRECISIA AI") }));
   });
 
   it("forwards conversation history to the provider unchanged (multi-turn context)", async () => {
@@ -53,7 +53,7 @@ describe("askVyronAi", () => {
     const provider: AIProvider = { generateResponse };
     const conversation: ConversationTurn[] = [
       { role: "user", content: "What's worrying you most?" },
-      { role: "assistant", content: "VYRON currently identifies two business situations requiring attention." },
+      { role: "assistant", content: "PRECISIA currently identifies two business situations requiring attention." },
       { role: "user", content: "Tell me more about the first one." },
     ];
     await askVyronAi(provider, evidence({ question: "Tell me more about the first one." }), conversation);

@@ -12,7 +12,7 @@ import { ReportViewer } from "@/components/financial/report-viewer";
 import { listSuppliers } from "@/server/services/supplier-management-service";
 
 export const metadata: Metadata = {
-  title: "Supplier Reconciliation — VYRON FINANCE",
+  title: "Supplier Reconciliation — PRECISIA",
 };
 
 export default async function SupplierReconciliationPage({

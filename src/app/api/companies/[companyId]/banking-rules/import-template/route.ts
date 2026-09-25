@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
   return new NextResponse(BANKING_RULES_IMPORT_TEMPLATE_HEADERS.join(",") + "\r\n", {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="VYRON_Banking_Rules_Import_Template.csv"`,
+      "Content-Disposition": `attachment; filename="PRECISIA_Banking_Rules_Import_Template.csv"`,
     },
   });
 }

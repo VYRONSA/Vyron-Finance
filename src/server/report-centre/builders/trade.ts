@@ -373,7 +373,7 @@ function marginReport(id: string, title: string, description: string, categories
         sections: [section([col("label", by === "product" ? "Product / Service" : "Customer"), col("net", "Net Sales", "money"), col("costedNet", "Sales with Cost Data", "money"), col("cost", "Cost", "money"), col("margin", "Gross Margin", "money"), col("marginPct", "Margin %", "percent"), col("coverage", "Cost Coverage %", "percent")], rows, undefined, "No posted sales in this period.")],
         checks: [],
         notices: [
-          "Cost is quantity × the stock item's current average cost (cost price where no average exists) — VYRON does not hold a historical cost for each sale. Lines with no costed stock item are excluded from margin and shown in 'Cost Coverage'.",
+          "Cost is quantity × the stock item's current average cost (cost price where no average exists) — PRECISIA does not hold a historical cost for each sale. Lines with no costed stock item are excluded from margin and shown in 'Cost Coverage'.",
           "The company's overall gross profit from the General Ledger is on the Profit & Loss.",
         ],
       };

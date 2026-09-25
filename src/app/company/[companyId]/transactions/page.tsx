@@ -19,7 +19,7 @@ import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import { MOCK_VAT_TREATMENTS } from "@/lib/mock/company-management-data";
 
 export const metadata: Metadata = {
-  title: "Transactions — VYRON FINANCE",
+  title: "Transactions — PRECISIA",
 };
 
 export default async function TransactionExplorerPage({

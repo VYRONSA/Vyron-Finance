@@ -312,10 +312,10 @@ function ActiveReconciliation({
             Statement Closing Balance: <span className="font-mono text-vf-ink">{formatMoney(summary.statementClosingBalance, currency)}</span>
           </span>
           <span>
-            VYRON General Ledger Balance: <span className="font-mono text-vf-ink">{formatMoney(summary.glClosingBalance, currency)}</span>
+            PRECISIA General Ledger Balance: <span className="font-mono text-vf-ink">{formatMoney(summary.glClosingBalance, currency)}</span>
           </span>
           <span>
-            VYRON vs Bank:{" "}
+            PRECISIA vs Bank:{" "}
             <span className={`font-mono ${summary.glMatchesStatement ? "text-vf-success" : "text-vf-danger"}`}>{formatMoney(summary.difference, currency)}</span>
           </span>
         </div>
@@ -440,7 +440,7 @@ function ActiveReconciliation({
                 itemsPreview={
                   summary.isBalanced ? undefined : (
                     <p className="text-xs">
-                      Completing an out-of-balance reconciliation is allowed and is recorded as-is — VYRON never adjusts your figures to force a balance. The difference stays
+                      Completing an out-of-balance reconciliation is allowed and is recorded as-is — PRECISIA never adjusts your figures to force a balance. The difference stays
                       visible in the reconciliation history.
                     </p>
                   )

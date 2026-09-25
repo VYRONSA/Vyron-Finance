@@ -12,7 +12,7 @@ import { MOCK_CHART_OF_ACCOUNTS } from "@/lib/mock/general-ledger-data";
 import { MOCK_CURRENCIES } from "@/lib/mock/company-management-data";
 
 export const metadata: Metadata = {
-  title: "Edit Bank Account — VYRON FINANCE",
+  title: "Edit Bank Account — PRECISIA",
 };
 
 export default async function EditBankAccountPage({

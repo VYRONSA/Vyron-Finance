@@ -188,7 +188,7 @@ function UpdateAllocationForm({
           </div>
 
           <p className="text-xs text-vf-ink-faint">
-            Updating changes only VYRON&apos;s allocation. The imported Xero source account, amount, date and reference are
+            Updating changes only PRECISIA&apos;s allocation. The imported Xero source account, amount, date and reference are
             evidence and are never altered — and updating never posts to the General Ledger.
           </p>
         </>

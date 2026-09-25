@@ -36,7 +36,7 @@ describe("SupplierWorkspace — Download Template (Phase 32)", () => {
 
     expect(downloadCsvMock).toHaveBeenCalledTimes(1);
     const [filename, headers, rows] = downloadCsvMock.mock.calls[0];
-    expect(filename).toBe("VYRON_Supplier_Import_Template.csv");
+    expect(filename).toBe("PRECISIA_Supplier_Import_Template.csv");
     expect(headers).toEqual(SUPPLIER_IMPORT_TEMPLATE_HEADERS);
     expect(headers).toContain("Name");
     expect(rows).toEqual([]); // headers only — never fabricated accounting data

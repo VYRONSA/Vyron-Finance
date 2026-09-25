@@ -210,7 +210,7 @@ export function assessConversion(subject: ConversionSubject): ConversionAssessme
       code: "foreign-currency-unsupported",
       message:
         `This invoice is in ${printedCurrency}, and this company's books are in ${baseCurrency}. ` +
-        `VYRON cannot yet convert a supplier invoice into ${baseCurrency}, and capturing it unconverted ` +
+        `PRECISIA cannot yet convert a supplier invoice into ${baseCurrency}, and capturing it unconverted ` +
         `would record the wrong amount. Enter this one by hand at the rate you are using.`,
     });
   }

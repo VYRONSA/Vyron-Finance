@@ -30,7 +30,7 @@ export default function OpengraphImage() {
               color: "#f7f4f1",
             }}
           >
-            VYRON FINANCE
+            PRECISIA
           </div>
           <div
             style={{
@@ -42,7 +42,7 @@ export default function OpengraphImage() {
               color: "#9aa3b8",
             }}
           >
-            Recover. Understand. Control.
+            Financial Intelligence
           </div>
         </div>
       </div>

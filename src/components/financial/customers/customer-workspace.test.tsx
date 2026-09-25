@@ -32,7 +32,7 @@ describe("CustomerWorkspace — Download Template (Phase 32)", () => {
 
     expect(downloadCsvMock).toHaveBeenCalledTimes(1);
     const [filename, headers, rows] = downloadCsvMock.mock.calls[0];
-    expect(filename).toBe("VYRON_Customer_Import_Template.csv");
+    expect(filename).toBe("PRECISIA_Customer_Import_Template.csv");
     expect(headers).toEqual(CUSTOMER_IMPORT_TEMPLATE_HEADERS);
     expect(headers).toContain("Name");
     expect(rows).toEqual([]);

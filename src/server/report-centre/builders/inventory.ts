@@ -53,7 +53,7 @@ export const INVENTORY_REPORTS: ReportDefinition[] = [
         summary: [summaryCount("Items", items.length), summaryMoney("Stock Value", sum(items, (i) => i.quantityOnHand * unitValue(i))), summaryCount("At or below reorder level", items.filter((i) => i.reorderLevel > 0 && i.quantityOnHand <= i.reorderLevel).length)],
         sections: [section([col("code", "Code"), col("item", "Item"), col("category", "Category"), col("qty", "On Hand", "number"), col("uom", "Unit"), col("cost", "Average Cost", "money"), col("value", "Value", "money"), col("reorder", "Reorder Level", "number"), col("flag", "", "badge")], rows, undefined, "No stock items.")],
         checks: [],
-        notices: ["Quantities and average costs are current values; VYRON does not store historical stock snapshots."],
+        notices: ["Quantities and average costs are current values; PRECISIA does not store historical stock snapshots."],
       };
     },
   },

@@ -78,7 +78,7 @@ export function SetPasswordForm({ mode, userEmail }: { mode: "reset" | "change";
   if (done) {
     return (
       <p className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-4 py-3 text-sm text-[#1f6e4b]">
-        {mode === "reset" ? "Password set. Taking you into VYRON FINANCE…" : "Password changed."}
+        {mode === "reset" ? "Password set. Taking you into PRECISIA…" : "Password changed."}
       </p>
     );
   }

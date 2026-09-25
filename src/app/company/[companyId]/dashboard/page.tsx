@@ -81,7 +81,7 @@ import type { JournalStatus } from "@/server/accounting/types";
 import { formatAmount, formatTime } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Dashboard — VYRON FINANCE",
+  title: "Dashboard — PRECISIA",
 };
 
 const FINDING_SEVERITY_DOT: Record<FindingSeverity, string> = {
@@ -491,7 +491,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
           <CardHeader className="relative flex flex-row items-center gap-2">
             <IconSparkles className="h-4 w-4 text-vf-red-300" />
             <div>
-              <CardTitle className="text-vf-on-dark">VYRON Intelligence</CardTitle>
+              <CardTitle className="text-vf-on-dark">PRECISIA Intelligence</CardTitle>
               <CardDescription className="text-vf-on-dark-faint">
                 {financialIntelligence.findings.length === 0
                   ? "Nothing requires attention right now"
@@ -501,7 +501,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ comp
           </CardHeader>
           <CardContent className="relative pt-0">
             {financialIntelligence.findings.length === 0 ? (
-              <EmptyState icon={<IconSparkles className="h-5 w-5" />} title="Nothing to flag yet" description="VYRON Intelligence will appear here once there's enough real activity to observe." />
+              <EmptyState icon={<IconSparkles className="h-5 w-5" />} title="Nothing to flag yet" description="PRECISIA Intelligence will appear here once there's enough real activity to observe." />
             ) : (
               <ul className="flex flex-col gap-3.5">
                 {financialIntelligence.findings.slice(0, 6).map((finding) => (

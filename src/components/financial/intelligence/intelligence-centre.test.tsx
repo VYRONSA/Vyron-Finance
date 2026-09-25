@@ -17,7 +17,7 @@ function finding(overrides: Partial<Finding> & Pick<Finding, "id" | "category" |
 
 function situation(overrides: Partial<BusinessSituation> & Pick<BusinessSituation, "id" | "title" | "contributingFindings">): BusinessSituation {
   return {
-    summary: "VYRON identified two related conditions: a test condition and another test condition.",
+    summary: "PRECISIA identified two related conditions: a test condition and another test condition.",
     severity: "High",
     category: "WorkingCapital",
     evidence: overrides.contributingFindings.map((f) => f.evidence),
@@ -109,14 +109,14 @@ describe("IntelligenceCentre", () => {
 
   it("opens the finding detail panel with What/Why/Evidence/Recommended Action/Source when a row is clicked", () => {
     const findings = [
-      finding({ id: "1", category: "Banking", severity: "High", title: "3 possible duplicates detected", description: "VYRON has flagged these as possible duplicate payments.", evidence: "3 open PossibleDuplicate exception(s)." }),
+      finding({ id: "1", category: "Banking", severity: "High", title: "3 possible duplicates detected", description: "PRECISIA has flagged these as possible duplicate payments.", evidence: "3 open PossibleDuplicate exception(s)." }),
     ];
     renderCentre(findings);
 
     fireEvent.click(screen.getByRole("button", { name: /3 possible duplicates detected/ }));
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("What VYRON Found")).toBeInTheDocument();
+    expect(within(dialog).getByText("What PRECISIA Found")).toBeInTheDocument();
     expect(within(dialog).getByText("Why It Matters")).toBeInTheDocument();
     expect(within(dialog).getByText("Evidence")).toBeInTheDocument();
     expect(within(dialog).getByText("3 open PossibleDuplicate exception(s).")).toBeInTheDocument();
@@ -173,7 +173,7 @@ describe("IntelligenceCentre — Business Situations (Phase 14)", () => {
         title: "Cash Collection Pressure",
         severity: "Critical",
         category: "WorkingCapital",
-        summary: "VYRON identified two related conditions: a negative cash position and overdue customer balances.",
+        summary: "PRECISIA identified two related conditions: a negative cash position and overdue customer balances.",
         contributingFindings: [cashFinding, customerFinding],
         recommendedActions: [{ label: "Review Customer Aging", href: "/company/co_1/customers" }],
       }),
@@ -187,7 +187,7 @@ describe("IntelligenceCentre — Business Situations (Phase 14)", () => {
     expect(priorityIndex).toBeGreaterThan(situationsIndex);
 
     expect(screen.getByText("Cash Collection Pressure")).toBeInTheDocument();
-    expect(screen.getByText(/VYRON identified two related conditions/)).toBeInTheDocument();
+    expect(screen.getByText(/PRECISIA identified two related conditions/)).toBeInTheDocument();
     expect(screen.getByText("Total cash: R -500.00.")).toBeInTheDocument();
     expect(screen.getByText("R 15,000.00 overdue by more than 90 days.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Review Customer Aging" })).toBeInTheDocument();

@@ -212,9 +212,9 @@ export function findBankingFindings(input: BankingIntelligenceInput): Finding[] 
       title: `${exceptions.length} ${label.toLowerCase()}${exceptions.length === 1 ? "" : "s"} detected`,
       description:
         type === "PossibleDuplicate"
-          ? "VYRON has flagged these as possible duplicate payments — review before allocating."
+          ? "PRECISIA has flagged these as possible duplicate payments — review before allocating."
           : type === "LargeUnusualPayment"
-            ? "VYRON has flagged these as unusually large or unusual payments — review before allocating."
+            ? "PRECISIA has flagged these as unusually large or unusual payments — review before allocating."
             : `${exceptions.length} open ${label} exception(s) require review.`,
       evidence: `${exceptions.length} open ${label} exception(s): ${exceptions
         .slice(0, 3)

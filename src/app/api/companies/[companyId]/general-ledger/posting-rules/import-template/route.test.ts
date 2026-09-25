@@ -18,7 +18,7 @@ describe("GET .../posting-rules/import-template (Phase 32)", () => {
   it("serves a CSV attachment with the expected filename", async () => {
     const response = await GET(new Request("http://localhost/x"), params("co_1"));
     expect(response.headers.get("Content-Type")).toContain("text/csv");
-    expect(response.headers.get("Content-Disposition")).toContain('filename="VYRON_Posting_Rules_Import_Template.csv"');
+    expect(response.headers.get("Content-Disposition")).toContain('filename="PRECISIA_Posting_Rules_Import_Template.csv"');
   });
 
   it("the header row exactly matches the importer's own exported contract, headers only", async () => {

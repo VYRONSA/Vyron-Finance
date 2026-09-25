@@ -13,7 +13,7 @@ import { MOCK_CUSTOMER_RECEIPTS, MOCK_QUOTATIONS, MOCK_SALES_INVOICES, MOCK_SALE
 import type { RiskRating } from "@/server/customer-management/types";
 
 export const metadata: Metadata = {
-  title: "Customer — VYRON FINANCE",
+  title: "Customer — PRECISIA",
 };
 
 const RISK_TONE: Record<RiskRating, "good" | "warn" | "danger"> = { Low: "good", Medium: "warn", High: "danger" };

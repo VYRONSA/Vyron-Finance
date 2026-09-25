@@ -25,7 +25,7 @@ import {
 import { MOCK_PERMISSION_ROLES, MOCK_ROLE_ASSIGNMENTS } from "@/lib/mock/permissions-data";
 
 export const metadata: Metadata = {
-  title: "Settings — VYRON FINANCE",
+  title: "Settings — PRECISIA",
 };
 
 export default async function CompanySettingsPage({ params }: { params: Promise<{ companyId: string }> }) {

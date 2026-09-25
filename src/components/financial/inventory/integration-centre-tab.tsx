@@ -13,7 +13,7 @@ export function IntegrationCentreTab({ connections }: { connections: Integration
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-vf-ink-soft">
-        The integration layer for VYRON FINANCE&apos;s peer platform applications — VYRON FINANCE never builds
+        The integration layer for PRECISIA&apos;s peer platform applications — PRECISIA never builds
         manufacturing or workforce management itself. Finished Goods, Production Costs, BOM Costs, and Manufacturing
         Journals will flow in from VYRON COST; Approved Timesheets, Labour Cost Allocation, and Payroll Journals will
         flow in from VYRON CORE — both once a real connection exists.

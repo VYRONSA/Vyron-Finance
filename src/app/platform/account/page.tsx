@@ -5,7 +5,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Account — VYRON FINANCE",
+  title: "Account — PRECISIA",
 };
 
 export default async function AccountPage() {

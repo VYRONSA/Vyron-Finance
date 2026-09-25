@@ -80,28 +80,28 @@ const SITUATION_RULES: SituationRule[] = [
     title: "Cash Collection Pressure",
     category: "WorkingCapital",
     requiredFindingIds: ["cashflow-negative-balance", "customers-overdue-balance"],
-    summary: "VYRON identified two related conditions: a negative cash position and overdue customer balances.",
+    summary: "PRECISIA identified two related conditions: a negative cash position and overdue customer balances.",
   },
   {
     id: "situation-elevated-payment-review-activity",
     title: "Elevated Payment Review Activity",
     category: "TransactionRisk",
     requiredFindingIds: ["banking-exception-PossibleDuplicate", "banking-exception-LargeUnusualPayment"],
-    summary: "VYRON identified two related conditions: possible duplicate payments and large or unusual payment exceptions.",
+    summary: "PRECISIA identified two related conditions: possible duplicate payments and large or unusual payment exceptions.",
   },
   {
     id: "situation-current-financial-pressure",
     title: "Current Financial Pressure",
     category: "CashPressure",
     requiredFindingIds: ["profitability-net-loss", "cashflow-negative-balance"],
-    summary: "VYRON identified two related conditions: a net loss for the current period and a negative cash position.",
+    summary: "PRECISIA identified two related conditions: a net loss for the current period and a negative cash position.",
   },
   {
     id: "situation-working-capital-pressure",
     title: "Working Capital Pressure",
     category: "WorkingCapital",
     requiredFindingIds: ["customers-overdue-balance", "suppliers-overdue-balance"],
-    summary: "VYRON identified two related conditions: overdue customer balances and overdue supplier balances.",
+    summary: "PRECISIA identified two related conditions: overdue customer balances and overdue supplier balances.",
   },
 ];
 

@@ -19,7 +19,7 @@ import { MOCK_COMPANIES_FULL } from "@/lib/mock/company-management-data";
 import type { SubscriptionPlanPrice } from "@/server/billing-platform/types";
 
 export const metadata: Metadata = {
-  title: "Billing — VYRON FINANCE",
+  title: "Billing — PRECISIA",
 };
 
 export default async function BillingPage({ params }: { params: Promise<{ companyId: string }> }) {

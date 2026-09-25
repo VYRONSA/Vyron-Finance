@@ -201,7 +201,7 @@ export function AiInvoiceCaptureTab({
       setMessage(
         data.capture?.status === "Duplicate"
           ? (data.capture.message as string)
-          : "Uploaded. VYRON is reading it — you can close this page, it will carry on.",
+          : "Uploaded. PRECISIA is reading it — you can close this page, it will carry on.",
       );
       await load();
     } catch {
@@ -240,7 +240,7 @@ export function AiInvoiceCaptureTab({
         <div>
           <p className="text-sm font-semibold text-vf-ink">AI Invoice Capture</p>
           <p className="mt-0.5 max-w-[60ch] text-xs text-vf-ink-faint">
-            Upload a supplier&rsquo;s invoice. VYRON reads it, checks the figures add up, and prepares a draft bill for you to
+            Upload a supplier&rsquo;s invoice. PRECISIA reads it, checks the figures add up, and prepares a draft bill for you to
             review. Nothing is posted until you convert it and approve the bill.
           </p>
         </div>
@@ -292,7 +292,7 @@ export function AiInvoiceCaptureTab({
         <EmptyState
           icon={<IconFileText className="h-6 w-6" />}
           title="No captured invoices"
-          description="Upload a supplier invoice and VYRON will read it for you."
+          description="Upload a supplier invoice and PRECISIA will read it for you."
         />
       ) : (
         <Table>
@@ -473,7 +473,7 @@ function ReviewPanel({
           </ul>
           {capture.model_confidence !== null && (
             <p className="mt-2 text-xs text-vf-ink-faint">
-              VYRON&rsquo;s own confidence was {capture.model_confidence}% — shown for information only. Whether this invoice
+              PRECISIA&rsquo;s own confidence was {capture.model_confidence}% — shown for information only. Whether this invoice
               needs checking is decided by the arithmetic above, not by that number.
             </p>
           )}
@@ -501,7 +501,7 @@ function ReviewPanel({
           )}
           {!capture.supplier_id && capture.supplier_candidates?.length > 0 && (
             <div className="mt-1.5">
-              <p className="text-xs text-vf-ink-faint">VYRON could not confirm the supplier. Did you mean:</p>
+              <p className="text-xs text-vf-ink-faint">PRECISIA could not confirm the supplier. Did you mean:</p>
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {capture.supplier_candidates.map((candidate) => (
                   <Button
@@ -627,7 +627,7 @@ function ReviewPanel({
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-[46ch] text-xs text-vf-ink-faint">
-          Converting creates a <strong>draft</strong> bill. VAT and the amount payable are calculated by VYRON&rsquo;s accounting
+          Converting creates a <strong>draft</strong> bill. VAT and the amount payable are calculated by PRECISIA&rsquo;s accounting
           engine from the lines you confirm above — nothing is posted to the ledger until that bill is approved in the ordinary
           way.
         </div>

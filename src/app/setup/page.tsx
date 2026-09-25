@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
-import { BrandMark } from "@/components/ui/brand-mark";
+import { PrecisiaWordmark } from "@/components/ui/precisia-wordmark";
 import { BootstrapAdminForm } from "@/components/auth/bootstrap-admin-form";
 import { isSupabaseConfigured } from "@/lib/supabase/is-configured";
 import { isSupabaseAdminConfigured } from "@/lib/supabase/admin";
@@ -13,7 +13,7 @@ import { isPlatformBootstrapEnabled } from "@/server/setup/bootstrap-guard";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "First-Run Setup — VYRON FINANCE",
+  title: "First-Run Setup — PRECISIA",
   robots: { index: false, follow: false, nocache: true },
 };
 
@@ -56,9 +56,8 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen flex-col items-center justify-center bg-vf-canvas px-6 py-16">
       <Card className="w-full max-w-sm">
         <CardContent className="p-8 sm:p-10">
-          <Link href="/" className="mb-8 flex items-center gap-2.5 font-display text-lg text-vf-ink">
-            <BrandMark className="h-8 w-8" />
-            VYRON FINANCE
+          <Link href="/" className="mb-8 inline-block" aria-label="PRECISIA — home">
+            <PrecisiaWordmark size="sm" tone="onLight" />
           </Link>
           {children}
         </CardContent>
