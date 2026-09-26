@@ -18,6 +18,10 @@ vi.mock("ai", async (importOriginal) => {
 import { AIProviderError } from "@/server/ai/types";
 import { createGatewayExtractionProvider, EXTRACTION_MAX_OUTPUT_TOKENS, EXTRACTION_TIMEOUT_MS, GATEWAY_EXTRACTION_CONFIG } from "./gateway-extraction-provider";
 import type { ExtractionInput } from "./types";
+// Imported statically (vi.mock above is hoisted, so it sees the same mocked
+// "ai"): importing this service's whole module graph inside the test body
+// counted its compile time against the test's 5s budget on a cold run.
+import { defaultExtractionProvider } from "@/server/services/supplier-invoice-capture-service";
 
 const PDF: ExtractionInput = { bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]), mimeType: "application/pdf" };
 const JPG: ExtractionInput = { bytes: new Uint8Array([0xff, 0xd8, 0xff]), mimeType: "image/jpeg" };
@@ -254,8 +258,7 @@ describe("the documented configuration", () => {
 
 describe("this adapter is NOT the default", () => {
   it("the service still ships the honest no-op provider until certification is authorised", async () => {
-    const service = await import("@/server/services/supplier-invoice-capture-service");
-    const result = await service.defaultExtractionProvider.extract({ bytes: new Uint8Array(), mimeType: "application/pdf" });
+    const result = await defaultExtractionProvider.extract({ bytes: new Uint8Array(), mimeType: "application/pdf" });
     expect(result).toMatchObject({ ok: false, category: "missing-api-key" });
     // And selecting the Gateway adapter is an explicit act, not a default.
     expect(generateObject).not.toHaveBeenCalled();
