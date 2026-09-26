@@ -433,7 +433,7 @@ function RuleCard({
   return (
     <div className="rounded-vf-md border border-vf-paper-border p-4">
       {conflictReasons.length > 0 && (
-        <div className="mb-3 rounded-md border border-vf-warning/25 bg-vf-warning/8 px-3 py-2 text-xs text-[#93601f]">
+        <div className="mb-3 rounded-md border border-vf-warning/25 bg-vf-warning/8 px-3 py-2 text-xs text-vf-warning">
           <p className="font-medium">Conflicts with another active rule:</p>
           <ul className="mt-1 list-disc pl-4">
             {conflictReasons.map((reason, i) => (
@@ -881,7 +881,7 @@ export function BankingRulesTab({ companyId, rules, previewMode }: { companyId: 
       )}
 
       {importErrors.length > 0 && (
-        <div className="rounded-vf-md border border-vf-warning/40 bg-vf-warning/10 p-3 text-xs text-[#93601f]">
+        <div className="rounded-vf-md border border-vf-warning/40 bg-vf-warning/10 p-3 text-xs text-vf-warning">
           <p className="font-medium">Some rows didn&rsquo;t import:</p>
           <ul className="mt-1 list-disc pl-4">
             {importErrors.map((e, i) => (

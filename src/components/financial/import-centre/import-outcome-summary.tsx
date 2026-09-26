@@ -3,9 +3,9 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const TONE_CLASSES: Record<"good" | "info" | "critical" | "muted" | "danger", string> = {
-  good: "bg-vf-success/14 text-[#1f6e4b]",
+  good: "bg-vf-success/14 text-vf-success",
   info: "bg-vf-info/14 text-vf-info",
-  critical: "bg-orange-500/16 text-orange-700",
+  critical: "bg-orange-500/16 text-vf-orange",
   muted: "bg-vf-paper-alt text-vf-ink-faint",
   danger: "bg-vf-danger/14 text-vf-danger",
 };

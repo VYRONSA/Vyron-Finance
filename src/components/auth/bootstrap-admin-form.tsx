@@ -52,7 +52,7 @@ export function BootstrapAdminForm() {
 
   if (invited) {
     return (
-      <p role="status" className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-4 py-3 text-sm text-[#1f6e4b]">
+      <p role="status" className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-4 py-3 text-sm text-vf-success">
         {invited.reissued ? "Invitation sent again" : "Invitation sent"} to {invited.email}. Open the link in that email to set your password. Setup is
         complete once the invitation has been accepted.
       </p>

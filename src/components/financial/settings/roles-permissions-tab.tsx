@@ -316,7 +316,7 @@ function AssignmentsPanel({ companyId, roles, assignments, previewMode }: { comp
           </Button>
         </div>
         {inviteError && <p role="alert" className="text-sm text-vf-danger">{inviteError}</p>}
-        {inviteSent && <p className="text-sm text-[#1f6e4b]">Invite sent to {inviteSent}.</p>}
+        {inviteSent && <p className="text-sm text-vf-success">Invite sent to {inviteSent}.</p>}
       </div>
 
       <div className="flex flex-col gap-2 rounded-vf-md border border-vf-paper-border p-3">

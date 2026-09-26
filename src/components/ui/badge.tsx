@@ -7,15 +7,15 @@ const badgeVariants = cva(
   {
     variants: {
       tone: {
-        good: "bg-vf-success/14 text-[#1f6e4b]",
-        warn: "bg-vf-warning/16 text-[#93601f]",
+        good: "bg-vf-success/14 text-vf-success",
+        warn: "bg-vf-warning/16 text-vf-warning",
         info: "bg-vf-info/14 text-vf-info",
         danger: "bg-vf-danger/14 text-vf-danger",
         muted: "bg-vf-paper-alt text-vf-ink-faint",
         // Transaction Explorer Redesign — "Needs Review" needed its own
         // distinct colour, separate from "warn" (Suggested/yellow) and
         // "danger" (Invalid/red), so the two can't be confused at a glance.
-        critical: "bg-orange-500/16 text-orange-700",
+        critical: "bg-orange-500/16 text-vf-orange",
       },
     },
     defaultVariants: {

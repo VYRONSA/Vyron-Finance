@@ -198,7 +198,7 @@ export function FinancialWorkspaceShell({
     // time — both are the same underlying fix, a real fixed frame
     // instead of relying on sticky/overflow tricks layered on top of
     // ordinary document scroll.
-    <div className="flex h-screen flex-col overflow-hidden bg-[#050c18]">
+    <div data-precisia-app className="flex h-screen flex-col overflow-hidden bg-[#050c18]">
       {!previewMode && <SessionExpiryGuard />}
       {previewMode && (
         <div className="shrink-0 border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-300">
@@ -500,7 +500,7 @@ export function FinancialWorkspaceShell({
             onScroll={isDashboardRoute ? (e) => setScrolled(e.currentTarget.scrollTop > 40) : undefined}
             className={cn(
               "flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto",
-              isDashboardRoute ? "pc-canvas" : "bg-vf-workspace-bg",
+              "pc-canvas",
               isProcessingRoute ? "px-4 py-3 sm:px-6" : isDashboardRoute ? "px-4 pt-[89px] pb-3 sm:px-[17px] lg:pt-[19px]" : "px-4 py-6 sm:px-6 lg:px-8 2xl:px-10",
             )}
           >
@@ -510,7 +510,7 @@ export function FinancialWorkspaceShell({
             <footer
               className={cn(
                 "mt-6 flex shrink-0 flex-wrap items-center justify-between gap-3 pt-3 font-sans text-[0.82rem]",
-                isDashboardRoute ? "text-[#c2cedd]" : "border-t border-vf-paper-border text-vf-ink-faint",
+                isDashboardRoute ? "text-[#c2cedd]" : "border-t border-vf-paper-border text-[#c2cedd]",
               )}
             >
               <VyronsoftAttribution className="text-[0.82rem] [&_span]:font-medium" />

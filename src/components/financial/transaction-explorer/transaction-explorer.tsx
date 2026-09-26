@@ -1416,7 +1416,7 @@ export function TransactionExplorer({
       </div>
 
       {error && <p className="text-sm text-vf-danger">{error}</p>}
-      {notice && <p className="text-sm text-[#1f6e4b]">{notice}</p>}
+      {notice && <p className="text-sm text-vf-success">{notice}</p>}
 
       {/* Phase 31 — "Save Selected" result. Never a bare "Success": the
        * accountant needs the saved/failed/unchanged breakdown at a
@@ -1425,7 +1425,7 @@ export function TransactionExplorer({
        * grid. Failed rows stay dirty (see `commitRow`), so nothing here
        * silently drops a change. */}
       {blockedEdits.length > 0 && (
-        <div className="flex flex-col gap-1.5 rounded-vf-md border border-vf-warning/25 bg-vf-warning/8 px-3.5 py-2.5 text-sm text-[#93601f]">
+        <div className="flex flex-col gap-1.5 rounded-vf-md border border-vf-warning/25 bg-vf-warning/8 px-3.5 py-2.5 text-sm text-vf-warning">
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-medium">
               {blockedEdits.length} pending change{blockedEdits.length === 1 ? "" : "s"} cannot be saved yet
@@ -1457,7 +1457,7 @@ export function TransactionExplorer({
       {bulkSaveResult && (
         <div className="flex flex-col gap-1.5 rounded-vf-md border border-vf-paper-border bg-vf-paper-alt/60 px-3.5 py-2.5 text-sm">
           <div className="flex flex-wrap items-center gap-3">
-            <span className={`font-medium ${allocationUpdateSucceeded(bulkSaveResult) ? "text-[#1f6e4b]" : "text-vf-danger"}`}>
+            <span className={`font-medium ${allocationUpdateSucceeded(bulkSaveResult) ? "text-vf-success" : "text-vf-danger"}`}>
               {allocationUpdateSucceeded(bulkSaveResult) ? "✓ " : "! "}
               {summarizeAllocationUpdate(bulkSaveResult)}
             </span>
@@ -1484,7 +1484,7 @@ export function TransactionExplorer({
       )}
 
       {repeatedAllocationPrompt && (
-        <div className="flex flex-wrap items-center gap-3 rounded-vf-md border border-vf-warning/25 bg-vf-warning/8 px-3.5 py-2.5 text-sm text-[#93601f]">
+        <div className="flex flex-wrap items-center gap-3 rounded-vf-md border border-vf-warning/25 bg-vf-warning/8 px-3.5 py-2.5 text-sm text-vf-warning">
           <span>
             You have allocated &ldquo;{repeatedAllocationPrompt.transaction.beneficiary}&rdquo; the same way {repeatedAllocationPrompt.count} times.
             Would you like to create a Banking Rule?
@@ -1587,9 +1587,9 @@ export function TransactionExplorer({
         <div className="flex flex-wrap items-center gap-2">
           <span>{pageStats.imported} transaction(s) on this page</span>
           <span>·</span>
-          <span>Allocated <span className="font-mono font-semibold text-[#1f6e4b]">{pageStats.allocated}</span></span>
+          <span>Allocated <span className="font-mono font-semibold text-vf-success">{pageStats.allocated}</span></span>
           <span>·</span>
-          <span>Needs Review <span className="font-mono font-semibold text-orange-700">{pageStats.needsReview}</span></span>
+          <span>Needs Review <span className="font-mono font-semibold text-vf-orange">{pageStats.needsReview}</span></span>
           <span>·</span>
           <span>Rules Created <span className="font-mono font-semibold text-vf-info">{pageStats.rulesCreated}</span></span>
           <span>·</span>
@@ -1599,9 +1599,9 @@ export function TransactionExplorer({
           <span>·</span>
           <span>Ready to Post <span className="font-mono font-semibold text-vf-info">{pageStats.posting["Ready to Post"]}</span></span>
           <span>·</span>
-          <span>Posted <span className="font-mono font-semibold text-[#1f6e4b]">{pageStats.posting.Posted}</span></span>
+          <span>Posted <span className="font-mono font-semibold text-vf-success">{pageStats.posting.Posted}</span></span>
           <span>·</span>
-          <span>Reconciled <span className="font-mono font-semibold text-[#1f6e4b]">{pageStats.posting.Reconciled}</span></span>
+          <span>Reconciled <span className="font-mono font-semibold text-vf-success">{pageStats.posting.Reconciled}</span></span>
         </div>
         {!previewMode && (
           <div className="flex gap-2">

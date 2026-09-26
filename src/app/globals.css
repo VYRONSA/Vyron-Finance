@@ -434,3 +434,82 @@ h1, h2, h3, h4 {
   width: min(100%, 1672px);
   margin-left: round(down, calc((100% - min(100%, 1672px)) / 2), 1px);
 }
+
+/* ------------------------------------------------------------------
+ * PRECISIA application theme — every authenticated page.
+ *
+ * The app's pages are built on semantic tokens (paper / ink / borders /
+ * status). Inside the PRECISIA application (the company workspace and the
+ * platform workspace) those tokens take the new Dashboard's values: navy
+ * panels on the midnight canvas, light text, the Dashboard's borders and
+ * depth. Scoped with :has() on <body> so dialogs and menus portalled out
+ * of the shell are themed too. Printable documents (invoices, statements,
+ * reports) opt back into paper with .pc-light.
+ * ------------------------------------------------------------------ */
+body:has([data-precisia-app]) {
+  --color-paper: #0b1627;
+  --color-paper-alt: #111f33;
+  --color-paper-border: #1f3550;
+  --color-section-canvas: #050c18;
+  --color-workspace-bg: #050c18;
+  --color-ink: #f3f7fd;
+  --color-ink-soft: #c9d4e3;
+  --color-ink-faint: #8d9bb0;
+  --color-success: #27d17f;
+  --color-warning: #f5a524;
+  --color-danger: #f0474f;
+  --color-info: #4f9dff;
+  --color-purple: #a78bfa;
+  --color-orange: #fb923c;
+  --shadow-paper-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-paper-md: 0 8px 22px -12px rgba(0, 0, 0, 0.8);
+  --shadow-paper-lg: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 18px 40px -24px rgba(0, 0, 0, 0.9);
+  --shadow-paper-xl: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 24px 52px -24px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(47, 155, 255, 0.12);
+  color-scheme: dark;
+}
+
+/* Typography: the Dashboard's sans headings everywhere in the app. */
+body:has([data-precisia-app]) :is(h1, h2, h3, h4, .font-display) {
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
+/* Native form controls (date pickers, selects) follow the dark scheme. */
+body:has([data-precisia-app]) :is(input, select, textarea) {
+  color-scheme: dark;
+}
+
+/* Printable documents keep paper: light tokens, the document serif. */
+body .pc-light {
+  --color-paper: #fdfbf9;
+  --color-paper-alt: #f4f1ed;
+  --color-paper-border: #e6e1da;
+  --color-ink: #181513;
+  --color-ink-soft: #57524c;
+  --color-ink-faint: #8c8680;
+  --color-success: #1f8a4c;
+  --color-warning: #c9812c;
+  --color-danger: #c11c31;
+  --color-info: #2f66c9;
+  --color-purple: #7c3aed;
+  --color-orange: #d97a2b;
+  --shadow-paper-sm: 0 1px 2px rgba(17, 24, 39, 0.06), 0 1px 1px rgba(17, 24, 39, 0.04);
+  --shadow-paper-md: 0 4px 16px rgba(17, 24, 39, 0.08), 0 1.5px 5px rgba(17, 24, 39, 0.05);
+  --shadow-paper-lg: 0 16px 40px rgba(17, 24, 39, 0.1), 0 4px 12px rgba(17, 24, 39, 0.05);
+  --shadow-paper-xl: 0 24px 56px rgba(17, 24, 39, 0.14), 0 8px 20px rgba(17, 24, 39, 0.07);
+  color-scheme: light;
+  color: var(--color-ink);
+}
+body:has([data-precisia-app]) .pc-light :is(h1, h2, h3, h4, .font-display) {
+  font-family: var(--font-display);
+  letter-spacing: normal;
+}
+body:has([data-precisia-app]) .pc-light :is(input, select, textarea) {
+  color-scheme: light;
+}
+
+/* The Dashboard's corner language (12-16px) for the older radius tokens,
+ * inside the app only; documents keep theirs. */
+body:has([data-precisia-app]) .rounded-vf-lg:not(.pc-light, .pc-light *) { border-radius: 14px; }
+body:has([data-precisia-app]) .rounded-vf-xl:not(.pc-light, .pc-light *) { border-radius: 16px; }
+body:has([data-precisia-app]) .rounded-vf-md:not(.pc-light, .pc-light *) { border-radius: 12px; }

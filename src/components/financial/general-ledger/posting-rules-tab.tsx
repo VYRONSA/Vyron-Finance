@@ -440,7 +440,7 @@ export function PostingRulesTab({
       </p>
 
       {importErrors.length > 0 && (
-        <div className="rounded-vf-md border border-vf-warning/40 bg-vf-warning/10 p-3 text-xs text-[#93601f]">
+        <div className="rounded-vf-md border border-vf-warning/40 bg-vf-warning/10 p-3 text-xs text-vf-warning">
           <p className="font-medium">Some rows didn&rsquo;t import:</p>
           <ul className="mt-1 list-disc pl-4">
             {importErrors.map((e, i) => (

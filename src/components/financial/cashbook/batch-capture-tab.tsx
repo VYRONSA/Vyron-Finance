@@ -292,7 +292,7 @@ export function BatchCaptureTab({
           {error}
         </p>
       )}
-      {notice && <p className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-3.5 py-2.5 text-sm text-[#1f6e4b]">{notice}</p>}
+      {notice && <p className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-3.5 py-2.5 text-sm text-vf-success">{notice}</p>}
 
       <BatchEntryGrid
         columns={columns}

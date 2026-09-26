@@ -158,7 +158,7 @@ export function SupplierMergeDialog({
         {result ? (
           <div className="flex flex-col gap-3">
             <div className="rounded-vf-md border border-vf-success/40 bg-vf-success/10 p-4">
-              <p className="font-medium text-[#1f6e4b]">Supplier merged successfully.</p>
+              <p className="font-medium text-vf-success">Supplier merged successfully.</p>
               <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-sm text-vf-ink-soft">
                 <dt className="font-medium text-vf-ink">Kept:</dt>
                 <dd>{result.survivingSupplierName} {result.survivingSupplierCode ? `(${result.survivingSupplierCode})` : ""}</dd>
@@ -205,7 +205,7 @@ export function SupplierMergeDialog({
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <div className="flex-1 rounded-vf-md border border-vf-success/40 bg-vf-success/10 p-3">
-                    <p className="text-xs font-medium uppercase tracking-wide text-[#1f6e4b]">Keep</p>
+                    <p className="text-xs font-medium uppercase tracking-wide text-vf-success">Keep</p>
                     <p className="text-sm font-semibold text-vf-ink">{survivor.name}</p>
                     <p className="font-mono text-xs text-vf-ink-faint">{survivor.supplierCode || "—"}</p>
                   </div>

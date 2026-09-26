@@ -155,7 +155,7 @@ export function OpeningBalancesCentre({
   return (
     <div className="flex flex-col gap-8">
       {previewMode && (
-        <p className="rounded-lg border border-vf-warning/25 bg-vf-warning/8 px-3.5 py-2.5 text-sm text-[#93601f]">
+        <p className="rounded-lg border border-vf-warning/25 bg-vf-warning/8 px-3.5 py-2.5 text-sm text-vf-warning">
           No Supabase project is configured yet — this centre is fully functional but saving will fail until real
           credentials exist.
         </p>

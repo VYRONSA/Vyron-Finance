@@ -151,7 +151,7 @@ function AnswerBubble({ turn }: { turn: Turn }) {
 
           {turn.answer.uncertainties.length > 0 && (
             <div className="mt-3 rounded-vf-sm border border-vf-warning/25 bg-vf-warning/8 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#93601f]">What PRECISIA AI isn&rsquo;t certain about</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-vf-warning">What PRECISIA AI isn&rsquo;t certain about</p>
               <ul className="mt-1.5 flex flex-col gap-1 text-xs text-vf-ink-soft">
                 {turn.answer.uncertainties.map((u, i) => (
                   <li key={i}>{u}</li>

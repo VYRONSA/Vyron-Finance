@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 
 const SEVERITY_TILE_TONE: Record<FindingSeverity, string> = {
   Critical: "bg-vf-danger/10 text-vf-danger",
-  High: "bg-vf-warning/12 text-[#93601f]",
+  High: "bg-vf-warning/12 text-vf-warning",
   Medium: "bg-vf-info/10 text-vf-info",
   Low: "bg-vf-paper-alt text-vf-ink-faint",
 };

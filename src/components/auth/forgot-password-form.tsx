@@ -36,7 +36,7 @@ export function ForgotPasswordForm() {
 
   if (sent) {
     return (
-      <p className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-4 py-3 text-sm text-[#1f6e4b]">
+      <p className="rounded-lg border border-vf-success/25 bg-vf-success/8 px-4 py-3 text-sm text-vf-success">
         If an account exists for {email}, a reset link is on its way.
       </p>
     );

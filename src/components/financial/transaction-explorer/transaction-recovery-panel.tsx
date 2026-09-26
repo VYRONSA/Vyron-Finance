@@ -100,7 +100,7 @@ export function TransactionRecoveryPanel({
           disabled={previewMode}
           title={disabledTitle}
           onClick={onAccept}
-          className="rounded-full bg-vf-success/14 px-3 py-1.5 text-xs font-semibold text-[#1f6e4b] disabled:opacity-50"
+          className="rounded-full bg-vf-success/14 px-3 py-1.5 text-xs font-semibold text-vf-success disabled:opacity-50"
         >
           Accept
         </button>

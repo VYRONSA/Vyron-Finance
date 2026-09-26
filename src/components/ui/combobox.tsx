@@ -266,7 +266,7 @@ export function Combobox<T extends string | number>({
         className={cn(
           "w-full rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none transition-colors",
           invalid ? "border-vf-danger/50 text-vf-danger focus:border-vf-danger" : "border-transparent focus:border-vf-red-500 focus:bg-vf-paper",
-          suggested && !invalid && "border-vf-warning/40 bg-vf-warning/8 text-[#93601f]",
+          suggested && !invalid && "border-vf-warning/40 bg-vf-warning/8 text-vf-warning",
           inputClassName,
         )}
         title={invalid ? invalidMessage : undefined}
@@ -279,7 +279,7 @@ export function Combobox<T extends string | number>({
             e.stopPropagation();
             onAcceptSuggestion?.();
           }}
-          className="absolute top-1/2 right-1 -translate-y-1/2 rounded bg-vf-warning/16 px-1.5 py-0.5 text-[10px] font-semibold text-[#93601f] hover:bg-vf-warning/25"
+          className="absolute top-1/2 right-1 -translate-y-1/2 rounded bg-vf-warning/16 px-1.5 py-0.5 text-[10px] font-semibold text-vf-warning hover:bg-vf-warning/25"
           title="Accept suggestion"
         >
           Accept

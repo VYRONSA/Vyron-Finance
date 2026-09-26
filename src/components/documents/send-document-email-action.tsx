@@ -75,7 +75,7 @@ export function SendDocumentEmailAction({
         <Button variant="subtle" size="sm" disabled={Boolean(disabledTitle)} title={disabledTitle} onClick={() => setConfirming(true)}>
           Send Email
         </Button>
-        {notice && <span className="text-sm text-[#1f6e4b]">{notice}</span>}
+        {notice && <span className="text-sm text-vf-success">{notice}</span>}
       </div>
     );
   }

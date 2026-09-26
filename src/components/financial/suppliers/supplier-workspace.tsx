@@ -270,13 +270,13 @@ export function SupplierWorkspace({
       {importOutcome && (
         <Card className={importOutcome.failed > 0 ? "border-vf-warning/50" : "border-vf-success/40"}>
           <CardHeader>
-            <CardTitle className={importOutcome.failed > 0 ? "text-[#93601f]" : "text-[#1f6e4b]"}>
+            <CardTitle className={importOutcome.failed > 0 ? "text-vf-warning" : "text-vf-success"}>
               {importOutcome.failed > 0 ? "Import completed with warnings" : "Import completed successfully"}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 pt-0">
             <div className="grid max-w-md grid-cols-3 gap-2">
-              <div className="flex flex-col gap-1 rounded-vf-md bg-vf-success/14 px-3 py-2.5 text-[#1f6e4b]">
+              <div className="flex flex-col gap-1 rounded-vf-md bg-vf-success/14 px-3 py-2.5 text-vf-success">
                 <span className="text-2xl font-semibold tabular-nums">{importOutcome.created}</span>
                 <span className="text-xs font-medium uppercase tracking-wide opacity-80">Imported</span>
               </div>

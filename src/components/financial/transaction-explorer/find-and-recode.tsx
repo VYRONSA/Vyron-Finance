@@ -976,12 +976,12 @@ export function FindAndRecode({
             {outcome && (
               <div className="flex flex-col gap-2 rounded-vf-md border border-vf-success/25 bg-vf-success/8 p-3 text-sm">
                 {outcome.recoded === outcome.requested ? (
-                  <p className="font-medium text-[#1f6e4b]">
+                  <p className="font-medium text-vf-success">
                     ✓ {outcome.recoded} transaction{outcome.requested === 1 ? "" : "s"} successfully recoded.
                   </p>
                 ) : (
                   <>
-                    <p className="font-medium text-[#1f6e4b]">
+                    <p className="font-medium text-vf-success">
                       {outcome.requested} selected · {outcome.recoded} recoded · {outcome.skipped.length} failed
                     </p>
                     {outcome.skipped.length > 0 && (

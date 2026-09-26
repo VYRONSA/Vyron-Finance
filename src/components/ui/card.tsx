@@ -4,9 +4,9 @@ import { cn } from "@/lib/utils";
 
 /**
  * Three-level card hierarchy — every card in the platform is one of:
- *   hero  — Level 1, large, executive blue gradient (hero moments)
- *   dark  — Level 2, executive blue gradient, statistic/chart cards
- *   paper — Level 3, white "paper" (the default — tables, forms, lists)
+ *   hero  — Level 1, page header panel (the Dashboard's glowing navy)
+ *   dark  — Level 2, statistic/chart panel
+ *   paper — Level 3, the default panel — tables, forms, lists
  *
  * Phase 3 — Premium Enterprise UI: every tone now answers a hover with a
  * quiet lift (one shadow tier up, a hair of translation, a fractionally
@@ -17,13 +17,18 @@ import { cn } from "@/lib/utils";
  * flashy" — and it composes fine with a card that's also `overflow-hidden`
  * for a decorative glow (the transform is on the card itself, not a child).
  */
-const cardVariants = cva("rounded-vf-lg transition-[transform,box-shadow,border-color] duration-200 ease-vf-out", {
+// PRECISIA — the Dashboard's card language: 14px corners, thin navy
+// borders, deep shadow. `paper` follows the theme tokens (navy panel in
+// the app, white paper inside .pc-light documents); `dark` is the
+// Dashboard's statistic panel; `hero` is the Dashboard's glowing hero
+// panel (page headers).
+const cardVariants = cva("rounded-[14px] transition-[transform,box-shadow,border-color] duration-200 ease-vf-out", {
   variants: {
     tone: {
       paper:
         "border border-vf-paper-border bg-vf-paper text-vf-ink shadow-vf-paper-lg hover:-translate-y-0.5 hover:shadow-vf-paper-xl",
-      dark: "border border-vf-red-900/40 bg-gradient-to-br from-vf-red-600 to-vf-red-900 text-vf-on-dark shadow-vf-dark-card hover:-translate-y-0.5 hover:border-vf-red-700/60",
-      hero: "border border-vf-red-900/40 bg-gradient-to-br from-vf-red-700 to-vf-red-900 text-vf-on-dark shadow-vf-red-glow",
+      dark: "border border-[#1f3550] bg-gradient-to-b from-[#0d1b2e] to-[#0a1524] text-vf-on-dark shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_40px_-24px_rgba(0,0,0,0.9)] hover:-translate-y-0.5 hover:border-[#2d5a8c]",
+      hero: "border border-[#2d5f9e]/60 bg-[radial-gradient(900px_260px_at_85%_-20%,rgba(29,125,255,0.28),transparent_65%),linear-gradient(135deg,#0c1f38_0%,#081629_55%,#060f1d_100%)] text-vf-on-dark shadow-[0_0_0_1px_rgba(47,155,255,0.08),0_18px_48px_-20px_rgba(22,112,255,0.45)]",
     },
   },
   defaultVariants: {

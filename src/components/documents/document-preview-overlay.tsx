@@ -101,7 +101,7 @@ export function DocumentPreviewOverlay({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className="relative z-10 flex h-fit w-full max-w-[860px] flex-col gap-0 self-start rounded-vf-md bg-vf-paper shadow-2xl print:static print:max-w-none print:rounded-none print:shadow-none"
+        className="pc-light relative z-10 flex h-fit w-full max-w-[860px] flex-col gap-0 self-start rounded-vf-md bg-vf-paper shadow-2xl print:static print:max-w-none print:rounded-none print:shadow-none"
       >
         {/* Phase 5J — wraps instead of overflowing at phone width.
             Measured at 390x844: this toolbar pushed 49px past the dialog's

@@ -52,7 +52,7 @@ export function WorkspaceShell({
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen bg-[#020b16] font-sans text-[#f3f7fd]">
+    <div data-precisia-app className="min-h-screen bg-[#020b16] font-sans text-[#f3f7fd]">
       {!previewMode && <SessionExpiryGuard />}
       {previewMode && (
         <div className="border-b border-vf-red-500/25 bg-vf-red-500/10 px-4 py-2 text-center text-xs font-medium text-vf-red-300">
