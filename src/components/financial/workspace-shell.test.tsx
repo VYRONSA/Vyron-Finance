@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { FinancialWorkspaceShell } from "./workspace-shell";
-import { NAV_GROUPS, activeNavGroup, isNavItemActive } from "./workspace-nav";
+import { NAV_GROUPS, activeNavGroup, activeNavParent, groupLinks, isNavItemActive } from "./workspace-nav";
 
 const mockUsePathname = vi.fn(() => "/company/co_1/dashboard");
 
@@ -341,5 +341,71 @@ describe("Phase 5G — responsive navigation (the 768x1024 gap)", () => {
     const { container } = renderShell("/company/co_1/dashboard");
     expect(sidebar(container).className).toContain("hidden");
     expect(sidebar(container).className).toContain("lg:flex");
+  });
+});
+
+describe("Navigation hierarchy — parent entries (Banking, Transactions, Contacts)", () => {
+  const PARENTS: Record<string, string[]> = {
+    Banking: ["Bank Accounts", "Import Centre", "Cashbook", "Banking Exceptions", "Matching"],
+    Transactions: ["Transaction Explorer", "Find & Recode"],
+    Contacts: ["Suppliers", "Customers"],
+  };
+  const parentButton = (nav: HTMLElement, label: string) => within(nav).getByRole("button", { name: new RegExp(`^${label}`) });
+
+  it("Dashboard shows only the main Executive options — no child options", () => {
+    renderShell("/company/co_1/dashboard");
+    const nav = sidebarNav();
+    for (const main of ["Dashboard", "PRECISIA Intelligence", "Sales", "Purchasing", "Inventory"]) {
+      expect(within(nav).getByRole("link", { name: main })).toBeInTheDocument();
+    }
+    for (const [parent, children] of Object.entries(PARENTS)) {
+      expect(parentButton(nav, parent)).toHaveAttribute("aria-expanded", "false");
+      for (const child of children) expect(within(nav).queryByRole("link", { name: child })).not.toBeInTheDocument();
+    }
+  });
+
+  it("clicking a parent opens only that parent; clicking another closes the first", () => {
+    renderShell("/company/co_1/dashboard");
+    const nav = sidebarNav();
+    fireEvent.click(parentButton(nav, "Banking"));
+    for (const child of PARENTS.Banking) expect(within(nav).getByRole("link", { name: child })).toBeInTheDocument();
+
+    fireEvent.click(parentButton(nav, "Contacts"));
+    expect(parentButton(nav, "Contacts")).toHaveAttribute("aria-expanded", "true");
+    expect(parentButton(nav, "Banking")).toHaveAttribute("aria-expanded", "false");
+    expect(within(nav).queryByRole("link", { name: "Bank Accounts" })).not.toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Suppliers" })).toHaveAttribute("href", "/company/co_1/suppliers");
+
+    fireEvent.click(parentButton(nav, "Contacts"));
+    expect(parentButton(nav, "Contacts")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("on a child page its parent opens by itself and the page is marked current", () => {
+    renderShell("/company/co_1/cashbook");
+    const nav = sidebarNav();
+    expect(parentButton(nav, "Banking")).toHaveAttribute("aria-expanded", "true");
+    expect(within(nav).getByRole("link", { name: "Cashbook" })).toHaveAttribute("aria-current", "page");
+    expect(activeNavParent("/company/co_1/transactions/find-and-recode", "co_1")).toBe("Transactions");
+    expect(activeNavParent("/company/co_1/dashboard", "co_1")).toBeNull();
+  });
+
+  it("every previous destination is still in the navigation, exactly once per route", () => {
+    const routes = NAV_GROUPS.flatMap((g) => groupLinks(g)).map((l) => l.href);
+    for (const href of [
+      "dashboard", "intelligence", "bank-accounts", "import-centre", "cashbook", "transactions", "transactions/find-and-recode",
+      "banking-rules", "banking-exceptions", "matching", "suppliers", "customers", "sales", "purchasing", "inventory",
+      "reporting", "reports", "automation-dashboard", "recurring-templates", "general-ledger", "settings",
+    ]) {
+      expect(routes).toContain(href);
+    }
+    expect(activeNavGroup("/company/co_1/banking-rules", "co_1")).toBe("Automation");
+  });
+
+  it("the mobile drawer uses the same hierarchy", () => {
+    renderShell("/company/co_1/dashboard");
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
+    const dialog = screen.getByRole("dialog", { name: "Navigation menu" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Transactions/ }));
+    expect(within(dialog).getByRole("link", { name: "Find & Recode" })).toBeInTheDocument();
   });
 });

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn, getInitials } from "@/lib/utils";
 import { PrecisiaWordmark, VyronsoftAttribution } from "@/components/ui/precisia-wordmark";
-import { NAV_GROUPS, activeNavGroup, isNavItemActive } from "./workspace-nav";
+import { NAV_GROUPS, activeNavGroup, activeNavParent, groupLinks, isNavItemActive } from "./workspace-nav";
 import { WorkspaceNavSections } from "./workspace-nav-sections";
 import { NotificationBell } from "@/components/financial/notification-bell";
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -65,6 +65,15 @@ export function FinancialWorkspaceShell({
   const openGroup = override && override.base === activeGroup ? override.value : activeGroup;
   // One value, so only one section can ever be open; `null` = all closed.
   const toggleGroup = (label: string) => setOverride({ base: activeGroup, value: openGroup === label ? null : label });
+
+  // Parent entries inside a section (Banking, Transactions, Contacts) work
+  // the same way: the route opens the parent holding the current page, a
+  // click toggles, and only one parent is open at a time. On the
+  // Dashboard no parent holds the page, so all start closed.
+  const activeParent = activeNavParent(pathname, companyId);
+  const [parentOverride, setParentOverride] = useState<{ base: string | null; value: string | null } | null>(null);
+  const openParent = parentOverride && parentOverride.base === activeParent ? parentOverride.value : activeParent;
+  const toggleParent = (label: string) => setParentOverride({ base: activeParent, value: openParent === label ? null : label });
 
   // Phase 5G — the tablet/mobile drawer. Below `lg` the sidebar is
   // hidden; until this existed there was no way to reach navigation at
@@ -239,6 +248,8 @@ export function FinancialWorkspaceShell({
                 pathname={pathname}
                 openGroup={openGroup}
                 onToggleGroup={toggleGroup}
+                openParent={openParent}
+                onToggleParent={toggleParent}
                 onNavigate={() => setMobileNavOpen(false)}
                 idPrefix="mobile-nav"
               />
@@ -281,7 +292,7 @@ export function FinancialWorkspaceShell({
               gain. */}
           <nav aria-label="Workspace" className="relative flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto pt-1">
             {collapsed ? (
-              NAV_GROUPS.flatMap((group) => group.items).map((item) => {
+              NAV_GROUPS.flatMap((group) => groupLinks(group)).map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href, item.exact);
                 const itemClass = cn(
@@ -309,6 +320,8 @@ export function FinancialWorkspaceShell({
                 pathname={pathname}
                 openGroup={openGroup}
                 onToggleGroup={toggleGroup}
+                openParent={openParent}
+                onToggleParent={toggleParent}
                 idPrefix="sidebar-nav"
               />
             )}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { IconChevronDown } from "@/components/ui/icons";
-import { NAV_GROUPS, isNavItemActive, type NavGroup } from "./workspace-nav";
+import { NAV_GROUPS, groupLinks, isNavItemActive, isNavParent, type ModuleLink, type NavGroup } from "./workspace-nav";
 
 /**
  * Phase 5G — the grouped navigation body, rendered identically by the
@@ -26,6 +26,8 @@ export function WorkspaceNavSections({
   pathname,
   openGroup,
   onToggleGroup,
+  openParent = null,
+  onToggleParent,
   onNavigate,
   groups = NAV_GROUPS,
   idPrefix = "nav",
@@ -34,12 +36,48 @@ export function WorkspaceNavSections({
   pathname: string;
   openGroup: string | null;
   onToggleGroup: (label: string) => void;
+  /** The one open parent entry (Banking, Transactions, Contacts…); null = none. */
+  openParent?: string | null;
+  onToggleParent?: (label: string) => void;
   /** Called after a link is followed — the drawer uses it to close. */
   onNavigate?: () => void;
   groups?: NavGroup[];
   /** Keeps `aria-controls` ids unique when both copies are mounted. */
   idPrefix?: string;
 }) {
+  function renderLink(item: ModuleLink, nested: boolean) {
+    const Icon = item.icon;
+    const active = isNavItemActive(pathname, companyId, item.href, item.exact);
+    const content = (
+      <>
+        <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-[#5cb3ff]" : "text-[#c9d4e3]")} />
+        {item.label}
+      </>
+    );
+    const itemClass = cn(
+      "flex items-center gap-3 rounded-r-[12px] py-[7px] pr-3 text-[0.82rem] font-medium transition-[background-color,color] duration-150 ease-vf-out",
+      nested ? "pl-12" : "pl-6",
+      active ? "pc-nav-active" : "text-[#d5dde8] hover:bg-white/5 hover:text-white",
+    );
+    return item.href ? (
+      <Link key={item.label} href={`/company/${companyId}/${item.href}`} className={itemClass} aria-current={active ? "page" : undefined} onClick={onNavigate}>
+        {content}
+      </Link>
+    ) : (
+      // Finding #174 (RC-16/E12) — an inert item stays visibly dimmed,
+      // with no hover state and a "Soon" label.
+      <span
+        key={item.label}
+        className={cn("flex cursor-not-allowed items-center gap-3 py-[7px] pr-3 text-[0.82rem] font-medium text-white/30", nested ? "pl-12" : "pl-6")}
+        aria-disabled
+        title={`${item.label} — not available yet`}
+      >
+        {content}
+        <span className="ml-auto text-[0.6rem] tracking-wide uppercase">Soon</span>
+      </span>
+    );
+  }
+
   return (
     <>
       {groups.map((group) => {
@@ -47,7 +85,7 @@ export function WorkspaceNavSections({
         const panelId = `${idPrefix}-${group.label.toLowerCase().replace(/\s+/g, "-")}`;
         // A collapsed group still tells you the page you are on lives
         // inside it, so the nav never looks like nothing is selected.
-        const containsActive = group.items.some((i) => isNavItemActive(pathname, companyId, i.href, i.exact));
+        const containsActive = groupLinks(group).some((i) => isNavItemActive(pathname, companyId, i.href, i.exact));
 
         return (
           <div key={group.label}>
@@ -71,44 +109,35 @@ export function WorkspaceNavSections({
 
             {expanded && (
               <div id={panelId} className="mt-0.5 flex flex-col gap-0.5 pb-2">
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const active = isNavItemActive(pathname, companyId, item.href, item.exact);
-                  const content = (
-                    <>
-                      <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-[#5cb3ff]" : "text-[#c9d4e3]")} />
-                      {item.label}
-                    </>
-                  );
-                  const itemClass = cn(
-                    "flex items-center gap-3 rounded-r-[12px] py-[7px] pr-3 pl-6 text-[0.82rem] font-medium transition-[background-color,color] duration-150 ease-vf-out",
-                    active ? "pc-nav-active" : "text-[#d5dde8] hover:bg-white/5 hover:text-white",
-                  );
-
-                  return item.href ? (
-                    <Link
-                      key={item.label}
-                      href={`/company/${companyId}/${item.href}`}
-                      className={itemClass}
-                      aria-current={active ? "page" : undefined}
-                      onClick={onNavigate}
-                    >
-                      {content}
-                    </Link>
-                  ) : (
-                    // Finding #174 (RC-16/E12) — an inert item used to
-                    // share the exact same class as a real, clickable
-                    // (if inactive) nav link. Kept visibly dimmed, with
-                    // no hover state and a "Soon" label.
-                    <span
-                      key={item.label}
-                      className="flex cursor-not-allowed items-center gap-3 py-[7px] pr-3 pl-6 text-[0.82rem] font-medium text-white/30"
-                      aria-disabled
-                      title={`${item.label} — not available yet`}
-                    >
-                      {content}
-                      <span className="ml-auto text-[0.6rem] tracking-wide uppercase">Soon</span>
-                    </span>
+                {group.items.map((entry) => {
+                  if (!isNavParent(entry)) return renderLink(entry, false);
+                  const Icon = entry.icon;
+                  const open = openParent === entry.label;
+                  const holdsActive = entry.children.some((c) => isNavItemActive(pathname, companyId, c.href, c.exact));
+                  const childrenId = `${panelId}-${entry.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+                  return (
+                    <div key={entry.label}>
+                      <button
+                        type="button"
+                        onClick={() => onToggleParent?.(entry.label)}
+                        aria-expanded={open}
+                        aria-controls={childrenId}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-r-[12px] py-[7px] pr-3 pl-6 text-left text-[0.82rem] font-medium transition-[background-color,color] duration-150 ease-vf-out hover:bg-white/5 hover:text-white",
+                          holdsActive ? "text-white" : "text-[#d5dde8]",
+                        )}
+                      >
+                        <Icon className={cn("h-[18px] w-[18px] shrink-0", holdsActive ? "text-[#5cb3ff]" : "text-[#c9d4e3]")} />
+                        <span className="flex-1">{entry.label}</span>
+                        {!open && holdsActive && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#2f9bff]" />}
+                        <IconChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-[#8fa3bf] transition-transform duration-200 ease-vf-out", open ? "rotate-0" : "-rotate-90")} />
+                      </button>
+                      {open && (
+                        <div id={childrenId} className="mt-0.5 flex flex-col gap-0.5">
+                          {entry.children.map((child) => renderLink(child, true))}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

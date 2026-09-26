@@ -38,7 +38,21 @@ import {
 // `exact` — highlight only on the page itself, not its sub-pages (the
 // Reporting Centre home would otherwise light up on every category).
 export type ModuleLink = { label: string; href?: string; icon: ComponentType<{ className?: string }>; exact?: boolean };
-export type NavGroup = { label: string; items: ModuleLink[] };
+/** A parent entry inside a section: it has no page of its own, it opens
+ * to show its children (only one parent open at a time). */
+export type NavParent = { label: string; icon: ComponentType<{ className?: string }>; children: ModuleLink[] };
+export type NavEntry = ModuleLink | NavParent;
+export type NavGroup = { label: string; items: NavEntry[] };
+
+export function isNavParent(entry: NavEntry): entry is NavParent {
+  return "children" in entry;
+}
+
+/** Every real link in a section, parents expanded — for the icons-only
+ * strip, active-state checks and "is every destination reachable". */
+export function groupLinks(group: NavGroup): ModuleLink[] {
+  return group.items.flatMap((e) => (isNavParent(e) ? e.children : [e]));
+}
 
 // Groups and items match the approved reference exactly. Items with no
 // `href` have no built page yet — per the "stop building placeholders"
@@ -47,19 +61,38 @@ export type NavGroup = { label: string; items: ModuleLink[] };
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Executive",
+    // Main destinations only; related pages sit under a parent that opens
+    // on click (Banking, Transactions, Contacts). Same routes as before.
     items: [
       { label: "Dashboard", href: "dashboard", icon: IconGrid },
       { label: "PRECISIA Intelligence", href: "intelligence", icon: IconSparkles },
-      { label: "Bank Accounts", href: "bank-accounts", icon: IconBank },
-      { label: "Import Centre", href: "import-centre", icon: IconImport },
-      { label: "Cashbook", href: "cashbook", icon: IconBanknote },
-      { label: "Transaction Explorer", href: "transactions", icon: IconListChecks },
-      { label: "Find & Recode", href: "transactions/find-and-recode", icon: IconSearch },
-      { label: "Automation Rules", href: "banking-rules", icon: IconSliders },
-      { label: "Banking Exceptions", href: "banking-exceptions", icon: IconAlertTriangle },
-      { label: "Matching", href: "matching", icon: IconReconcile },
-      { label: "Suppliers", href: "suppliers", icon: IconUsers },
-      { label: "Customers", href: "customers", icon: IconBuilding },
+      {
+        label: "Banking",
+        icon: IconBank,
+        children: [
+          { label: "Bank Accounts", href: "bank-accounts", icon: IconBank },
+          { label: "Import Centre", href: "import-centre", icon: IconImport },
+          { label: "Cashbook", href: "cashbook", icon: IconBanknote },
+          { label: "Banking Exceptions", href: "banking-exceptions", icon: IconAlertTriangle },
+          { label: "Matching", href: "matching", icon: IconReconcile },
+        ],
+      },
+      {
+        label: "Transactions",
+        icon: IconListChecks,
+        children: [
+          { label: "Transaction Explorer", href: "transactions", icon: IconListChecks },
+          { label: "Find & Recode", href: "transactions/find-and-recode", icon: IconSearch },
+        ],
+      },
+      {
+        label: "Contacts",
+        icon: IconUsers,
+        children: [
+          { label: "Suppliers", href: "suppliers", icon: IconUsers },
+          { label: "Customers", href: "customers", icon: IconBuilding },
+        ],
+      },
       { label: "Sales", href: "sales", icon: IconBanknote },
       { label: "Purchasing", href: "purchasing", icon: IconArchive },
       { label: "Inventory", href: "inventory", icon: IconSliders },
@@ -93,6 +126,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Automation",
     items: [
       { label: "Automation Dashboard", href: "automation-dashboard", icon: IconGrid },
+      { label: "Automation Rules", href: "banking-rules", icon: IconSliders },
       { label: "Recurring Templates", href: "recurring-templates", icon: IconRefresh },
     ],
   },
@@ -141,11 +175,29 @@ export function isNavItemActive(pathname: string, companyId: string, href?: stri
 export function activeNavGroup(pathname: string, companyId: string, groups: NavGroup[] = NAV_GROUPS): string | null {
   let best: { label: string; length: number } | null = null;
   for (const group of groups) {
-    for (const item of group.items) {
+    for (const item of groupLinks(group)) {
       if (!isNavItemActive(pathname, companyId, item.href, item.exact)) continue;
       const length = (item.href ?? "").split("?")[0]!.length;
       if (!best || length > best.length) best = { label: group.label, length };
     }
   }
   return best?.label ?? null;
+}
+
+/** Which parent entry holds the open page (so it opens automatically), or
+ * null when the page is a top-level item or outside the nav. Most specific
+ * match wins, as in `activeNavGroup`. */
+export function activeNavParent(pathname: string, companyId: string, groups: NavGroup[] = NAV_GROUPS): string | null {
+  let best: { label: string; length: number } | null = null;
+  for (const group of groups) {
+    for (const entry of group.items) {
+      const candidates = isNavParent(entry) ? entry.children.map((c) => ({ parent: entry.label, link: c })) : [{ parent: null, link: entry }];
+      for (const { parent, link } of candidates) {
+        if (!isNavItemActive(pathname, companyId, link.href, link.exact)) continue;
+        const length = (link.href ?? "").split("?")[0]!.length;
+        if (!best || length > best.length) best = { label: parent ?? "", length };
+      }
+    }
+  }
+  return best?.label ? best.label : null;
 }
