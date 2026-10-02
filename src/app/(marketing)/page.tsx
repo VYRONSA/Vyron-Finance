@@ -19,15 +19,15 @@ import {
 } from "@/components/ui/precisia-icons";
 import { IconArchive, IconBarChart, IconFileText, IconReceipt, IconShieldCheck } from "@/components/ui/icons";
 import { LandingArtboard } from "@/components/marketing/landing-artboard";
+import { HERO_WIDTHS, Photo, TILE_WIDTHS } from "@/components/marketing/photo";
+import { LaptopPreview, MonitorPreview } from "@/components/marketing/product-preview";
 
 // PRECISIA Landing Page, built to the owner-supplied "Precisia Landing
 // Page" reference. From 1024px wide the page is `LandingArtboard` — the
 // reference composition itself, scaled to the window. Narrower screens get
 // this single-column version of the same sections and copy, using the same
-// reference imagery (public/brand/precisia-ref). Copy is verbatim from the
+// photographs (public/brand/precisia-photo). Copy is verbatim from the
 // reference.
-
-const REF = "/brand/precisia-ref/";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -41,13 +41,13 @@ const FEATURE_STRIP: { icon: Icon; title: string; body: string }[] = [
 ];
 
 const INDUSTRIES: { label: string; icon: Icon; photo: string }[] = [
-  { label: "Retail\n& Franchises", icon: PIconCart, photo: "landing-tile-1" },
-  { label: "Hospitality\n& Restaurants", icon: IconReceipt, photo: "landing-tile-2" },
-  { label: "Food\nManufacturing", icon: PIconGear, photo: "landing-tile-3" },
-  { label: "Wholesale\n& Distribution", icon: IconArchive, photo: "landing-tile-4" },
-  { label: "Professional\nServices", icon: PIconBadgeInfo, photo: "landing-tile-5" },
-  { label: "Construction\n& Contracting", icon: PIconBuildingColumns, photo: "landing-tile-6" },
-  { label: "Multi-Company\nGroups", icon: PIconOffice, photo: "landing-tile-7" },
+  { label: "Retail\n& Franchises", icon: PIconCart, photo: "tile-retail" },
+  { label: "Hospitality\n& Restaurants", icon: IconReceipt, photo: "tile-hospitality" },
+  { label: "Food\nManufacturing", icon: PIconGear, photo: "tile-food" },
+  { label: "Wholesale\n& Distribution", icon: IconArchive, photo: "tile-wholesale" },
+  { label: "Professional\nServices", icon: PIconBadgeInfo, photo: "tile-professional" },
+  { label: "Construction\n& Contracting", icon: PIconBuildingColumns, photo: "tile-construction" },
+  { label: "Multi-Company\nGroups", icon: PIconOffice, photo: "tile-multi" },
 ];
 
 const PLATFORM_FEATURES: { icon: Icon; label: string }[] = [
@@ -92,20 +92,11 @@ export default function HomePage() {
     <LandingArtboard />
     <div className="font-sans lg:hidden">
       {/* HERO — pulled up under the translucent sticky header, as in the
-          reference: copy on the left, the product on a monitor on the
-          right. The reference's office photograph behind the monitor is
-          not available as a standalone image, so only its lighting is
-          echoed. */}
+          reference: copy first, then the product on a monitor, over the
+          hero photograph. */}
       <section className="relative -mt-[84px] overflow-hidden bg-[#030a14] pt-[84px] text-white">
-        <div
-          aria-hidden
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(700px 420px at 72% 38%, rgba(30,110,230,0.28), transparent 70%), radial-gradient(380px 300px at 92% 12%, rgba(255,190,110,0.10), transparent 70%), linear-gradient(180deg, #06101d 0%, #030a14 100%)",
-          }}
-        />
-        <div aria-hidden className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#030a14] to-transparent" />
+        <Photo name="hero" widths={HERO_WIDTHS} sizes="250vw" portrait={{ name: "hero-portrait", widths: [2200, 1400], sizes: "200vw" }} priority className="absolute inset-0 h-full w-full" style={{ objectPosition: "30% 50%" }} />
+        <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-[#030a14]/75 via-[#030a14]/35 to-[#030a14]" />
 
         <div className="relative mx-auto grid w-full max-w-[1320px] grid-cols-1 items-center gap-12 px-5 pt-4 pb-36 sm:px-8 lg:grid-cols-[minmax(0,540px)_minmax(0,1fr)] lg:px-12 lg:pb-40">
           <div className="max-w-[600px]">
@@ -132,11 +123,7 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
-          <figure>
-            {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
-            <img src="/brand/precisia-native/landing-hero-visual.png" alt="" aria-hidden className="w-full rounded-[12px]" />
-            <figcaption className="mt-2 text-center text-[0.65rem] text-[#7f8da6]">Illustrative product preview — sample figures, not live data.</figcaption>
-          </figure>
+          <MonitorPreview screenStyle={{ fontSize: "clamp(7px, 2.6vw, 13px)" }} />
         </div>
       </section>
 
@@ -177,8 +164,7 @@ export default function HomePage() {
               <PIconArrowRight className="h-4.5 w-4.5" />
             </Link>
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
-          <img src={`${REF}landing-plant.png`} alt="" aria-hidden className="mt-10 w-full max-w-[420px] rounded-[12px]" />
+          <Photo name="plant" widths={[1200, 2400]} sizes="(min-width: 640px) 560px, 130vw" className="mt-10 aspect-[5/4] w-full max-w-[420px] rounded-[12px]" style={{ objectPosition: "35% 60%" }} />
         </div>
       </section>
 
@@ -203,8 +189,7 @@ export default function HomePage() {
               const Icon = industry.icon;
               return (
                 <li key={industry.label} className="overflow-hidden rounded-[10px] border border-[#2d6fc0]/45 bg-[#07152a] shadow-[0_18px_40px_-24px_rgba(22,112,255,0.6)]">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
-                  <img src={`/brand/precisia-native/${industry.photo}.png`} alt="" aria-hidden className="aspect-[1.25] w-full object-cover" />
+                  <Photo name={industry.photo} widths={TILE_WIDTHS} sizes="(min-width: 640px) 25vw, 50vw" className="aspect-[1.25] w-full" />
                   <div className="flex items-center gap-2.5 px-3 py-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#1d8dff]/70 text-[#2f9bff]">
                       <Icon className="h-4 w-4" />
@@ -251,15 +236,7 @@ export default function HomePage() {
               <PIconArrowRight className="h-4.5 w-4.5" />
             </Link>
           </div>
-          <figure>
-            <div className="overflow-hidden rounded-[12px]">
-              {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
-              <img src={`${REF}landing-platform-laptop-top.png`} alt="" aria-hidden className="block w-full" />
-              {/* eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels */}
-              <img src={`${REF}landing-platform-laptop.png`} alt="" aria-hidden className="block w-full" />
-            </div>
-            <figcaption className="mt-2 text-center text-[0.65rem] text-[#5d6a82]">Illustrative product preview — sample figures, not live data.</figcaption>
-          </figure>
+          <LaptopPreview screenStyle={{ fontSize: "clamp(6px, 2.3vw, 12px)" }} />
         </div>
       </section>
 
@@ -296,16 +273,8 @@ export default function HomePage() {
 
       {/* TAKE THE NEXT STEP */}
       <section id="contact" className="relative overflow-hidden bg-[#051f44] py-16 text-center text-white lg:py-20">
-        {/* The reference's mountain-sunrise photograph is not available as
-            a standalone image; only its dawn lighting is echoed. */}
-        <div
-          aria-hidden
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(420px 220px at 86% 30%, rgba(255,176,80,0.22), transparent 70%), radial-gradient(900px 360px at 50% 120%, rgba(22,90,190,0.45), transparent 70%), linear-gradient(180deg, #0a2a55 0%, #051f44 55%, #03152f 100%)",
-          }}
-        />
+        <Photo name="cta" widths={HERO_WIDTHS} sizes="250vw" className="absolute inset-0 h-full w-full" style={{ objectPosition: "50% 50%" }} />
+        <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-[#051f44]/80 via-[#051f44]/70 to-[#03152f]/90" />
         <div className="relative mx-auto w-full max-w-[960px] px-5">
           <Eyebrow className="text-[#1fb5f5]">Take The Next Step</Eyebrow>
           <h2 className="pc-brand-heading mt-5 text-[1.9rem] leading-tight font-bold sm:text-[2.35rem]">See What PRECISIA Can Do for Your Business.</h2>

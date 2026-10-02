@@ -1,0 +1,486 @@
+{
+ "license": "Unsplash License (https://unsplash.com/license) \u2014 free commercial use, no attribution required; photographers credited here for the record.",
+ "downloaded": "2026-10-02",
+ "assets": {
+  "hero": {
+   "unsplashId": "C9ROIA59Tk0",
+   "photographer": "Weiran Zhang",
+   "description": "a view of a city from a high rise window",
+   "originalSize": [
+    5633,
+    3384
+   ],
+   "page": "https://unsplash.com/photos/C9ROIA59Tk0",
+   "cdn": "https://images.unsplash.com/photo-1654599376596-6c1745ea3d02",
+   "files": [
+    {
+     "file": "hero-3840.jpg",
+     "size": [
+      3840,
+      2307
+     ],
+     "bytes": 951686
+    },
+    {
+     "file": "hero-2560.jpg",
+     "size": [
+      2560,
+      1538
+     ],
+     "bytes": 429261
+    },
+    {
+     "file": "hero-1600.jpg",
+     "size": [
+      1600,
+      961
+     ],
+     "bytes": 192440
+    }
+   ]
+  },
+  "hero-portrait": {
+   "unsplashId": "C9ROIA59Tk0",
+   "photographer": "Weiran Zhang",
+   "description": "a view of a city from a high rise window",
+   "originalSize": [
+    5633,
+    3384
+   ],
+   "page": "https://unsplash.com/photos/C9ROIA59Tk0",
+   "cdn": "https://images.unsplash.com/photo-1654599376596-6c1745ea3d02",
+   "files": [
+    {
+     "file": "hero-portrait-2200.jpg",
+     "size": [
+      2200,
+      3384
+     ],
+     "bytes": 820795
+    },
+    {
+     "file": "hero-portrait-1400.jpg",
+     "size": [
+      1400,
+      2153
+     ],
+     "bytes": 335791
+    }
+   ]
+  },
+  "login": {
+   "unsplashId": "XdMvspRmZ2Y",
+   "photographer": "YUXUAN WANG",
+   "description": "cityscape at night",
+   "originalSize": [
+    5472,
+    3648
+   ],
+   "page": "https://unsplash.com/photos/XdMvspRmZ2Y",
+   "cdn": "https://images.unsplash.com/photo-1575551424332-49525ff5c379",
+   "files": [
+    {
+     "file": "login-3840.jpg",
+     "size": [
+      3840,
+      2560
+     ],
+     "bytes": 1278701
+    },
+    {
+     "file": "login-2560.jpg",
+     "size": [
+      2560,
+      1707
+     ],
+     "bytes": 646578
+    },
+    {
+     "file": "login-1600.jpg",
+     "size": [
+      1600,
+      1067
+     ],
+     "bytes": 280272
+    }
+   ]
+  },
+  "industries": {
+   "unsplashId": "frHqpHZUa2g",
+   "photographer": "pixelperfektion",
+   "description": "gray high rise buildings",
+   "originalSize": [
+    6000,
+    4000
+   ],
+   "page": "https://unsplash.com/photos/frHqpHZUa2g",
+   "cdn": "https://images.unsplash.com/photo-1562590980-1bfb0699efd9",
+   "files": [
+    {
+     "file": "industries-3840.jpg",
+     "size": [
+      3840,
+      2560
+     ],
+     "bytes": 2004073
+    },
+    {
+     "file": "industries-2560.jpg",
+     "size": [
+      2560,
+      1707
+     ],
+     "bytes": 920681
+    },
+    {
+     "file": "industries-1600.jpg",
+     "size": [
+      1600,
+      1067
+     ],
+     "bytes": 358132
+    }
+   ]
+  },
+  "cta": {
+   "unsplashId": "gF6TqTRM4qs",
+   "photographer": "Harsil Patel",
+   "description": "City skyline at sunrise with tall modern buildings",
+   "originalSize": [
+    4079,
+    2293
+   ],
+   "page": "https://unsplash.com/photos/gF6TqTRM4qs",
+   "cdn": "https://images.unsplash.com/photo-1766926039349-602ab4cad525",
+   "files": [
+    {
+     "file": "cta-3840.jpg",
+     "size": [
+      3840,
+      1511
+     ],
+     "bytes": 633667
+    },
+    {
+     "file": "cta-2560.jpg",
+     "size": [
+      2560,
+      1007
+     ],
+     "bytes": 324000
+    },
+    {
+     "file": "cta-1600.jpg",
+     "size": [
+      1600,
+      630
+     ],
+     "bytes": 144176
+    }
+   ]
+  },
+  "platform": {
+   "unsplashId": "5shl-NRhPyc",
+   "photographer": "Petr",
+   "description": "white hallway with glass windows",
+   "originalSize": [
+    5472,
+    3648
+   ],
+   "page": "https://unsplash.com/photos/5shl-NRhPyc",
+   "cdn": "https://images.unsplash.com/photo-1631249008619-8be5db7b4995",
+   "files": [
+    {
+     "file": "platform-3200.jpg",
+     "size": [
+      3200,
+      2134
+     ],
+     "bytes": 1325374
+    },
+    {
+     "file": "platform-1600.jpg",
+     "size": [
+      1600,
+      1067
+     ],
+     "bytes": 310083
+    }
+   ]
+  },
+  "plant": {
+   "unsplashId": "ruQHpukrN7c",
+   "photographer": "Francesco Gallarotti",
+   "description": "green plants on soil",
+   "originalSize": [
+    5472,
+    3648
+   ],
+   "page": "https://unsplash.com/photos/ruQHpukrN7c",
+   "cdn": "https://images.unsplash.com/photo-1457530378978-8bac673b8062",
+   "files": [
+    {
+     "file": "plant-2400.jpg",
+     "size": [
+      2400,
+      1600
+     ],
+     "bytes": 606180
+    },
+    {
+     "file": "plant-1200.jpg",
+     "size": [
+      1200,
+      800
+     ],
+     "bytes": 110117
+    }
+   ]
+  },
+  "tile-retail": {
+   "unsplashId": "XmfAjdvSZIU",
+   "photographer": "Albert Stoynov",
+   "description": "Inside of a department store with clothes on display",
+   "originalSize": [
+    5938,
+    3959
+   ],
+   "page": "https://unsplash.com/photos/XmfAjdvSZIU",
+   "cdn": "https://images.unsplash.com/photo-1743228672550-8b8f22cf0031",
+   "crop": [
+    0,
+    1,
+    4000,
+    2666
+   ],
+   "files": [
+    {
+     "file": "tile-retail-1200.jpg",
+     "size": [
+      1200,
+      800
+     ],
+     "bytes": 149071
+    },
+    {
+     "file": "tile-retail-600.jpg",
+     "size": [
+      600,
+      400
+     ],
+     "bytes": 47466
+    }
+   ]
+  },
+  "tile-hospitality": {
+   "unsplashId": "y-XZf_TNRms",
+   "photographer": "Pylyp Sukhenko",
+   "description": "A chef in a white coat chopping vegetables on a green board in a kitchen",
+   "originalSize": [
+    5468,
+    3076
+   ],
+   "page": "https://unsplash.com/photos/y-XZf_TNRms",
+   "cdn": "https://images.unsplash.com/photo-1622021142947-da7dedc7c39a",
+   "crop": [
+    625,
+    0,
+    3375,
+    2250
+   ],
+   "files": [
+    {
+     "file": "tile-hospitality-1200.jpg",
+     "size": [
+      1200,
+      800
+     ],
+     "bytes": 118205
+    },
+    {
+     "file": "tile-hospitality-600.jpg",
+     "size": [
+      600,
+      400
+     ],
+     "bytes": 40730
+    }
+   ]
+  },
+  "tile-food": {
+   "unsplashId": "oLS6IxceVNs",
+   "photographer": "Arno Senoner",
+   "description": "a group of men in a factory",
+   "originalSize": [
+    5922,
+    3948
+   ],
+   "page": "https://unsplash.com/photos/oLS6IxceVNs",
+   "cdn": "https://images.unsplash.com/photo-1652211955967-99c892925469",
+   "crop": [
+    0,
+    0,
+    4000,
+    2666
+   ],
+   "files": [
+    {
+     "file": "tile-food-1200.jpg",
+     "size": [
+      1200,
+      800
+     ],
+     "bytes": 251053
+    },
+    {
+     "file": "tile-food-600.jpg",
+     "size": [
+      600,
+      400
+     ],
+     "bytes": 83338
+    }
+   ]
+  },
+  "tile-wholesale": {
+   "unsplashId": "p0VP_TOAd5E",
+   "photographer": "Duc LE",
+   "description": "A large warehouse filled with lots of machines",
+   "originalSize": [
+    4000,
+    3000
+   ],
+   "page": "https://unsplash.com/photos/p0VP_TOAd5E",
+   "cdn": "https://images.unsplash.com/photo-1740733448722-82e16d3468bb",
+   "crop": [
+    0,
+    334,
+    4000,
+    2666
+   ],
+   "files": [
+    {
+     "file": "tile-wholesale-1200.jpg",
+     "size": [
+      1200,
+      800
+     ],
+     "bytes": 198084
+    },
+    {
+     "file": "tile-wholesale-600.jpg",
+     "size": [
+      600,
+      400
+     ],
+     "bytes": 58510
+    }
+   ]
+  },
+  "tile-professional": {
+   "unsplashId": "_4tpElFQemQ",
+   "photographer": "Vitaly Gariev",
+   "description": "Diverse business team collaborating in a modern office",
+   "originalSize": [
+    3800,
+    2138
+   ],
+   "page": "https://unsplash.com/photos/_4tpElFQemQ",
+   "cdn": "https://images.unsplash.com/photo-1758518731706-be5d5230e5a5",
+   "crop": [
+    486,
+    0,
+    3207,
+    2138
+   ],
+   "files": [
+    {
+     "file": "tile-professional-1200.jpg",
+     "size": [
+      1200,
+      800
+     ],
+     "bytes": 127292
+    },
+    {
+     "file": "tile-professional-600.jpg",
+     "size": [
+      600,
+      400
+     ],
+     "bytes": 44283
+    }
+   ]
+  },
+  "tile-construction": {
+   "unsplashId": "SxZCMlMZxTM",
+   "photographer": "Esmonde Yong",
+   "description": "A crane is silhouetted against a cloudy sky",
+   "originalSize": [
+    7008,
+    4672
+   ],
+   "page": "https://unsplash.com/photos/SxZCMlMZxTM",
+   "cdn": "https://images.unsplash.com/photo-1723256761894-e7a8f5b47349",
+   "crop": [
+    0,
+    0,
+    4000,
+    2666
+   ],
+   "files": [
+    {
+     "file": "tile-construction-1200.jpg",
+     "size": [
+      1200,
+      800
+     ],
+     "bytes": 110079
+    },
+    {
+     "file": "tile-construction-600.jpg",
+     "size": [
+      600,
+      400
+     ],
+     "bytes": 36854
+    }
+   ]
+  },
+  "tile-multi": {
+   "unsplashId": "GP6-P0QAEzY",
+   "photographer": "Zouhir Zouhir",
+   "description": "a very tall building with lots of windows",
+   "originalSize": [
+    6000,
+    4000
+   ],
+   "page": "https://unsplash.com/photos/GP6-P0QAEzY",
+   "cdn": "https://images.unsplash.com/photo-1692797960717-1738a7a872c8",
+   "crop": [
+    0,
+    0,
+    4000,
+    2666
+   ],
+   "files": [
+    {
+     "file": "tile-multi-1200.jpg",
+     "size": [
+      1200,
+      800
+     ],
+     "bytes": 144376
+    },
+    {
+     "file": "tile-multi-600.jpg",
+     "size": [
+      600,
+      400
+     ],
+     "bytes": 49867
+    }
+   ]
+  }
+ }
+}

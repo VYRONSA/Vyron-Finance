@@ -14,15 +14,8 @@ import {
 } from "@/components/ui/precisia-icons";
 import { IconBarChart, IconFileText, IconShieldCheck } from "@/components/ui/icons";
 import { LandingTop } from "@/components/marketing/landing-top";
-import { LEGACY_LANDING_BANDS } from "@/components/ui/ref-planes.generated";
-import {
-  LANDINGCLARITY_FILL,
-  LANDINGCTA_FILL,
-  LANDINGPLATFORMLEFT_FILL,
-  LANDINGPLATFORMTOP_FILL,
-  type RefFillPatch,
-  type RefFillPiece,
-} from "@/components/ui/ref-fills.generated";
+import { HERO_WIDTHS, Photo } from "@/components/marketing/photo";
+import { LaptopPreview } from "@/components/marketing/product-preview";
 
 /**
  * The PRECISIA landing page at desktop widths, built to the owner-supplied
@@ -31,42 +24,24 @@ import {
  * Every position and size below is in the reference's own pixels and is
  * scaled with the window: `--u` is one reference pixel (100cqw / 801), so
  * the composition keeps the reference's proportions at any desktop width.
- * The photographic regions are the reference's own pixels (see
- * public/brand/precisia-ref/manifest.json for each crop's source box);
+ * The photographs are licensed high-resolution originals
+ * (public/brand/precisia-photo/manifest.json), each filling its band to
+ * the window edges and cropped by its box — never stretched or enlarged;
  * every word, link and button on top of them is real HTML.
  */
 
 const u = (n: number) => `calc(var(--u) * ${n})`;
-const REF = "/brand/precisia-ref/";
+
+/** One reference px for a full-width wrapper: the frame is at most 1672px
+ * wide, so one of its 801 reference px is at most 1672/801 CSS px. */
+const WRAPPER_UNIT = { "--u": "calc(min(100cqw, 1672px) / 801)" } as CSSProperties;
+/** A reference x (0–801, frame coordinates) as a position in a full-width
+ * wrapper whose frame is centred. */
+const wx = (x: number) => `calc(50% + var(--u) * ${x - 400.5})`;
+/** The width from that position to the wrapper's right edge. */
+const wxToRight = (x: number) => `calc(50% - var(--u) * ${x - 400.5})`;
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
-
-/** A reference crop placed at its original coordinates and size (reference
- * px). Rendered as-is: no mask, filter, opacity or overlay. */
-function Crop({ name, x, y, w, h }: { name: string; x: number; y: number; w: number; h: number }) {
-  const style: CSSProperties = { position: "absolute", left: u(x), top: u(y), width: u(w), height: u(h) };
-  // eslint-disable-next-line @next/next/no-img-element -- the reference's own pixels, served as-is (no re-encoding)
-  return <img src={`${REF}${name}.png`} alt="" aria-hidden width={w} height={h} style={style} draggable={false} />;
-}
-
-/** The reference photograph around a block of real text: exact crops of
- * every text-free rectangle, plus a patch behind each line of text (where
- * the reference has its own lettering baked in), coloured from the
- * photograph just outside it. See ref-fills.generated.ts. */
-function Fill({ data }: { data: { pieces: RefFillPiece[]; patches: RefFillPatch[] } }) {
-  return (
-    <>
-      {data.patches.map((p) => (
-        <div key={`${p.x},${p.y}`} aria-hidden className="absolute" style={{ left: u(p.x), top: u(p.y), width: u(p.w), height: u(p.h), background: p.top }}>
-          <div className="absolute inset-0" style={{ background: p.bottom, maskImage: "linear-gradient(to bottom, transparent, #000)", WebkitMaskImage: "linear-gradient(to bottom, transparent, #000)" }} />
-        </div>
-      ))}
-      {data.pieces.map((p) => (
-        <Crop key={p.name} name={p.name} x={p.x} y={p.y} w={p.w} h={p.h} />
-      ))}
-    </>
-  );
-}
 
 function Abs({ x, y, w, children, style, className }: { x: number; y: number; w?: number; children: ReactNode; style?: CSSProperties; className?: string }) {
   return (
@@ -161,22 +136,21 @@ function Slice({ y0, y1, children }: { y0: number; y1: number; children: ReactNo
  * it have no new reference, so they keep the approved treatment built on
  * the original "Precisia Landing Page" reference: More Than Accounting
  * Software, The Platform, Real Results, Take The Next Step and the footer.
- * The whole page is at most 1672px wide (the new reference's own width,
- * so its photography is never enlarged); wider windows get the
- * photographs' own edge colours at the sides.
+ * The composition is at most 1672px wide; on wider windows the
+ * photographs and section colours continue to the window edges.
  */
 export function LandingArtboard() {
   return (
     <div data-landing-artboard className="hidden font-sans text-white lg:block">
       <LandingTop />
-      <div className="relative" style={{ background: `${LEGACY_LANDING_BANDS.clarityLeft} left top / 50% 100% no-repeat, ${LEGACY_LANDING_BANDS.clarityRight} right top / 50% 100% no-repeat` }}>
-        <div className="landing-frame [container-type:inline-size]" style={{ "--u": "calc(100cqw / 801)" } as CSSProperties}>
+      <div className="relative overflow-clip bg-[#f6f9fc] [container-type:inline-size]" style={WRAPPER_UNIT}>
+        <Photo name="plant" widths={[2400, 1200]} sizes="(min-width: 1024px) 55vw, 100vw" className="absolute top-0 h-full" style={{ left: wx(470), width: wxToRight(470), objectPosition: "35% 60%", maskImage: "linear-gradient(90deg, transparent, #000 22%)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 22%)" }} />
+        <div className="landing-frame">
           <Slice y0={500} y1={720}>
         {/* ---------------- MORE THAN ACCOUNTING SOFTWARE ---------------- */}
         <section id="solutions" aria-label="More than accounting software">
-          <div aria-hidden className="absolute" style={{ left: 0, top: u(470), width: "100%", height: u(250), background: "linear-gradient(90deg,#f7f9fc 0%,#f0f6fc 55%,#fefcf1 72%)" }} />
-          <Crop name="landing-plant" x={548} y={506} w={253} h={214} />
-          <Fill data={LANDINGCLARITY_FILL} />
+          {/* eslint-disable-next-line @next/next/no-img-element -- vector lettering */}
+          <img src="/brand/precisia-photo/clarity-lettering.svg" alt="" aria-hidden className="absolute" style={{ left: u(385), top: u(540), width: u(167), height: u(150) }} draggable={false} />
           <Abs x={43} y={529}>
             <p className="text-[#1e57b5]" style={eyebrow()}>More Than Accounting Software</p>
           </Abs>
@@ -200,25 +174,26 @@ export function LandingArtboard() {
             Explore the Platform
             <Arrow />
           </Btn>
-          {/* "Clarity Creates Opportunity" is shown as the reference's own
-              hand lettering (part of the photograph above); screen readers
-              get the phrase here. */}
+          {/* "Clarity Creates Opportunity" is the reference's hand lettering,
+              traced to vector; screen readers get the phrase here. */}
           <p className="sr-only">Clarity Creates Opportunity</p>
         </section>
           </Slice>
         </div>
       </div>
-      <div className="relative" style={{ background: `${LEGACY_LANDING_BANDS.restLeft} left top / 50% 100% no-repeat, ${LEGACY_LANDING_BANDS.restRight} right top / 50% 100% no-repeat` }}>
-        <div className="landing-frame [container-type:inline-size]" style={{ "--u": "calc(100cqw / 801)" } as CSSProperties}>
+      <div
+        className="relative overflow-clip [container-type:inline-size]"
+        style={{ ...WRAPPER_UNIT, background: "linear-gradient(180deg, #f7f9fc 0 calc(var(--u) * 466), #f9fbfd 0 calc(var(--u) * 613), #00122a 0 calc(var(--u) * 775), #0d0e11 0)" }}
+      >
+        <Photo name="platform" widths={[3200, 1600]} sizes="(min-width: 1024px) 85vw, 100vw" className="absolute" style={{ left: wx(230), width: wxToRight(230), top: 0, height: u(466), objectPosition: "50% 50%", maskImage: "linear-gradient(90deg, transparent, #000 30%)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 30%)" }} />
+        <Photo name="cta" widths={HERO_WIDTHS} sizes="100vw" className="absolute left-0 w-full" style={{ top: u(613), height: u(162), objectPosition: "50% 45%" }} />
+        <div className="landing-frame">
           <Slice y0={1000} y1={1962}>
         {/* ---------------- THE PLATFORM ---------------- */}
         <section id="platform" aria-label="The platform">
-          <div aria-hidden className="absolute" style={{ left: 0, top: u(1000), width: "100%", height: u(466), background: "linear-gradient(90deg,#f7f9fc 0%,#f7fafd 25%,#e8f0f7 37.5%,#d2e3f4 43%,#bcd3ea 60%)" }} />
-          <Crop name="landing-platform-laptop-left" x={200} y={1138} w={145} h={328} />
-          <Crop name="landing-platform-laptop-top" x={345} y={1000} w={456} h={138} />
-          <Crop name="landing-platform-laptop" x={345} y={1138} w={456} h={328} />
-          <Fill data={LANDINGPLATFORMTOP_FILL} />
-          <Fill data={LANDINGPLATFORMLEFT_FILL} />
+          <Abs x={372} y={1040} w={410}>
+            <LaptopPreview caption={false} screenStyle={{ fontSize: u(5.6) }} />
+          </Abs>
           <Abs x={43} y={1024}>
             <p className="text-[#1e57b5]" style={eyebrow()}>The Platform</p>
           </Abs>
@@ -307,14 +282,9 @@ export function LandingArtboard() {
 
         {/* ---------------- TAKE THE NEXT STEP ---------------- */}
         <section id="contact" aria-label="Request a demonstration">
-          <div aria-hidden className="absolute" style={{ left: 0, top: u(1613), width: "100%", height: u(162), background: "linear-gradient(180deg,#002342 0%,#002342 14%,#031a35 47%,#00122a 78%,#010b16 100%)" }} />
-          <Crop name="landing-cta-left" x={0} y={1614} w={195} h={161} />
-          <Crop name="landing-cta-right" x={606} y={1614} w={195} h={161} />
-          {/* Full-width top and bottom bands drawn over the side crops: the
-              same reference pixels continue across, so no seam shows. */}
-          <Crop name="landing-cta-top" x={0} y={1614} w={801} h={19} />
-          <Crop name="landing-cta-bottom" x={0} y={1757} w={801} h={18} />
-          <Fill data={LANDINGCTA_FILL} />
+          {/* The reference's navy panel behind the copy, opening onto the
+              photograph at both sides. */}
+          <div aria-hidden className="absolute" style={{ left: 0, top: u(1613), width: "100%", height: u(162), background: "linear-gradient(180deg,#002342 0%,#031a35 47%,#00122a 78%,#010b16 100%)", maskImage: "linear-gradient(90deg, transparent 6%, #000 33%, #000 67%, transparent 94%)", WebkitMaskImage: "linear-gradient(90deg, transparent 6%, #000 33%, #000 67%, transparent 94%)" }} />
           <Abs x={0} y={1635} w={801} className="text-center">
             <p className="text-[#1fb5f5]" style={eyebrow()}>Take The Next Step</p>
           </Abs>
