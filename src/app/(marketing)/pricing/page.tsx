@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = {
   title: "Pricing — PRECISIA",
   description: "Plans priced for how many companies you run.",
+  alternates: { canonical: "/pricing" },
 };
 
 const CHECK = (

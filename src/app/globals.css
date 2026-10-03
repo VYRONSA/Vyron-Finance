@@ -418,12 +418,12 @@ h1, h2, h3, h4 {
   color: #fff;
 }
 
-/* The landing page draws its own header and footer as part of the
- * reference composition from 1024px (LandingArtboard), so the shared
- * marketing header/footer step aside there — on that page only. */
+/* The landing page draws its own header as part of the reference
+ * composition from 1024px (LandingArtboard), so the shared marketing
+ * header steps aside there — on that page only. The shared footer is used
+ * at every width. */
 @media (min-width: 1024px) {
-  .marketing-root:has([data-landing-artboard]) > header,
-  .marketing-root:has([data-landing-artboard]) > footer {
+  .marketing-root:has([data-landing-artboard]) > header {
     display: none;
   }
 }

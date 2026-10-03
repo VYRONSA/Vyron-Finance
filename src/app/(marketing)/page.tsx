@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link";
 import {
@@ -21,6 +22,7 @@ import { IconArchive, IconBarChart, IconFileText, IconReceipt, IconShieldCheck }
 import { LandingArtboard } from "@/components/marketing/landing-artboard";
 import { HERO_WIDTHS, Photo, TILE_WIDTHS } from "@/components/marketing/photo";
 import { LaptopPreview, MonitorPreview } from "@/components/marketing/product-preview";
+import { buildHomeStructuredData, PRECISIA_DESCRIPTION, PRECISIA_TITLE, PRECISIA_URL } from "@/lib/precisia-site";
 
 // PRECISIA Landing Page, built to the owner-supplied "Precisia Landing
 // Page" reference. From 1024px wide the page is `LandingArtboard` — the
@@ -28,6 +30,29 @@ import { LaptopPreview, MonitorPreview } from "@/components/marketing/product-pr
 // this single-column version of the same sections and copy, using the same
 // photographs (public/brand/precisia-photo). Copy is verbatim from the
 // reference.
+
+// Open Graph and Twitter are restated in full because Next merges them
+// shallowly — a page-level `openGraph` also drops the root segment's
+// file-based image, so the existing app/opengraph-image.tsx is named here.
+const SOCIAL_IMAGE = { url: "/opengraph-image", width: 1200, height: 630, type: "image/png" };
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: PRECISIA_URL,
+    siteName: "PRECISIA",
+    title: PRECISIA_TITLE,
+    description: PRECISIA_DESCRIPTION,
+    images: [SOCIAL_IMAGE],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: PRECISIA_TITLE,
+    description: PRECISIA_DESCRIPTION,
+    images: [SOCIAL_IMAGE],
+  },
+};
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -89,6 +114,10 @@ function Lines({ text }: { text: string }) {
 export default function HomePage() {
   return (
     <>
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(buildHomeStructuredData()).replace(/</g, "\\u003c") }}
+    />
     <LandingArtboard />
     <div className="font-sans lg:hidden">
       {/* HERO — pulled up under the translucent sticky header, as in the

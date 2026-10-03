@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Source_Serif_4, Inter, IBM_Plex_Mono, Montserrat } from "next/font/google";
+import { PRECISIA_DESCRIPTION, PRECISIA_ORIGIN, PRECISIA_TITLE } from "@/lib/precisia-site";
 import "./globals.css";
 
 // Executive serif (the login card's "Welcome back" and legacy headings) /
@@ -30,9 +31,11 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "PRECISIA — Financial Intelligence",
-  description:
-    "PRECISIA gives you complete financial control with real-time insights, automated processing and AI-powered intelligence. A product of Vyronsoft (Pty) Ltd.",
+  // Absolute metadata URLs (Open Graph image, canonical) always use the
+  // production domain, never a preview or localhost host.
+  metadataBase: new URL(PRECISIA_ORIGIN),
+  title: PRECISIA_TITLE,
+  description: PRECISIA_DESCRIPTION,
 };
 
 export default function RootLayout({

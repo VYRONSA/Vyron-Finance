@@ -89,35 +89,6 @@ const RESULTS: { icon: Icon; value: string; label: [string, string?]; cx: number
 ];
 const RESULT_DIVIDERS = [361, 458, 553, 664];
 
-const FOOTER_COLS = [
-  {
-    heading: "Product",
-    x: 277,
-    links: [
-      { href: "/#platform", label: "Platform" },
-      { href: "/#platform", label: "Features" },
-      { href: "/pricing", label: "Pricing" },
-      { href: "/#platform", label: "How It Works" },
-    ],
-  },
-  {
-    heading: "Company",
-    x: 431,
-    links: [
-      { href: "/#about", label: "About" },
-      { href: "/#results", label: "Resources" },
-      { href: "/#contact", label: "Contact" },
-      { href: "/#contact", label: "Request a Demo" },
-    ],
-  },
-];
-const ECOSYSTEM = [
-  { name: "SAFENZA", tagline: "Safety Intelligence" },
-  { name: "UMORA", tagline: "Human & Workforce Intelligence" },
-  { name: "VALORA", tagline: "Profitability Intelligence" },
-  { name: "PROVENA", tagline: "Sustainability & Compliance" },
-];
-
 /** One slice of the original 801px composition: reference rows y0..y1,
  * scaled to the slice's container width. */
 function Slice({ y0, y1, children }: { y0: number; y1: number; children: ReactNode }) {
@@ -135,7 +106,8 @@ function Slice({ y0, y1, children }: { y0: number; y1: number; children: ReactNo
  * owner's "New Landing Page" reference (LandingTop). The sections below
  * it have no new reference, so they keep the approved treatment built on
  * the original "Precisia Landing Page" reference: More Than Accounting
- * Software, The Platform, Real Results, Take The Next Step and the footer.
+ * Software, The Platform, Real Results and Take The Next Step. The footer
+ * is the shared SiteFooter, the same one every public page uses.
  * The composition is at most 1672px wide; on wider windows the
  * photographs and section colours continue to the window edges.
  */
@@ -183,12 +155,12 @@ export function LandingArtboard() {
       </div>
       <div
         className="relative overflow-clip [container-type:inline-size]"
-        style={{ ...WRAPPER_UNIT, background: "linear-gradient(180deg, #f7f9fc 0 calc(var(--u) * 466), #f9fbfd 0 calc(var(--u) * 613), #00122a 0 calc(var(--u) * 775), #0d0e11 0)" }}
+        style={{ ...WRAPPER_UNIT, background: "linear-gradient(180deg, #f7f9fc 0 calc(var(--u) * 466), #f9fbfd 0 calc(var(--u) * 613), #00122a 0)" }}
       >
         <Photo name="platform" widths={[3200, 1600]} sizes="(min-width: 1024px) 85vw, 100vw" className="absolute" style={{ left: wx(230), width: wxToRight(230), top: 0, height: u(466), objectPosition: "50% 50%", maskImage: "linear-gradient(90deg, transparent, #000 30%)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 30%)" }} />
         <Photo name="cta" widths={HERO_WIDTHS} sizes="100vw" className="absolute left-0 w-full" style={{ top: u(613), height: u(162), objectPosition: "50% 45%" }} />
         <div className="landing-frame">
-          <Slice y0={1000} y1={1962}>
+          <Slice y0={1000} y1={1775}>
         {/* ---------------- THE PLATFORM ---------------- */}
         <section id="platform" aria-label="The platform">
           <Abs x={372} y={1040} w={410}>
@@ -306,57 +278,6 @@ export function LandingArtboard() {
           </Btn>
         </section>
 
-        {/* ---------------- FOOTER ---------------- */}
-        <footer id="about" className="absolute inset-x-0 bg-[#0d0e11]" style={{ top: u(1775), height: u(187) }}>
-          <Link href="/" aria-label="PRECISIA — home" className="absolute" style={{ left: u(51), top: u(34) }}>
-            <span className="block font-[family-name:var(--font-brand)] leading-none text-white" style={{ fontSize: u(24), letterSpacing: "0.02em" }}>
-              PRECISI<span className="text-[#1d8dff]">A</span>
-            </span>
-            <span className="block font-[family-name:var(--font-brand)] font-medium whitespace-nowrap text-[#dbe4f1] uppercase" style={{ fontSize: u(6.6), letterSpacing: "0.2em", marginTop: u(4), lineHeight: 1 }}>
-              Financial Intelligence
-            </span>
-          </Link>
-          <p className="absolute text-[#e6ebf2]" style={{ left: u(51), top: u(94), fontSize: u(8), lineHeight: 1 }}>
-            A product of <span className="font-semibold">Vyronsoft (Pty) Ltd.</span>
-          </p>
-          {FOOTER_COLS.map((col) => (
-            <div key={col.heading} className="absolute" style={{ left: u(col.x), top: u(27) }}>
-              <h4 className="font-bold text-[#e6ebf2] uppercase" style={{ fontSize: u(6), letterSpacing: "0.2em", lineHeight: 1 }}>
-                {col.heading}
-              </h4>
-              <ul className="flex flex-col" style={{ marginTop: u(10), gap: u(7.4) }}>
-                {col.links.map((l) => (
-                  <li key={l.label} style={{ fontSize: u(8.1), lineHeight: 1 }}>
-                    <Link href={l.href} className="text-[#d5dbe4] hover:text-[#6cc0ff]">
-                      {l.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-          <div className="absolute" style={{ left: u(598), top: u(27) }}>
-            <h4 className="font-bold text-[#e6ebf2] uppercase" style={{ fontSize: u(6), letterSpacing: "0.2em", lineHeight: 1 }}>
-              Ecosystem
-            </h4>
-            <ul className="flex flex-col" style={{ marginTop: u(10), gap: u(7.4) }}>
-              {ECOSYSTEM.map((p) => (
-                <li key={p.name} className="flex items-baseline" style={{ lineHeight: 1 }}>
-                  <span className="font-[family-name:var(--font-brand)] font-medium tracking-[0.06em] text-[#e6ebf2]" style={{ fontSize: u(8.1), width: u(53) }}>
-                    {p.name}
-                  </span>
-                  <span className="text-[#8b94a3]" style={{ fontSize: u(6.2) }}>
-                    {p.tagline}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <span aria-hidden className="absolute bg-white/10" style={{ left: u(51), top: u(133), width: u(699), height: 1 }} />
-          <p className="absolute text-[#8b94a3]" style={{ left: u(51), top: u(143), fontSize: u(6.2), lineHeight: 1 }}>
-            &copy; {new Date().getFullYear()} Precisia. All rights reserved.
-          </p>
-        </footer>
           </Slice>
         </div>
       </div>
