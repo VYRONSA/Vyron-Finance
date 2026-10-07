@@ -1,0 +1,30 @@
+{
+  "key": "csv-semicolon",
+  "file": "documents/csv-semicolon.csv",
+  "expect": "extract",
+  "method": "tabular",
+  "header": {
+    "supplierName": "Northern Cape Steel",
+    "accountNumber": "000999",
+    "supplierVatNumber": null,
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-09-30",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 1000,
+    "closingBalance": 2500,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": null
+  },
+  "transactions": [
+    { "page": null, "date": "2026-09-03", "reference": "0007001", "debit": 2500, "credit": null, "balance": 3500, "type": "invoice", "unresolved": [] },
+    { "page": null, "date": "2026-09-14", "reference": "EFT-14", "debit": null, "credit": 1000, "balance": 2500, "type": "payment", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": null, "reason": "brought-forward", "value": 1000 },
+    { "page": null, "reason": "closing-balance", "value": 2500 }
+  ],
+  "validation": { "status": "Pass", "codes": [] }
+}

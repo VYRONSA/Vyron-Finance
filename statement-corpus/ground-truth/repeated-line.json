@@ -1,0 +1,31 @@
+{
+  "key": "repeated-line",
+  "file": "documents/repeated-line.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "header": {
+    "supplierName": "Garden Route Timber",
+    "accountNumber": "000870-R",
+    "supplierVatNumber": "4666777888",
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-09-30",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 500,
+    "closingBalance": 1200,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": null
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-09-02", "reference": "000870", "debit": 600, "credit": null, "balance": 1100, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-02", "reference": "000870", "debit": 600, "credit": null, "balance": 1700, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-10", "reference": "EFT 4411", "debit": null, "credit": 500, "balance": 1200, "type": "payment", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "brought-forward", "value": 500 },
+    { "page": 1, "reason": "closing-balance", "value": 1200 }
+  ],
+  "validation": { "status": "Review", "codes": ["repeated-line"] }
+}

@@ -1,0 +1,9 @@
+Supplier;Northern Cape Steel
+Account No;000999
+Statement Date;30/09/2026
+
+Date;Reference;Description;Debit;Credit;Balance
+01/09/2026;;Balance brought forward;;;1 000,00
+03/09/2026;0007001;Invoice;2 500,00;;3 500,00
+14/09/2026;EFT-14;Payment;;1 000,00;2 500,00
+;;Closing balance;;;2 500,00

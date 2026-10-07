@@ -1,0 +1,35 @@
+{
+  "key": "multipage-continuation",
+  "file": "documents/multipage-continuation.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "pageCount": 2,
+  "header": {
+    "supplierName": "Lowveld Electrical Wholesalers",
+    "accountNumber": "7788-001",
+    "supplierVatNumber": "4222333444",
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-08-31",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 0,
+    "closingBalance": 5481.75,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": null
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-08-03", "reference": "0000981", "debit": 2150, "credit": null, "balance": null, "type": "unknown", "unresolved": [] },
+    { "page": 1, "date": "2026-08-07", "reference": "0000994", "debit": 865, "credit": null, "balance": null, "type": "unknown", "unresolved": [] },
+    { "page": 1, "date": "2026-08-11", "reference": "PAY-0811", "debit": null, "credit": 2150, "balance": null, "type": "payment", "unresolved": [] },
+    { "page": 1, "date": "2026-08-14", "reference": "0001011", "debit": 4320, "credit": null, "balance": null, "type": "unknown", "unresolved": [] },
+    { "page": 2, "date": "2026-08-19", "reference": "CN-0042", "debit": null, "credit": 216, "balance": null, "type": "credit-note", "unresolved": [] },
+    { "page": 2, "date": "2026-08-24", "reference": "0001037", "debit": 512.75, "credit": null, "balance": null, "type": "unknown", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "brought-forward", "value": 0 },
+    { "page": 2, "reason": "closing-balance", "value": 5481.75 }
+  ],
+  "validation": { "status": "Pass", "codes": [] }
+}

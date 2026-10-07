@@ -160,6 +160,76 @@ function joinPageText(items: PdfjsTextItem[], viewport: PdfjsViewport): string {
   return strBuf.join("");
 }
 
+/** SD-3C — a PDF with more pages than a statement read is allowed. */
+export class PdfPageLimitError extends Error {
+  constructor(public pageCount: number, public limit: number) {
+    super(`This PDF has ${pageCount} pages; statements of up to ${limit} pages can be read.`);
+  }
+}
+
+/** One positioned piece of text: `y` is the baseline measured from the TOP
+ * of the page (viewport space), `height` the font size. */
+export type PdfLayoutToken = { text: string; x: number; y: number; width: number; height: number };
+export type PdfLayoutPage = { pageNumber: number; width: number; height: number; tokens: PdfLayoutToken[]; hasText: boolean };
+
+/** A page carries a text layer when it has at least this many printable
+ * characters; below it the page is treated as a scanned image. */
+const MIN_PAGE_TEXT_LENGTH = 10;
+
+/**
+ * SD-3C — the PDF's text WITH ITS POSITIONS, page by page, for supplier
+ * statements (`supplier-statements/layout.ts` rebuilds rows and columns from
+ * them). Separate from `extractPdfText`, whose exact output the FNB bank
+ * parsers depend on and which this does not touch. Same lazy, Vercel-safe
+ * pdfjs loading and the same encrypted/corrupted errors; a page with no
+ * text layer is reported (`hasText: false`) rather than thrown, because a
+ * statement may mix text and scanned pages.
+ */
+export async function extractPdfLayout(buffer: ArrayBuffer, options: { maxPages: number }): Promise<PdfLayoutPage[]> {
+  await ensurePdfjsWorker();
+  const { getDocument, VerbosityLevel } = (await import(
+    /* webpackIgnore: true */ pdfjsPath("legacy", "build", "pdf.mjs")
+  )) as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
+
+  let doc: Awaited<ReturnType<typeof getDocument>["promise"]>;
+  try {
+    doc = await getDocument({ data: new Uint8Array(buffer.slice(0)), verbosity: VerbosityLevel.ERRORS }).promise;
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    const message = error instanceof Error ? error.message : String(error);
+    if (name === "PasswordException" || /password|encrypt/i.test(message)) {
+      throw new PdfExtractionError("encrypted", "This PDF is password protected and can't be read. Remove the password and upload it again.");
+    }
+    throw new PdfExtractionError("corrupted", "This PDF could not be read — the file may be corrupted or isn't a valid PDF.");
+  }
+
+  try {
+    if (doc.numPages > options.maxPages) throw new PdfPageLimitError(doc.numPages, options.maxPages);
+    const pages: PdfLayoutPage[] = [];
+    for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+      const page = await doc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1 });
+      const textContent = await page.getTextContent();
+      const items = textContent.items.filter((item) => "str" in item) as unknown as PdfjsTextItem[];
+      const tokens: PdfLayoutToken[] = [];
+      let printable = 0;
+      for (const item of items) {
+        if (!item.str || item.str.trim() === "") continue;
+        const [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+        // Font size from the text matrix (a rotated run still has a size).
+        const size = Math.hypot(item.transform[2], item.transform[3]) || item.height;
+        tokens.push({ text: item.str, x, y, width: item.width, height: size });
+        printable += item.str.replace(/\s/g, "").length;
+      }
+      pages.push({ pageNumber: pageNum, width: viewport.width, height: viewport.height, tokens, hasText: printable >= MIN_PAGE_TEXT_LENGTH });
+      page.cleanup();
+    }
+    return pages;
+  } finally {
+    await doc.destroy();
+  }
+}
+
 export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   await ensurePdfjsWorker();
   // Typed against the real module via `import type` (erased at compile

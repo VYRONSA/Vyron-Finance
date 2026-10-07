@@ -77,7 +77,8 @@ describe("the service refuses to delete capture evidence, clearly", () => {
     evidence = true;
     const service = await import("./document-service");
     await expect(service.deleteDocument("co_1", 5)).rejects.toBeInstanceOf(service.RetainedDocumentError);
-    expect(calls.map((c) => c.op)).toEqual(["rpc:fn_document_is_capture_evidence"]);
+    // SD-3C — the check now covers supplier statement originals too (0114).
+    expect(calls.map((c) => c.op)).toEqual(["rpc:fn_document_is_audited_original"]);
     vi.doUnmock("@/server/repositories/document-repository");
   });
 });

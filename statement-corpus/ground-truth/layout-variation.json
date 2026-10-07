@@ -1,0 +1,31 @@
+{
+  "key": "layout-variation",
+  "file": "documents/layout-variation.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "header": {
+    "supplierName": "Eastern Cape Logistics (Pty) Ltd",
+    "accountNumber": "ECL/0091",
+    "supplierVatNumber": "4999000111",
+    "supplierRegistrationNumber": "2008/765432/07",
+    "statementDate": "2026-09-30",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 3300,
+    "closingBalance": 2770,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": { "current": 2770, "days30": 100, "days60": 0, "days90": 0, "days120Plus": null }
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-09-04", "reference": "TI-7781", "debit": 1850, "credit": null, "balance": 5150, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-11", "reference": "TI-7790", "debit": 920, "credit": null, "balance": 6070, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-18", "reference": "RC-3301", "debit": null, "credit": 3300, "balance": 2770, "type": "payment", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "brought-forward", "value": 3300 },
+    { "page": 1, "reason": "closing-balance", "value": 2770 }
+  ],
+  "validation": { "status": "Review", "codes": ["ageing-mismatch"] }
+}

@@ -162,3 +162,29 @@ export async function listBillsBySupplier(companyId: string, supplierId: number)
   if (error) throw error;
   return data.map(billFromRow);
 }
+
+/** SD-3C — our account number at the supplier (migration 0114), read and
+ * written on its own so the shared `Supplier` shape is unchanged. */
+export async function getSupplierOurAccountNumber(companyId: string, supplierId: number): Promise<{ found: boolean; value: string | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ae_suppliers")
+    .select("our_account_number")
+    .eq("company_id", companyId)
+    .eq("id", supplierId)
+    .maybeSingle<{ our_account_number: string | null }>();
+  if (error) throw error;
+  return { found: data !== null, value: data?.our_account_number ?? null };
+}
+
+export async function updateSupplierOurAccountNumber(companyId: string, supplierId: number, value: string | null): Promise<void> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ae_suppliers")
+    .update({ our_account_number: value })
+    .eq("company_id", companyId)
+    .eq("id", supplierId)
+    .select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error(`Supplier ${supplierId} was not updated.`);
+}

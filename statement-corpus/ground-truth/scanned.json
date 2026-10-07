@@ -1,0 +1,1 @@
+{ "key": "scanned", "file": "documents/scanned.pdf", "expect": "scanned", "note": "Image-only PDF: no text layer on any page. Manual entry (no OCR in SD-3C)." }

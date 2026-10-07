@@ -1,0 +1,95 @@
+{
+  "corpus": "supplier-statements-sd3c",
+  "documents": [
+    {
+      "key": "karoo-point",
+      "file": "documents/karoo-point.pdf",
+      "format": "pdf",
+      "sha256": "4d20e42f0e7191233c35ea51b2bcf2f127530eea362f9e155b85a15a11a77b49"
+    },
+    {
+      "key": "highveld-comma-crdr",
+      "file": "documents/highveld-comma-crdr.pdf",
+      "format": "pdf",
+      "sha256": "68c40709f5d8bf04a0b31e12c34730111f00d1a0b75aee3c1ab02b05cedfb8cc"
+    },
+    {
+      "key": "multipage-repeated",
+      "file": "documents/multipage-repeated.pdf",
+      "format": "pdf",
+      "sha256": "34d156faf089ee65b88fad098ddd2649d7cbe1d889cc2d65e515fc0f4c3fdf15"
+    },
+    {
+      "key": "multipage-continuation",
+      "file": "documents/multipage-continuation.pdf",
+      "format": "pdf",
+      "sha256": "02047b0c9843befe917cbd053b7610adc057bbc83f2cc785b6a90cba62e7dd53"
+    },
+    {
+      "key": "ambiguous-unreadable",
+      "file": "documents/ambiguous-unreadable.pdf",
+      "format": "pdf",
+      "sha256": "ef491c9930859a36b9321a95a18bf81d5236bd4949c42098aad59e7dad64ae0c"
+    },
+    {
+      "key": "repeated-line",
+      "file": "documents/repeated-line.pdf",
+      "format": "pdf",
+      "sha256": "34094681110015d8a14f0e30044ddbefed2333f997007d8d8b5eb64a21088574"
+    },
+    {
+      "key": "arithmetic-errors",
+      "file": "documents/arithmetic-errors.pdf",
+      "format": "pdf",
+      "sha256": "8c7ab5333cbfd370805383f7683f12cc87b185dacb2a216cd7c51128b912eef3"
+    },
+    {
+      "key": "reverse-convention",
+      "file": "documents/reverse-convention.pdf",
+      "format": "pdf",
+      "sha256": "045d5aae7bbeda4d3f2c7bf7cdd892f2a9d62f86aea0dabec6130e65dc191317"
+    },
+    {
+      "key": "layout-variation",
+      "file": "documents/layout-variation.pdf",
+      "format": "pdf",
+      "sha256": "dc88c59eae050034007317bf50afbb440e25942b0da69e3072225e08d5edef23"
+    },
+    {
+      "key": "scanned",
+      "file": "documents/scanned.pdf",
+      "format": "scanned-pdf",
+      "sha256": "4cd9c7f9822902f958aac367b420547b0d084a4a5c9b788bca38afbe43fccccd"
+    },
+    {
+      "key": "scan-jpg",
+      "file": "documents/scan-jpg.jpg",
+      "format": "jpg",
+      "sha256": "4353479f1ac5540ae3baf9ba2eee403ff95c3e4f1e1c6420c4f66c18ca3316b8"
+    },
+    {
+      "key": "scan-png",
+      "file": "documents/scan-png.png",
+      "format": "png",
+      "sha256": "f5438f391fb3a3336f88c3403f0d823abeffceeb61cc353f3eec09fc532ad4ba"
+    },
+    {
+      "key": "encrypted",
+      "file": "documents/encrypted.pdf",
+      "format": "encrypted-pdf",
+      "sha256": "d3c07c5c174e11306d98bdb3da425347483706e4afa7571eebaf07f902bc3559"
+    },
+    {
+      "key": "csv-semicolon",
+      "file": "documents/csv-semicolon.csv",
+      "format": "csv",
+      "sha256": "ee53a60e8adb2a5572b38d50585dd73df9b29044584ead35e00de033f8e425b0"
+    },
+    {
+      "key": "xlsx-typed",
+      "file": "documents/xlsx-typed.xlsx",
+      "format": "xlsx",
+      "sha256": "7d240c33732bf2efeabe304e1f35ee02040dca6bc9e464f2346bb34eaf9ddff7"
+    }
+  ]
+}

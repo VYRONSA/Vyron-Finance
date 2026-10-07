@@ -394,8 +394,10 @@ select pg_temp.ok(
   and exists (select 1 from pg_constraint where conname = 'supplier_document_access_events_one_subject'),
   'T1 the audit already has a statement reference, with exactly-one-subject enforced');
 select pg_temp.as_user('viewer');
-select pg_temp.ok(pg_temp.err(pg_temp.rec(pg_temp.co_a(), pg_temp.doc('a-cap1.pdf'), null, 1, 'view')) like '%not available yet%',
-  'T2 a statement access is refused until 0114 creates statements (fail closed, nothing recorded)');
+-- (0114 replaced the writer: statements are now accepted, but only the
+-- named statement's own original, in that company.)
+select pg_temp.ok(pg_temp.err(pg_temp.rec(pg_temp.co_a(), pg_temp.doc('a-cap1.pdf'), null, -1, 'view')) ~ '(not available yet|not the original of statement)',
+  'T2 a statement access naming no real statement of this document is refused (fail closed, nothing recorded)');
 select pg_temp.as_admin();
 select set_config('request.jwt.claims', format('{"sub":"%s","role":"authenticated","email":"%s"}', pg_temp.uid('viewer'), pg_temp.email('viewer')), true);
 select set_config('request.jwt.claim.sub', pg_temp.uid('viewer')::text, true);

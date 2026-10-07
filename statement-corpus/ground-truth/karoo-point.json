@@ -1,0 +1,34 @@
+{
+  "key": "karoo-point",
+  "file": "documents/karoo-point.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "header": {
+    "supplierName": "Karoo Building Supplies (Pty) Ltd",
+    "accountNumber": "000123",
+    "supplierVatNumber": "4123456789",
+    "supplierRegistrationNumber": "2011/123456/07",
+    "statementDate": "2026-09-30",
+    "periodFrom": "2026-09-01",
+    "periodTo": "2026-09-30",
+    "currencyCode": null,
+    "openingBalance": 1500,
+    "closingBalance": 4260.06,
+    "printedTotalDebits": 4380.06,
+    "printedTotalCredits": 1620,
+    "printedAgeing": { "current": 1234.56, "days30": 3025.5, "days60": 0, "days90": 0, "days120Plus": 0 }
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-09-03", "reference": "0001042", "debit": 2300, "credit": null, "balance": 3800, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-10", "reference": "0001057", "debit": 845.5, "credit": null, "balance": 4645.5, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-15", "reference": "PMT 2026-09", "debit": null, "credit": 1500, "balance": 3145.5, "type": "payment", "unresolved": [] },
+    { "page": 1, "date": "2026-09-18", "reference": "CN000311", "debit": null, "credit": 120, "balance": 3025.5, "type": "credit-note", "unresolved": [] },
+    { "page": 1, "date": "2026-09-25", "reference": "0001093", "debit": 1234.56, "credit": null, "balance": 4260.06, "type": "invoice", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "brought-forward", "value": 1500 },
+    { "page": 1, "reason": "statement-total" },
+    { "page": 1, "reason": "closing-balance", "value": 4260.06 }
+  ],
+  "validation": { "status": "Pass", "codes": [] }
+}

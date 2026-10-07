@@ -1,0 +1,32 @@
+{
+  "key": "ambiguous-unreadable",
+  "file": "documents/ambiguous-unreadable.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "header": {
+    "supplierName": "Boland Fresh Produce",
+    "accountNumber": "000555",
+    "supplierVatNumber": "4333444555",
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-09-30",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 0,
+    "closingBalance": null,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": null
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-09-04", "reference": "0101", "debit": null, "credit": null, "balance": null, "type": "unknown", "unresolved": ["debit", "running_balance"], "rawIncludes": ["1,234"] },
+    { "page": 1, "date": null, "reference": "0102", "debit": 750, "credit": null, "balance": null, "type": "unknown", "unresolved": ["transaction_date", "running_balance"], "rawIncludes": ["31/02/2026", "1,984"] },
+    { "page": 1, "date": "2026-09-15", "reference": "0103", "debit": null, "credit": null, "balance": null, "type": "unknown", "unresolved": ["debit"], "rawIncludes": ["12 34"] },
+    { "page": 1, "date": "2026-09-20", "reference": "P-77", "debit": null, "credit": 984, "balance": null, "type": "payment", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "brought-forward", "value": 0 },
+    { "page": 1, "reason": "closing-balance", "value": null }
+  ],
+  "validation": { "status": "Incomplete", "codes": ["missing-closing-balance", "unread-value"] }
+}

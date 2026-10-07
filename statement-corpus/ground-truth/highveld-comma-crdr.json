@@ -1,0 +1,29 @@
+{
+  "key": "highveld-comma-crdr",
+  "file": "documents/highveld-comma-crdr.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "header": {
+    "supplierName": "Highveld Packaging CC",
+    "accountNumber": "CUST-0042",
+    "supplierVatNumber": "4987654321",
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-09-30",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 2000,
+    "closingBalance": 5210.55,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": null
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-09-05", "reference": "IN0045821", "debit": 4500, "credit": null, "balance": 6500, "type": "invoice", "typeSource": "printed", "unresolved": [] },
+    { "page": 1, "date": "2026-09-12", "reference": "EFT0912", "debit": null, "credit": 2000, "balance": 4500, "type": "payment", "typeSource": "printed", "unresolved": [] },
+    { "page": 1, "date": "2026-09-19", "reference": "CN0007", "debit": null, "credit": 289.45, "balance": 4210.55, "type": "credit-note", "typeSource": "printed", "unresolved": [] },
+    { "page": 1, "date": "2026-09-26", "reference": "IN0045903", "debit": 1000, "credit": null, "balance": 5210.55, "type": "invoice", "typeSource": "printed", "unresolved": [] }
+  ],
+  "excluded": [],
+  "validation": { "status": "Pass", "codes": [] }
+}

@@ -135,7 +135,7 @@ export async function deleteDocument(companyId: string, documentId: number): Pro
   if (!document) throw new NotFoundError(`No document with id ${documentId}.`);
   if (await repo.isCaptureEvidence(documentId)) {
     throw new RetainedDocumentError(
-      "This document is the original of a captured supplier invoice and is kept as accounting evidence. It cannot be deleted.",
+      "This document is the original of a supplier invoice or statement and is kept as accounting evidence. It cannot be deleted.",
     );
   }
   await repo.deleteDocument(companyId, documentId, document.storagePath);
@@ -161,7 +161,8 @@ export async function purgeRetentionDue(companyId: string): Promise<{ purged: nu
   const due = await listRetentionDue(companyId);
   let purged = 0;
   for (const doc of due) {
-    // Captured supplier invoices are retained whatever their retention date.
+    // Supplier invoice and statement originals are retained whatever their
+    // retention date.
     if (await repo.isCaptureEvidence(doc.id)) continue;
     await repo.deleteDocument(companyId, doc.id, doc.storagePath);
     purged += 1;

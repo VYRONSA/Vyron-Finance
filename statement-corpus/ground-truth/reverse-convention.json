@@ -1,0 +1,31 @@
+{
+  "key": "reverse-convention",
+  "file": "documents/reverse-convention.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "header": {
+    "supplierName": "Mpumalanga Agri Supplies",
+    "accountNumber": "MAS-0201",
+    "supplierVatNumber": "4888999000",
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-09-30",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 1000,
+    "closingBalance": 2000,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": null
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-09-05", "reference": "INV 5501", "debit": null, "credit": 2000, "balance": 3000, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-15", "reference": "PAY 0915", "debit": 1000, "credit": null, "balance": 2000, "type": "payment", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "brought-forward", "value": 1000 },
+    { "page": 1, "reason": "closing-balance", "value": 2000 }
+  ],
+  "validation": { "status": "Incomplete", "codes": ["balance-mismatch", "sign-convention-suspected", "running-balance-break"] },
+  "withCreditIncreasesOwed": { "status": "Pass", "codes": [] }
+}

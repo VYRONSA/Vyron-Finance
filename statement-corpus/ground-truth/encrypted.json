@@ -1,0 +1,1 @@
+{ "key": "encrypted", "file": "documents/encrypted.pdf", "expect": "encrypted", "note": "Password-protected PDF: refused with a clear reason; the original is still kept." }

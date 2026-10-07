@@ -1,0 +1,38 @@
+{
+  "key": "arithmetic-errors",
+  "file": "documents/arithmetic-errors.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "header": {
+    "supplierName": "Cape Flats Hardware",
+    "accountNumber": "0000311",
+    "supplierVatNumber": "4777888999",
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-09-30",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 2000,
+    "closingBalance": 1860,
+    "printedTotalDebits": 1950,
+    "printedTotalCredits": 2000,
+    "printedAgeing": { "current": 1860, "days30": 0, "days60": 0, "days90": 0, "days120Plus": null }
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-09-03", "reference": "0000311", "debit": 450, "credit": null, "balance": 2450, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-08", "reference": "0000319", "debit": 1200, "credit": null, "balance": 3650, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-09-12", "reference": "RC 120", "debit": null, "credit": 2000, "balance": 1560, "type": "payment", "unresolved": [] },
+    { "page": 1, "date": "2026-09-20", "reference": "0000340", "debit": 300, "credit": null, "balance": 1860, "type": "invoice", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "brought-forward", "value": 2000 },
+    { "page": 1, "reason": "statement-total" },
+    { "page": 1, "reason": "closing-balance", "value": 1860 }
+  ],
+  "validation": {
+    "status": "Incomplete",
+    "codes": ["running-balance-break", "balance-mismatch"],
+    "firstBreak": { "transactionIndex": 2, "expected": 1650, "printed": 1560 },
+    "closingDifference": -90
+  }
+}

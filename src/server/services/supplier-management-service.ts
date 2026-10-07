@@ -283,6 +283,30 @@ export async function updateSupplier(companyId: string, supplierId: number, inpu
 
 export const setSupplierActive = repo.setSupplierActive;
 
+/**
+ * SD-3C — records the company's account number AT this supplier, exactly as
+ * the supplier prints it (leading zeros kept). Used as a supplier-matching
+ * signal for statements; it never creates or confirms a supplier. Audited
+ * like every other supplier field.
+ */
+export async function setSupplierOurAccountNumber(
+  companyId: string,
+  supplierId: number,
+  value: string | null,
+  performedBy: string,
+  reason: string,
+): Promise<void> {
+  const next = value === null ? null : value.trim();
+  if (next !== null && (next.length === 0 || next.length > 60)) {
+    throw new ValidationError("An account number must be 1 to 60 characters.");
+  }
+  const existing = await repo.getSupplierOurAccountNumber(companyId, supplierId);
+  if (!existing.found) throw new NotFoundError(`No supplier with id ${supplierId}.`);
+  if (existing.value === next) return;
+  await repo.updateSupplierOurAccountNumber(companyId, supplierId, next);
+  await recordPermissionAuditEntry(companyId, "Supplier", String(supplierId), "ourAccountNumber", String(existing.value), String(next), reason, performedBy);
+}
+
 /** Phase 25K — same cross-company ownership gap already closed for
  * Customer Contacts/Addresses (`customer-service.ts`), on the identical
  * Supplier shape: every function below used to take only `supplierId`,

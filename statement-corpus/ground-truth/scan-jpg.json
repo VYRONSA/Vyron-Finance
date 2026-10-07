@@ -1,0 +1,1 @@
+{ "key": "scan-jpg", "file": "documents/scan-jpg.jpg", "expect": "image", "note": "Scanned statement as JPEG. Manual entry (no OCR in SD-3C)." }

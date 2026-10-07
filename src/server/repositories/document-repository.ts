@@ -155,11 +155,12 @@ export async function deleteDocument(companyId: string, documentId: number, stor
   if (storageError) throw storageError;
 }
 
-/** Whether this document is the original of a captured supplier invoice,
- * and so retained as accounting evidence (0112). */
+/** Whether this document is the original of a captured supplier invoice
+ * (0112) or, from SD-3C, of a supplier statement (0114) — and so retained as
+ * accounting evidence. */
 export async function isCaptureEvidence(documentId: number): Promise<boolean> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("fn_document_is_capture_evidence", { p_document_id: documentId });
+  const { data, error } = await supabase.rpc("fn_document_is_audited_original", { p_document_id: documentId });
   if (error) throw error;
   return data === true;
 }

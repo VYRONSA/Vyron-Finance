@@ -1,0 +1,46 @@
+{
+  "key": "multipage-repeated",
+  "file": "documents/multipage-repeated.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "pageCount": 3,
+  "header": {
+    "supplierName": "Overberg Builders Merchants",
+    "accountNumber": "004417",
+    "supplierVatNumber": "4555666777",
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-08-31",
+    "periodFrom": "2026-08-01",
+    "periodTo": "2026-08-31",
+    "currencyCode": null,
+    "openingBalance": 10000,
+    "closingBalance": 7752.55,
+    "printedTotalDebits": 14747.55,
+    "printedTotalCredits": 16995,
+    "printedAgeing": null
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-08-02", "reference": "00004501", "debit": 1250, "credit": null, "balance": 11250, "type": "invoice", "unresolved": [], "descriptionIncludes": ["cement 50kg", "delivered to site 4"] },
+    { "page": 1, "date": "2026-08-05", "reference": "00004533", "debit": 3400, "credit": null, "balance": 14650, "type": "invoice", "unresolved": [] },
+    { "page": 1, "date": "2026-08-09", "reference": "RCPT-881", "debit": null, "credit": 10000, "balance": 4650, "type": "payment", "unresolved": [] },
+    { "page": 1, "date": "2026-08-12", "reference": "00004560", "debit": 2100, "credit": null, "balance": 6750, "type": "invoice", "unresolved": [] },
+    { "page": 2, "date": "2026-08-15", "reference": "00004588", "debit": 980, "credit": null, "balance": 7730, "type": "invoice", "unresolved": [] },
+    { "page": 2, "date": "2026-08-18", "reference": "CRN-0091", "debit": null, "credit": 245, "balance": 7485, "type": "credit-note", "unresolved": [] },
+    { "page": 2, "date": "2026-08-22", "reference": "00004601", "debit": 5600, "credit": null, "balance": 13085, "type": "invoice", "unresolved": [], "descriptionIncludes": ["roof sheeting", "0.5mm Z275, 6m lengths"] },
+    { "page": 2, "date": "2026-08-25", "reference": "00004622", "debit": 312.4, "credit": null, "balance": 13397.4, "type": "invoice", "unresolved": [] },
+    { "page": 3, "date": "2026-08-28", "reference": "RCPT-902", "debit": null, "credit": 6750, "balance": 6647.4, "type": "payment", "unresolved": [] },
+    { "page": 3, "date": "2026-08-31", "reference": "00004650", "debit": 1105.15, "credit": null, "balance": 7752.55, "type": "invoice", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "brought-forward", "value": 10000 },
+    { "page": 1, "reason": "page-total" },
+    { "page": 1, "reason": "carried-forward", "value": 6750 },
+    { "page": 2, "reason": "brought-forward", "value": 6750 },
+    { "page": 2, "reason": "subtotal" },
+    { "page": 2, "reason": "carried-forward", "value": 13397.4 },
+    { "page": 3, "reason": "brought-forward", "value": 13397.4 },
+    { "page": 3, "reason": "statement-total" },
+    { "page": 3, "reason": "closing-balance", "value": 7752.55 }
+  ],
+  "validation": { "status": "Pass", "codes": [] }
+}
