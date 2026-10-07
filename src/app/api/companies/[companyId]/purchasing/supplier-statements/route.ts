@@ -12,7 +12,7 @@ import type { StatementStatus } from "@/server/supplier-statements/types";
  * the file is read, after the response). */
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
-const STATUSES: StatementStatus[] = ["Queued", "Processing", "ManualEntry", "NeedsReview", "Ready", "Duplicate", "Failed", "Rejected"];
+const STATUSES: StatementStatus[] = ["Queued", "Processing", "ManualEntry", "NeedsReview", "Ready", "Reconciled", "Duplicate", "Failed", "Rejected"];
 
 /** Supplier statements, newest first (bounded). */
 export async function GET(request: Request, { params }: { params: Promise<{ companyId: string }> }) {

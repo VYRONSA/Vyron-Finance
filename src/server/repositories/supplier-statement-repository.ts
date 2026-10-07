@@ -115,7 +115,9 @@ export type StatementEventType =
   | "Uploaded" | "DuplicateEvaluated" | "ProcessingStarted" | "Extracted" | "ExtractionFailed" | "ManualEntryRequired"
   | "ValidationEvaluated" | "SupplierProposed" | "SupplierConfirmed" | "SupplierUnconfirmed" | "SupplierAccountNumberSaved"
   | "FieldCorrected" | "LineCorrected" | "LineAdded" | "LineRemoved" | "ManualEntryStarted" | "SubmittedForReview"
-  | "MarkedReady" | "Reopened" | "Rejected" | "ProcessingRequeued";
+  | "MarkedReady" | "Reopened" | "Rejected" | "ProcessingRequeued"
+  // SD-3D (0115)
+  | "ReconciliationRun" | "ResolutionRecorded" | "ResolutionRevoked";
 
 /** Header fields a reviewer may correct (the guard enforces the same list). */
 export type ReviewerStatementFields = Partial<{

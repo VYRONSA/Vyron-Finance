@@ -506,7 +506,10 @@ export async function markStatementReady(companyId: string, statementId: number)
 
 export async function reopenStatement(companyId: string, statementId: number): Promise<void> {
   const statement = await requireStatement(companyId, statementId);
-  if (statement.status !== "Ready") throw new ValidationError(`Only a ready statement can be reopened (this one is ${statement.status}).`);
+  // SD-3D — a reconciled statement can be reopened too; its runs are kept.
+  if (statement.status !== "Ready" && statement.status !== "Reconciled") {
+    throw new ValidationError(`Only a ready or reconciled statement can be reopened (this one is ${statement.status}).`);
+  }
   await repo.updateStatementAsReviewer(companyId, statementId, { status: "NeedsReview" });
   await repo.recordStatementEvent(companyId, statementId, "Reopened", {});
 }

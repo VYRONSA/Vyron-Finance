@@ -11,7 +11,7 @@
 
 export type StatementSourceType = "pdf" | "pdf-text" | "pdf-scanned" | "pdf-mixed" | "image" | "csv" | "xlsx";
 
-export type StatementStatus = "Queued" | "Processing" | "ManualEntry" | "NeedsReview" | "Ready" | "Duplicate" | "Failed" | "Rejected";
+export type StatementStatus = "Queued" | "Processing" | "ManualEntry" | "NeedsReview" | "Ready" | "Reconciled" | "Duplicate" | "Failed" | "Rejected";
 
 export type StatementValidationStatus = "Pending" | "Pass" | "Review" | "Incomplete";
 
