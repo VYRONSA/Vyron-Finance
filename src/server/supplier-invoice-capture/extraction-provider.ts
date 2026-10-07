@@ -17,6 +17,22 @@
  *     boundary's contract is a parsed `ExtractionResult` or a typed error
  *     category — a caller cannot obtain the transcript, because nothing
  *     hands it one.
+ *
+ * SCANNED INVOICES ARE NOT A MANUAL-ONLY WORKFLOW (owner decision,
+ * SD-3A review, 2026-10-07). Supplier invoices and credit notes stay
+ * eligible for AUTOMATIC extraction whatever the source: a text PDF, a
+ * scanned PDF with no text layer, a JPEG or a PNG. This boundary sends the
+ * document itself (file/image part) to an OCR/vision-capable provider — it
+ * must never be changed to require a text layer, or to route scanned
+ * invoices to manual entry because the PDF has no text. Manual entry is a
+ * fallback (provider off, failed or unreadable), not the path for scans.
+ * Live AI is OFF; when it is enabled, the deterministic application stays
+ * the authority for arithmetic, VAT, duplicates, approval limits,
+ * validation, conversion and posting — extraction only transcribes.
+ * (Supplier STATEMENTS are different: SD-3 starts their scanned path with
+ * manual entry because no statement OCR exists yet — see
+ * docs/SUPPLIER_DOCUMENT_INTELLIGENCE_SD3A_DESIGN.md. That decision does
+ * not apply here.)
  */
 
 import { classifyProviderError, DEFAULT_MODEL } from "@/server/ai/providers/gateway-provider";

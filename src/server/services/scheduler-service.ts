@@ -36,7 +36,8 @@ import {
   runSupplierInvoiceExtractionSweep,
   type ExtractionSweepOutcome as SupplierInvoiceExtractionOutcome,
 } from "@/server/services/supplier-invoice-capture-service";
-import { downloadDocumentFile, getDocument as getDocumentRecord } from "@/server/repositories/document-repository";
+import { getDocument as getDocumentRecord } from "@/server/repositories/document-repository";
+import { readSupplierOriginalBytes } from "@/server/repositories/supplier-document-access-repository";
 import { hasFeature } from "@/server/billing-platform/engine/feature-flag-engine";
 import { checkUsageLimit } from "@/server/billing-platform/engine/licensing-engine";
 import { recordUsageEvent } from "@/server/billing-platform/engine/usage-metering-engine";
@@ -410,8 +411,12 @@ async function runTask(
 async function readCaptureDocumentBytes(companyId: string, documentId: number): Promise<{ bytes: Uint8Array; mimeType: string }> {
   const document = await getDocumentRecord(companyId, documentId);
   if (!document) throw new Error(`No document with id ${documentId}.`);
-  const buffer = await downloadDocumentFile(document.storagePath);
-  return { bytes: new Uint8Array(buffer), mimeType: document.mimeType };
+  // SD-3B — a capture original is no longer readable by a signed-in client
+  // from Storage (0113), so a "run now" under a user's session reads it
+  // with the server's credentials, like the scheduled run already does.
+  // The document row above was still read under the caller's own client.
+  const bytes = await readSupplierOriginalBytes(document.storagePath);
+  return { bytes, mimeType: document.mimeType };
 }
 
 /** Alerts are raised once per condition and updated on repeats; a

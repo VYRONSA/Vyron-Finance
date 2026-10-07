@@ -9,6 +9,12 @@
  * bytes). The stored original is never altered — it is retained as
  * accounting evidence (0112). This replaces the old "View original" link,
  * which opened a JSON body instead of the document.
+ *
+ * SD-3B — every view (the frame, the image, "Open in new tab") and every
+ * download is recorded permanently by that route BEFORE the file is sent.
+ * If it cannot be recorded the route sends no file, only a plain-text
+ * explanation, which the PDF frame and a new tab show as is; an image
+ * cannot render text, so it shows the message below instead.
  */
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -57,7 +63,9 @@ export function OriginalDocumentViewer({ companyId, captureId, document }: { com
             <p className="truncate text-sm font-semibold text-vf-ink" title={document.filename}>
               {document.filename}
             </p>
-            <p className="text-xs text-vf-ink-faint">Original as received · {sizeLabel(document.sizeBytes)} · kept unchanged</p>
+            <p className="text-xs text-vf-ink-faint">
+              Original as received · {sizeLabel(document.sizeBytes)} · kept unchanged · views and downloads are recorded
+            </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -90,7 +98,8 @@ export function OriginalDocumentViewer({ companyId, captureId, document }: { com
         {kind === "image" &&
           (failed ? (
             <p role="alert" className="p-5 text-sm text-vf-danger">
-              The image could not be shown. Use “Download original” to open it.
+              The image could not be shown. Every view of a supplier original is recorded, and the original is not
+              shown when that is not possible. Try again, or use “Download original”.
             </p>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element -- a private, same-origin, permission-checked file; not an optimisable public asset

@@ -1,8 +1,8 @@
 import { requireSession } from "@/server/auth/require-session";
 import { requirePermission } from "@/server/services/permission-service";
 import { getCapture } from "@/server/services/supplier-invoice-capture-service";
-import { downloadDocumentFile, getDocument } from "@/server/repositories/document-repository";
-import { contentDisposition, detectInlineFileType } from "@/server/documents/inline-file-type";
+import { getDocument } from "@/server/repositories/document-repository";
+import { serveSupplierOriginal } from "@/server/documents/supplier-original-response";
 
 /**
  * SD-2 — the ORIGINAL supplier document of a capture, served from this
@@ -13,10 +13,9 @@ import { contentDisposition, detectInlineFileType } from "@/server/documents/inl
  *   cannot be probed into a 404.
  * - The capture and its document are read under the caller's session, so
  *   tenant isolation is the database's, not this route's.
- * - The type is detected from the file's bytes (PDF, JPEG, PNG only) — never
- *   the stored, client-declared MIME type — and sent with `nosniff`.
- * - Nothing is cached, and the response may only be framed by this app.
- * - `?download=1` serves the same bytes as an attachment.
+ * - SD-3B — served through `serveSupplierOriginal`: every view and every
+ *   `?download=1` is recorded permanently BEFORE the file is returned, and
+ *   nothing is returned if it cannot be recorded.
  *
  * The stored file itself is never modified; it is retained (0112).
  */
@@ -36,31 +35,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ comp
   const document = await getDocument(companyId, capture.document_id);
   if (!document) return Response.json({ error: "The original document could not be found." }, { status: 404 });
 
-  const bytes = new Uint8Array(await downloadDocumentFile(document.storagePath));
-  const download = new URL(request.url).searchParams.get("download") === "1";
-  const type = detectInlineFileType(bytes);
-
-  if (!type && !download) {
-    return Response.json(
-      { error: "This file cannot be shown here. Download it to open it." },
-      { status: 415 },
-    );
-  }
-
-  const headers: Record<string, string> = {
-    "Content-Type": type ?? "application/octet-stream",
-    "Content-Disposition": contentDisposition(download ? "attachment" : "inline", document.filename),
-    "Content-Length": String(bytes.byteLength),
-    "X-Content-Type-Options": "nosniff",
-    "Cache-Control": "private, no-store",
-    "Referrer-Policy": "no-referrer",
-    // Only this application may frame it. Images additionally get a
-    // locked-down policy; a PDF is left to the browser's own viewer, which
-    // a stricter document policy can stop from rendering.
-    "Content-Security-Policy":
-      type === "application/pdf"
-        ? "frame-ancestors 'self'"
-        : "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'",
-  };
-  return new Response(bytes, { headers });
+  return serveSupplierOriginal({
+    request,
+    companyId,
+    document: { id: document.id, filename: document.filename, storagePath: document.storagePath },
+    subject: { kind: "capture", captureId: capture.id },
+  });
 }
