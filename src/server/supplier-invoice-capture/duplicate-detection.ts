@@ -110,7 +110,10 @@ export function assessDuplicate(
   bills: DuplicateCandidateBill[],
 ): DuplicateDecision {
   const others = captures.filter((c) => c.captureId !== subject.captureId);
-  const live = others.filter((c) => c.status !== "Cancelled");
+  // SD-2 — a capture already blocked as a Duplicate is a copy, not a
+  // competing record: it can never be converted (only NeedsReview can), so
+  // it must not in turn block the original it is a copy of.
+  const live = others.filter((c) => c.status !== "Cancelled" && c.status !== "Duplicate");
 
   // Layer 1 — the same bytes.
   if (subject.contentSha256) {

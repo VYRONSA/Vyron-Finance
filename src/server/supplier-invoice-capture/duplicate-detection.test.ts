@@ -143,6 +143,13 @@ describe("precedence and exclusions", () => {
     expect(d.status).toBe("Blocked");
   });
 
+  it("SD-2: an original is not blocked by its own blocked Duplicate copy (same file, or same number)", () => {
+    // Re-uploading a file creates a capture with status Duplicate. When the
+    // ORIGINAL is later corrected and re-checked, that copy must not block it.
+    const copy = capture({ captureId: 200, status: "Duplicate", contentSha256: "hash-a" });
+    expect(assessDuplicate(subject(), [copy], []).status).toBe("None");
+  });
+
   it("a capture is never a duplicate of itself", () => {
     const self = capture({ captureId: 100, contentSha256: "hash-a" });
     expect(assessDuplicate(subject({ captureId: 100 }), [self], []).status).toBe("None");

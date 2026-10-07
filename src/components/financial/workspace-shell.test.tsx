@@ -349,6 +349,8 @@ describe("Navigation hierarchy — parent entries (Banking, Transactions, Contac
     Banking: ["Bank Accounts", "Import Centre", "Cashbook", "Banking Exceptions", "Matching"],
     Transactions: ["Transaction Explorer", "Find & Recode"],
     Contacts: ["Suppliers", "Customers"],
+    // SD-2
+    "Supplier Documents": ["Invoice Capture"],
   };
   const parentButton = (nav: HTMLElement, label: string) => within(nav).getByRole("button", { name: new RegExp(`^${label}`) });
 

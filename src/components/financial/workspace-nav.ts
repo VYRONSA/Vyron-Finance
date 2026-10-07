@@ -62,7 +62,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Executive",
     // Main destinations only; related pages sit under a parent that opens
-    // on click (Banking, Transactions, Contacts). Same routes as before.
+    // on click (Banking, Transactions, Contacts, Supplier Documents).
     items: [
       { label: "Dashboard", href: "dashboard", icon: IconGrid },
       { label: "PRECISIA Intelligence", href: "intelligence", icon: IconSparkles },
@@ -95,6 +95,14 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { label: "Sales", href: "sales", icon: IconBanknote },
       { label: "Purchasing", href: "purchasing", icon: IconArchive },
+      {
+        // SD-2 — Supplier Document Intelligence. Its own route segment, so
+        // the Purchasing item does not also light up on these pages.
+        // Supplier Statements join here in SD-3.
+        label: "Supplier Documents",
+        icon: IconFileText,
+        children: [{ label: "Invoice Capture", href: "supplier-documents/invoice-capture", icon: IconReceipt }],
+      },
       { label: "Inventory", href: "inventory", icon: IconSliders },
     ],
   },

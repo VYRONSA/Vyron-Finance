@@ -8,7 +8,9 @@ import { PurchaseOrdersTab } from "./purchase-orders-tab";
 import { GrnsTab } from "./grns-tab";
 import { BillsTab } from "./bills-tab";
 import { PaymentsTab } from "./payments-tab";
-import { AiInvoiceCaptureTab } from "./ai-invoice-capture-tab";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import { IconFileText } from "@/components/ui/icons";
 import type { BankAccount, ImportedBill, Supplier } from "@/server/accounting/types";
 import type { CostCentre, Department, Project, VatTreatment } from "@/server/company-management/types";
 import type { ChartOfAccount } from "@/server/general-ledger/types";
@@ -117,12 +119,18 @@ export function PurchasingTabs({
           />
         )}
         {activeTab === "AI Invoice Capture" && (
-          <AiInvoiceCaptureTab
-            companyId={companyId}
-            previewMode={previewMode}
-            suppliers={suppliers}
-            vatTreatments={vatTreatments}
-            chartOfAccounts={chartOfAccounts}
+          // SD-2 — Invoice Capture moved to its own workspace under Supplier
+          // Documents (original document viewer, full review, manual entry,
+          // credit notes). This tab now points there, so a bookmark still lands.
+          <EmptyState
+            icon={<IconFileText className="h-6 w-6" />}
+            title="Invoice Capture has moved to Supplier Documents"
+            description="Upload, review and approve supplier invoices and credit notes — with the original document beside the review."
+            action={
+              <Button href={`/company/${companyId}/supplier-documents/invoice-capture`} size="sm">
+                Open Invoice Capture
+              </Button>
+            }
           />
         )}
         {activeTab === "Payments" && <PaymentsTab companyId={companyId} payments={payments} suppliers={suppliers} bills={bills} bankAccounts={bankAccounts} previewMode={previewMode} />}

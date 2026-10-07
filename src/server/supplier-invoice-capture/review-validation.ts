@@ -59,7 +59,16 @@ export type ReviewedLine = {
   vatAmount: number | null;
   lineTotal: number | null;
   isExcluded: boolean;
+  /** SD-2 — the rate of the VAT code the reviewer confirmed (or that was
+   * suggested). Used ONLY when the line shows no VAT amount and no rate of
+   * its own — a hand-entered line — so its VAT is what the bill engine will
+   * compute from that code. A printed figure is never overridden. */
+  vatCodeRatePercent?: number | null;
 };
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
 const DOCUMENT_TYPES: ReadonlySet<string> = new Set<ExtractedDocumentType>(["Invoice", "Credit Note", "Debit Note", "Other"]);
 
@@ -96,7 +105,11 @@ export function buildReviewedExtraction(header: ReviewedHeader, lines: ReviewedL
       total: header.total,
       confidence: null,
     },
-    lines: included.map((l) => ({
+    lines: included.map((l) => {
+      const net = l.quantity !== null && l.unitPrice !== null ? l.quantity * l.unitPrice - (l.discount ?? 0) : null;
+      const fromCode =
+        l.vatAmount === null && l.vatRatePercent === null && l.vatCodeRatePercent !== null && l.vatCodeRatePercent !== undefined && net !== null;
+      return {
       description: l.description,
       supplierSku: l.supplierSku,
       quantity: l.quantity,
@@ -105,11 +118,12 @@ export function buildReviewedExtraction(header: ReviewedHeader, lines: ReviewedL
       packQuantity: null,
       unitPrice: l.unitPrice,
       discount: l.discount,
-      vatRatePercent: l.vatRatePercent,
-      vatAmount: l.vatAmount,
+      vatRatePercent: fromCode ? l.vatCodeRatePercent! : l.vatRatePercent,
+      vatAmount: fromCode ? round2((net! * l.vatCodeRatePercent!) / 100) : l.vatAmount,
       lineTotal: l.lineTotal,
       confidence: null,
-    })),
+      };
+    }),
     invoiceNumbersSeen: numbersSeen,
     missingFields: [],
     warnings: [],

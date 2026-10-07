@@ -704,10 +704,12 @@ export async function revalidateCapture(companyId: string, captureId: number, pe
   if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
   if (!EDITABLE_STATUSES.has(capture.status)) return capture.validation_status;
 
-  const [lines, suppliers] = await Promise.all([
+  const [lines, suppliers, vatTreatments] = await Promise.all([
     repo.listCaptureLinesAsSystem(companyId, captureId),
     capture.supplier_id ? listSuppliers(companyId) : Promise.resolve([]),
+    listVatTreatments(companyId),
   ]);
+  const rateByCode = new Map(vatTreatments.map((t) => [t.code, Number(t.rate)]));
   const supplier = capture.supplier_id ? (suppliers.find((s: { id: number }) => s.id === capture.supplier_id) as { name?: string } | undefined) : undefined;
 
   const reviewed = buildReviewedExtraction(
@@ -737,6 +739,7 @@ export async function revalidateCapture(companyId: string, captureId: number, pe
       vatAmount: numberOrNull(l.vat_amount),
       lineTotal: numberOrNull(l.line_total),
       isExcluded: l.is_excluded,
+      vatCodeRatePercent: rateByCode.get(l.vat_code_confirmed ?? l.vat_code_suggested ?? "") ?? null,
     })),
     readExtractionSnapshot(capture.extraction_snapshot),
   );
@@ -945,3 +948,49 @@ export const getCapture = repo.getCapture;
 export const listCaptures = repo.listCaptures;
 export const listCaptureLines = repo.listCaptureLines;
 export const listCaptureEvents = repo.listCaptureEvents;
+
+// ---------------------------------------------------------------------
+// SD-2 — what the Supplier Documents screens read
+// ---------------------------------------------------------------------
+
+export type InboxCapture = {
+  capture: repo.CaptureRow;
+  bill: repo.CaptureBillSummary | null;
+  document: repo.CaptureDocumentSummary | null;
+};
+
+/** The Invoice Capture inbox: every capture (newest first, bounded), with the
+ * purchase document each became and its original file's name. */
+export async function listInboxCaptures(companyId: string, limit = 500): Promise<InboxCapture[]> {
+  const captures = await repo.listCaptures(companyId, { status: "All", limit });
+  const billIds = captures.map((c) => c.bill_id).filter((id): id is number => id !== null);
+  const [bills, documents] = await Promise.all([
+    repo.listBillSummaries(companyId, billIds),
+    repo.listDocumentSummaries(companyId, captures.map((c) => c.document_id)),
+  ]);
+  const billById = new Map(bills.map((b) => [b.id, b]));
+  const documentById = new Map(documents.map((d) => [d.id, d]));
+  return captures.map((capture) => ({
+    capture,
+    bill: capture.bill_id !== null ? (billById.get(capture.bill_id) ?? null) : null,
+    document: documentById.get(capture.document_id) ?? null,
+  }));
+}
+
+export type CaptureReview = InboxCapture & {
+  lines: repo.CaptureLineRow[];
+  events: repo.CaptureEventRow[];
+};
+
+/** Everything the review screen shows for one capture, or null. */
+export async function getCaptureReview(companyId: string, captureId: number): Promise<CaptureReview | null> {
+  const capture = await repo.getCapture(companyId, captureId);
+  if (!capture) return null;
+  const [lines, events, bills, documents] = await Promise.all([
+    repo.listCaptureLines(companyId, captureId),
+    repo.listCaptureEvents(companyId, captureId),
+    repo.listBillSummaries(companyId, capture.bill_id !== null ? [capture.bill_id] : []),
+    repo.listDocumentSummaries(companyId, [capture.document_id]),
+  ]);
+  return { capture, lines, events, bill: bills[0] ?? null, document: documents[0] ?? null };
+}

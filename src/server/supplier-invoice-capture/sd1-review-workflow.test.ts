@@ -224,6 +224,23 @@ describe("validating a hand-entered invoice (D)", () => {
     expect(validateExtraction(buildReviewedExtraction(reviewedHeader(), [], null)).status).toBe("Incomplete");
   });
 
+  it("SD-2: a typed line with only a VAT code is checked with that code's rate (200 + 15% = 230 passes)", () => {
+    const report = validateExtraction(
+      buildReviewedExtraction(
+        reviewedHeader({ subtotal: 200, vatAmount: 30, total: 230 }),
+        [reviewedLine({ quantity: 2, unitPrice: 100, vatRatePercent: null, vatAmount: null, lineTotal: null, vatCodeRatePercent: 15 })],
+        null,
+      ),
+    );
+    expect(report.status).toBe("Pass");
+  });
+
+  it("SD-2: a printed VAT figure is never overridden by the VAT code", () => {
+    const result = buildReviewedExtraction(reviewedHeader(), [reviewedLine({ vatCodeRatePercent: 0 })], null);
+    expect(result.lines[0].vatAmount).toBe(150);
+    expect(result.lines[0].vatRatePercent).toBe(15);
+  });
+
   it("a typed total that the typed lines do not add up to is flagged", () => {
     const report = validateExtraction(buildReviewedExtraction(reviewedHeader({ total: 2000 }), [reviewedLine()], null));
     expect(report.findings.map((f) => f.code)).toContain("totals-disagree");

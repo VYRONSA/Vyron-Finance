@@ -601,6 +601,51 @@ export async function findSameFileDocuments(companyId: string, contentSha256: st
 }
 
 // ---------------------------------------------------------------------
+// SD-2 — what the Supplier Documents screens show beside each capture:
+// the purchase document it became, and the original file. Read under the
+// caller's session (they are already allowed to see the capture).
+// ---------------------------------------------------------------------
+
+export type CaptureBillSummary = { id: number; invoiceNumber: string; documentType: string; postingStatus: string | null; total: number | null };
+export type CaptureDocumentSummary = { id: number; filename: string; mimeType: string; sizeBytes: number; uploadedAt: string };
+
+export async function listBillSummaries(companyId: string, billIds: number[]): Promise<CaptureBillSummary[]> {
+  if (billIds.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ae_imported_bills")
+    .select("id, invoice_number, document_type, posting_status, total")
+    .eq("company_id", companyId)
+    .in("id", billIds);
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: row.id as number,
+    invoiceNumber: (row.invoice_number as string) ?? "",
+    documentType: (row.document_type as string) ?? "Bill",
+    postingStatus: (row.posting_status as string | null) ?? null,
+    total: row.total === null || row.total === undefined ? null : Number(row.total),
+  }));
+}
+
+export async function listDocumentSummaries(companyId: string, documentIds: number[]): Promise<CaptureDocumentSummary[]> {
+  if (documentIds.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .select("id, filename, mime_type, size_bytes, uploaded_at")
+    .eq("company_id", companyId)
+    .in("id", documentIds);
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: row.id as number,
+    filename: (row.filename as string) ?? "",
+    mimeType: (row.mime_type as string) ?? "",
+    sizeBytes: Number(row.size_bytes ?? 0),
+    uploadedAt: (row.uploaded_at as string) ?? "",
+  }));
+}
+
+// ---------------------------------------------------------------------
 // Learning — keyed by supplier_id, written only from a human-approved
 // conversion. Failures are surfaced, never swallowed (COST logged a
 // console.warn and reported success).
