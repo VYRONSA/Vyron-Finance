@@ -126,14 +126,21 @@ describe("precedence and exclusions", () => {
     expect(d.layer).toBe("file-hash");
   });
 
-  it("a cancelled capture is not a duplicate — discarding it and re-uploading is the remedy", () => {
+  it("a rejected (cancelled) capture does not block — re-uploading is the remedy — but the same file is flagged", () => {
     const d = assessDuplicate(subject(), [capture({ status: "Cancelled", contentSha256: "hash-a" })], []);
+    expect(d.status).toBe("Possible");
+    expect(d.layer).toBe("file-hash");
+    expect(d.reason).toMatch(/rejected/i);
+  });
+
+  it("a rejected capture with a different file and the same number does not block either", () => {
+    const d = assessDuplicate(subject(), [capture({ status: "Cancelled", contentSha256: "other" })], []);
     expect(d.status).toBe("None");
   });
 
-  it("a failed capture is not a duplicate either", () => {
+  it("SD-1: a FAILED capture still counts — it can be entered by hand, so it is still in the workflow", () => {
     const d = assessDuplicate(subject(), [capture({ status: "Failed" })], []);
-    expect(d.status).toBe("None");
+    expect(d.status).toBe("Blocked");
   });
 
   it("a capture is never a duplicate of itself", () => {

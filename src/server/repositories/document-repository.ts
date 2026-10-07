@@ -135,12 +135,33 @@ export async function setDocumentGroupId(companyId: string, documentId: number, 
   if (error) throw error;
 }
 
+/** SD-1 — the RECORD is deleted first, and the file only once that has
+ * succeeded. The previous order removed the stored file before the row, so
+ * a refused or failed row deletion (a captured supplier invoice is retained
+ * by the database, 0112) still destroyed the original document. */
 export async function deleteDocument(companyId: string, documentId: number, storagePath: string): Promise<void> {
   const supabase = await createClient();
+  const { data: deleted, error: dbError } = await supabase
+    .from("documents")
+    .delete()
+    .eq("company_id", companyId)
+    .eq("id", documentId)
+    .select("id");
+  if (dbError) throw dbError;
+  if (!deleted || deleted.length === 0) {
+    throw new Error(`Document ${documentId} was not deleted, so its file has been kept.`);
+  }
   const { error: storageError } = await supabase.storage.from(BUCKET).remove([storagePath]);
   if (storageError) throw storageError;
-  const { error: dbError } = await supabase.from("documents").delete().eq("company_id", companyId).eq("id", documentId);
-  if (dbError) throw dbError;
+}
+
+/** Whether this document is the original of a captured supplier invoice,
+ * and so retained as accounting evidence (0112). */
+export async function isCaptureEvidence(documentId: number): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fn_document_is_capture_evidence", { p_document_id: documentId });
+  if (error) throw error;
+  return data === true;
 }
 
 export async function getSignedDownloadUrl(storagePath: string): Promise<string> {

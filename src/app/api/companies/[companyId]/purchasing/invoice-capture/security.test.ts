@@ -16,6 +16,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const requireSession = vi.fn();
+class PreparationRefused extends Error {}
 const requirePermission = vi.fn();
 const requireApproval = vi.fn();
 const uploadDocument = vi.fn();
@@ -28,6 +29,10 @@ const listCaptureLines = vi.fn();
 const listCaptureEvents = vi.fn();
 const cancelCapture = vi.fn();
 const applyLineCorrections = vi.fn();
+const prepareConversion = vi.fn();
+const startManualEntry = vi.fn();
+const submitForReview = vi.fn();
+const revalidateCapture = vi.fn();
 
 vi.mock("@/server/auth/require-session", () => ({
   requireSession: () => requireSession(),
@@ -52,7 +57,11 @@ vi.mock("@/server/services/supplier-invoice-capture-service", () => ({
   cancelCapture: (...a: unknown[]) => cancelCapture(...a),
   listCaptureLines: (...a: unknown[]) => listCaptureLines(...a),
   listCaptureEvents: (...a: unknown[]) => listCaptureEvents(...a),
-  ValidationError: class extends Error {},
+  prepareConversion: (...a: unknown[]) => prepareConversion(...a),
+  startManualEntry: (...a: unknown[]) => startManualEntry(...a),
+  submitForReview: (...a: unknown[]) => submitForReview(...a),
+  revalidateCapture: (...a: unknown[]) => revalidateCapture(...a),
+  ValidationError: PreparationRefused,
   NotFoundError: class extends Error {},
 }));
 
@@ -73,6 +82,7 @@ beforeEach(() => {
   listCaptureEvents.mockResolvedValue([]);
   getCapture.mockResolvedValue({ id: 5, total: 1150 });
   convertCaptureToBill.mockResolvedValue({ billId: 900 });
+  prepareConversion.mockResolvedValue({ approvalAmount: 1150, documentType: "Bill" });
 });
 
 function pdf(name = "invoice.pdf", size = 1000, type = "application/pdf") {
@@ -187,11 +197,32 @@ describe("permissions used", () => {
 describe("conversion is gated twice, and the actor is the session's", () => {
   it("requires an approval limit covering the invoice's value", async () => {
     const { PATCH } = await import("./[captureId]/route");
-    getCapture.mockResolvedValue({ id: 5, total: 250000 });
+    prepareConversion.mockResolvedValue({ approvalAmount: 250000, documentType: "Bill" });
     await PATCH(new Request("http://test/api", { method: "PATCH", body: JSON.stringify({ action: "convert" }) }), captureParams);
 
     expect(requirePermission).toHaveBeenCalledWith("co_1", "Purchasing:Create");
     expect(requireApproval).toHaveBeenCalledWith("co_1", "Purchasing:Approve", "PurchaseApproval", 250000);
+  });
+
+  it("SD-1: checks the limit against the PREPARED amount, never the extracted header total", async () => {
+    const { PATCH } = await import("./[captureId]/route");
+    // The extracted total is missing — it used to become 0 and pass any limit.
+    getCapture.mockResolvedValue({ id: 5, total: null });
+    prepareConversion.mockResolvedValue({ approvalAmount: 9200, documentType: "Bill" });
+    await PATCH(new Request("http://test/api", { method: "PATCH", body: JSON.stringify({ action: "convert" }) }), captureParams);
+    expect(requireApproval).toHaveBeenCalledWith("co_1", "Purchasing:Approve", "PurchaseApproval", 9200);
+    expect(requireApproval).not.toHaveBeenCalledWith("co_1", "Purchasing:Approve", "PurchaseApproval", 0);
+    // ...and converts holding the amount the limit was checked against.
+    expect(convertCaptureToBill).toHaveBeenCalledWith("co_1", 5, 9200);
+  });
+
+  it("SD-1: a capture that cannot be converted is refused before any approval check", async () => {
+    const { PATCH } = await import("./[captureId]/route");
+    prepareConversion.mockRejectedValue(new PreparationRefused("The corrected invoice has not been validated yet."));
+    const response = await PATCH(new Request("http://test/api", { method: "PATCH", body: JSON.stringify({ action: "convert" }) }), captureParams);
+    expect(response.status).toBe(400);
+    expect(requireApproval).not.toHaveBeenCalled();
+    expect(convertCaptureToBill).not.toHaveBeenCalled();
   });
 
   it("refuses when the reviewer's limit is too low, and creates nothing", async () => {
@@ -214,9 +245,9 @@ describe("conversion is gated twice, and the actor is the session's", () => {
       }),
       captureParams,
     );
-    // The service takes exactly (companyId, captureId). There is nowhere
-    // for a caller-supplied identity or PIN to arrive.
-    expect(convertCaptureToBill).toHaveBeenCalledWith("co_1", 5);
+    // The service takes (companyId, captureId, the server-computed approval
+    // amount). There is nowhere for a caller-supplied identity or PIN to arrive.
+    expect(convertCaptureToBill).toHaveBeenCalledWith("co_1", 5, 1150);
     expect(convertCaptureToBill).toHaveBeenCalledTimes(1);
   });
 
@@ -230,6 +261,33 @@ describe("conversion is gated twice, and the actor is the session's", () => {
       expect(response.status).toBe(400);
     }
     expect(convertCaptureToBill).not.toHaveBeenCalled();
+  });
+});
+
+describe("SD-1 manual entry and re-validation require Purchasing:Edit", () => {
+  it.each([
+    ["manual-entry", startManualEntry],
+    ["submit-for-review", submitForReview],
+    ["revalidate", revalidateCapture],
+  ] as const)("%s checks Purchasing:Edit and does nothing without it", async (action, fn) => {
+    const { PATCH } = await import("./[captureId]/route");
+    await PATCH(new Request("http://test/api", { method: "PATCH", body: JSON.stringify({ action }) }), captureParams);
+    expect(requirePermission).toHaveBeenCalledWith("co_1", "Purchasing:Edit");
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    vi.clearAllMocks();
+    requireSession.mockResolvedValue({ ok: true });
+    requirePermission.mockResolvedValue(FORBIDDEN);
+    const response = await PATCH(new Request("http://test/api", { method: "PATCH", body: JSON.stringify({ action }) }), captureParams);
+    expect(response.status).toBe(403);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("a database refusal (the 0111/0112 guard) is reported as 403, not a server error", async () => {
+    const { PATCH } = await import("./[captureId]/route");
+    startManualEntry.mockRejectedValue({ code: "42501", message: "only a queued or failed capture can be entered by hand" });
+    const response = await PATCH(new Request("http://test/api", { method: "PATCH", body: JSON.stringify({ action: "manual-entry" }) }), captureParams);
+    expect(response.status).toBe(403);
   });
 });
 

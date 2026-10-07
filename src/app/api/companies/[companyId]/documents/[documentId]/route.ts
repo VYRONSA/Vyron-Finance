@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/server/auth/require-session";
 import { requirePermission } from "@/server/services/permission-service";
-import { deleteDocument, NotFoundError } from "@/server/services/document-service";
+import { deleteDocument, NotFoundError, RetainedDocumentError } from "@/server/services/document-service";
 import { getDocumentOr404 } from "@/server/services/document-lookup";
 import { DOCUMENT_PERMISSION_MODULE } from "@/server/documents/types";
 
@@ -21,6 +21,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof NotFoundError) return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof RetainedDocumentError) return NextResponse.json({ error: error.message }, { status: 409 });
     throw error;
   }
 }

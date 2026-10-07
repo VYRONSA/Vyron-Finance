@@ -1,4 +1,8 @@
 -- Phase SD-0 — database tests for migration 0111 (supplier capture security hardening).
+-- Kept current with 0112 (SD-1): where SD-1 deliberately widened what a
+-- reviewer may correct, or made captured documents undeletable, the
+-- expectation says so. The SD-1 rules themselves are tested in
+-- supplier_capture_review_workflow.test.sql.
 --
 -- LOCAL / SYNTHETIC DATA ONLY. Everything runs in ONE transaction that is
 -- rolled back at the end. Never run against a shared or production database.
@@ -208,6 +212,10 @@ values (pg_temp.co_a(), pg_temp.sup('ALPHA'), 'maize meal 10kg', '', '5100', 'St
 insert into ai_extraction_attempts (company_id, capture_id, attempt_number, outcome, provider_request_made)
 values (pg_temp.co_a(), pg_temp.cap('a-review.pdf'), 1, 'extracted', true);
 
+-- The C5 fixture Draft (the bill a conversion creates) is part of the
+-- fixture, so it is in the baseline.
+insert into ae_imported_bills (company_id, supplier_id, supplier_name, invoice_number, total, outstanding, origin, posting_status)
+values (pg_temp.co_a(), pg_temp.sup('ALPHA'), 'Alpha Supplies', 'INV-100', 1150, 1150, 'Purchasing', 'Draft');
 create temp table sd0_state as select pg_temp.accounting_fingerprint() as accounting_before;
 grant select on sd0_state to authenticated, anon, service_role;
 
@@ -371,8 +379,8 @@ select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set 
   'C3 Edit cannot set a validation result');
 select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set duplicate_status = %L, duplicate_reason = %L where id = %s', 'None', '', pg_temp.cap('a-blocked.pdf'))) = -1,
   'C3 Edit cannot clear a duplicate block');
-select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set total = 1 where id = %s', pg_temp.cap('a-review.pdf'))) = -1,
-  'C3 Edit cannot change extracted totals (that is a later, audited phase)');
+select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set supplier_name_extracted = %L where id = %s', 'Someone Else', pg_temp.cap('a-review.pdf'))) = -1,
+  'C3 Edit cannot change what was extracted (reviewed totals are correctable since SD-1; the extraction is not)');
 select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set status = %L where id = %s', 'Cancelled', pg_temp.cap('a-review.pdf'))) = -1,
   'C3 Edit cannot reject (needs Purchasing:Reject)');
 select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set status = %L, bill_id = %s where id = %s', 'Converted', pg_temp.bill('SD0-A-1'), pg_temp.cap('a-review.pdf'))) = -1,
@@ -387,16 +395,16 @@ select pg_temp.ok(pg_temp.affected(format(
     'update supplier_invoice_capture_lines set gl_account_confirmed = %L, vat_code_confirmed = %L, quantity = 11, is_excluded = false where capture_id = %s',
     '5200', 'Standard Rated', pg_temp.cap('a-review.pdf'))) = 1,
   'C3 Edit corrects a line (confirmations, quantity)');
-select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_capture_lines set line_total = 1 where capture_id = %s', pg_temp.cap('a-review.pdf'))) = -1,
-  'C3 ... but not what the document printed (line total)');
+select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_capture_lines set line_confidence = 1 where capture_id = %s', pg_temp.cap('a-review.pdf'))) = -1,
+  'C3 ... but not the model''s own confidence');
 select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_capture_lines set gl_account_suggested = %L where capture_id = %s', '9999', pg_temp.cap('a-review.pdf'))) = -1,
   'C3 ... nor the system''s suggestion');
 select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_capture_lines set description = %L where capture_id = %s', 'x', pg_temp.cap('a-queued.pdf'))) = -1,
   'C3 ... nor lines of a capture that is not in review');
-select pg_temp.ok(pg_temp.affected(format('insert into supplier_invoice_capture_lines (company_id, capture_id, line_order, description) values (%L, %s, 5, %L)', pg_temp.co_a(), pg_temp.cap('a-review.pdf'), 'x')) = -1,
-  'C3 Edit cannot add lines (extraction writes lines)');
-select pg_temp.ok(pg_temp.affected(format('delete from supplier_invoice_capture_lines where capture_id = %s', pg_temp.cap('a-review.pdf'))) <= 0,
-  'C3 Edit cannot delete lines');
+select pg_temp.ok(pg_temp.affected(format('insert into supplier_invoice_capture_lines (company_id, capture_id, line_order, description) values (%L, %s, 5, %L)', pg_temp.co_a(), pg_temp.cap('a-queued.pdf'), 'x')) = -1,
+  'C3 Edit cannot add lines to a capture that is not in review');
+select pg_temp.ok(pg_temp.affected(format('delete from supplier_invoice_capture_lines where capture_id = %s', pg_temp.cap('a-queued.pdf'))) <= 0,
+  'C3 Edit cannot delete lines of a capture that is not in review');
 select pg_temp.ok(pg_temp.err(format('select fn_upsert_supplier_line_mapping(%L, %s, %L, %L, %L, %L, null)', pg_temp.co_a(), pg_temp.sup('ALPHA'), 'maize meal 10kg', '', '9999', 'Exempt')) is not null,
   'C3 Edit cannot write learned mappings (only an approved conversion can)');
 select pg_temp.as_admin();
@@ -415,6 +423,8 @@ select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set 
 select pg_temp.as_admin();
 
 -- C5 Create + Approve (conversion)
+-- (0112) conversion needs a fresh verdict and the Draft created for this capture (ALPHA / INV-100; C3's corrections were rolled back).
+update supplier_invoice_captures set validation_status = 'Pass', validated_at = now() where id = pg_temp.cap('a-review.pdf');
 select pg_temp.as_user('approver');
 select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set status = %L, bill_id = %s where id = %s', 'Converted', pg_temp.bill('SD0-B-1'), pg_temp.cap('a-review.pdf'))) = -1,
   'C5 conversion cannot link another company''s bill');
@@ -423,9 +433,9 @@ select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set 
 select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set bill_id = %s where id = %s', pg_temp.bill('SD0-A-1'), pg_temp.cap('a-review.pdf'))) = -1,
   'C5 a bill cannot be linked without converting');
 select pg_temp.ok(pg_temp.affected(format('update supplier_invoice_captures set status = %L, bill_id = %s, converted_by = %L, converted_at = %L where id = %s',
-    'Converted', pg_temp.bill('SD0-A-1'), 'someone-else@spoof.test', '2000-01-01', pg_temp.cap('a-review.pdf'))) = 1,
+    'Converted', pg_temp.bill('INV-100'), 'someone-else@spoof.test', '2000-01-01', pg_temp.cap('a-review.pdf'))) = 1,
   'C5 Purchasing:Create + Approve converts a reviewed capture');
-update supplier_invoice_captures set status = 'Converted', bill_id = pg_temp.bill('SD0-A-1'), converted_by = 'someone-else@spoof.test', converted_at = '2000-01-01'
+update supplier_invoice_captures set status = 'Converted', bill_id = pg_temp.bill('INV-100'), converted_by = 'someone-else@spoof.test', converted_at = '2000-01-01'
 where id = pg_temp.cap('a-review.pdf');
 select fn_upsert_supplier_line_mapping(pg_temp.co_a(), pg_temp.sup('ALPHA'), 'maize meal 10kg', '', '5200', 'Standard Rated', pg_temp.cap('a-review.pdf'));
 select pg_temp.as_admin();
@@ -548,8 +558,8 @@ select pg_temp.ok(pg_temp.err('delete from supplier_invoice_capture_events') lik
   'F3 ... nor delete one');
 select pg_temp.ok(pg_temp.err('truncate supplier_invoice_capture_events') like '%append-only%',
   'F3 ... nor truncate the table');
-select pg_temp.ok(pg_temp.err(format('delete from documents where id = %s', pg_temp.doc('b-review.pdf'))) is null,
-  'F4 deleting the source document still cascades as before (existing behaviour preserved; see SD-1)');
+select pg_temp.ok(pg_temp.err(format('delete from documents where id = %s', pg_temp.doc('b-review.pdf'))) like '%retained as accounting evidence%',
+  'F4 (0112) the source document of a capture is retained: deleting it is refused, so its history cannot cascade away');
 
 -- =====================================================================
 -- G. The server path still works.
@@ -569,7 +579,7 @@ select pg_temp.as_admin();
 -- H. Accounting untouched.
 -- =====================================================================
 select pg_temp.ok((select accounting_before from sd0_state) = pg_temp.accounting_fingerprint(),
-  'H1 journals, ledger, bills, bill lines, supplier payments, allocations and suppliers are byte-for-byte unchanged');
+  'H1 journals, ledger, bills, bill lines, supplier payments, allocations and suppliers are byte-for-byte unchanged (beyond the fixture Draft)');
 select pg_temp.ok(not exists (
     select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
     where not t.tgisinternal

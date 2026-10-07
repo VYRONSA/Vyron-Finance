@@ -93,16 +93,24 @@ const NO_DUPLICATE: DuplicateDecision = {
  *                                however it was described.               BLOCK
  *   2 supplier + invoice number  one serial number, one document.        BLOCK
  *   3 supplier + total + window  same supplier, same money, days apart.  POSSIBLE
+ *   4 same file as a REJECTED capture                                    POSSIBLE
  *
- * A capture that was itself cancelled is not a duplicate of anything — it
- * was discarded on purpose, and re-uploading is the correct remedy.
+ * A capture that was rejected (Cancelled) is not a duplicate of anything —
+ * it was discarded on purpose, and re-uploading is the correct remedy. The
+ * reviewer is still told it is the same file (layer 4), because a rejected
+ * file is sometimes rejected precisely for being a duplicate.
+ *
+ * SD-1 — a Failed capture now counts as live: it can be entered by hand
+ * (ManualEntry), so the same file uploaded again is a second copy of a
+ * document still in the workflow, not a fresh attempt.
  */
 export function assessDuplicate(
   subject: DuplicateSubject,
   captures: DuplicateCandidateCapture[],
   bills: DuplicateCandidateBill[],
 ): DuplicateDecision {
-  const live = captures.filter((c) => c.captureId !== subject.captureId && c.status !== "Cancelled" && c.status !== "Failed");
+  const others = captures.filter((c) => c.captureId !== subject.captureId);
+  const live = others.filter((c) => c.status !== "Cancelled");
 
   // Layer 1 — the same bytes.
   if (subject.contentSha256) {
@@ -180,7 +188,62 @@ export function assessDuplicate(
     }
   }
 
+  // Layer 4 — the same bytes as a capture that was rejected.
+  if (subject.contentSha256) {
+    const rejected = others.find((c) => c.status === "Cancelled" && c.contentSha256 && c.contentSha256 === subject.contentSha256);
+    if (rejected) return rejectedFileDecision(rejected.captureId);
+  }
+
   return NO_DUPLICATE;
+}
+
+function rejectedFileDecision(captureId: number): DuplicateDecision {
+  return {
+    status: "Possible",
+    layer: "file-hash",
+    reason: `This is the same file as a capture that was rejected (#${captureId}). Check why it was rejected before capturing it again.`,
+    ofCaptureId: captureId,
+    ofBillId: null,
+  };
+}
+
+/** Another stored document with the same bytes, and the capture (if any)
+ * made from it. */
+export type SameFileDocument = {
+  documentId: number;
+  filename: string;
+  captureId: number | null;
+  captureStatus: string | null;
+};
+
+export type FileHashDecision =
+  | { kind: "none" }
+  | { kind: "blocked"; ofDocumentId: number; filename: string; ofCaptureId: number | null }
+  | { kind: "possible"; decision: DuplicateDecision };
+
+/**
+ * SD-1 — the upload-time file check, decided from EVERY other document with
+ * the same bytes (never the uploaded document itself).
+ *
+ * Blocks when the same file is already:
+ *  - a capture still in the workflow, or converted (any status but rejected);
+ *  - a stored document with no capture at all — for example the invoice
+ *    attached to a bill that was entered by hand. Capturing it again is how
+ *    an invoice gets recorded twice.
+ *
+ * Does NOT block when the only earlier copies belong to rejected captures:
+ * re-uploading a rejected document is legitimate. It is still flagged as a
+ * possible duplicate so the reviewer sees the history.
+ */
+export function assessFileHashMatches(uploadedDocumentId: number, matches: SameFileDocument[]): FileHashDecision {
+  const others = matches.filter((m) => m.documentId !== uploadedDocumentId).sort((a, b) => a.documentId - b.documentId);
+  const blocking = others.find((m) => m.captureId === null || m.captureStatus !== "Cancelled");
+  if (blocking) {
+    return { kind: "blocked", ofDocumentId: blocking.documentId, filename: blocking.filename, ofCaptureId: blocking.captureId };
+  }
+  const rejected = others.find((m) => m.captureId !== null && m.captureStatus === "Cancelled");
+  if (rejected) return { kind: "possible", decision: rejectedFileDecision(rejected.captureId!) };
+  return { kind: "none" };
 }
 
 /** The one place that decides whether a duplicate verdict stops a

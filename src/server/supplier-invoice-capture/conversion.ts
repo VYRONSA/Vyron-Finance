@@ -51,12 +51,10 @@ export type ConversionSubject = {
   /** Set once converted. Present means this capture already has a bill. */
   existingBillId: number | null;
   /**
-   * What kind of document this was read as — Phase 5N.
-   *
-   * Carried here ONLY so conversion can refuse it. It is deliberately NOT
-   * passed on to `createPurchaseBill`, which would accept a `documentType`
-   * of "Credit Note" quite happily — see the block below for why that
-   * would be the wrong thing to do here.
+   * What kind of document this is — read by extraction, confirmed or
+   * corrected by the reviewer. SD-1: an Invoice (or unknown) becomes a
+   * Draft supplier Bill; a Credit Note becomes a Draft supplier Credit
+   * Note; anything else is refused. See the block below.
    */
   documentType: string | null;
   /**
@@ -78,7 +76,9 @@ export type ConversionBlock = {
     | "missing-invoice-number"
     | "missing-invoice-date"
     | "validation-incomplete"
+    | "validation-pending"
     | "not-an-invoice"
+    | "credit-note-mixed-signs"
     | "foreign-currency-unsupported"
     | "no-lines"
     | "line-missing-gl-account"
@@ -139,43 +139,68 @@ export function assessConversion(subject: ConversionSubject): ConversionAssessme
       code: "validation-incomplete",
       message: "This document could not be read reliably. Correct the figures against the invoice, or capture it by hand.",
     });
+  } else if (subject.validationStatus === "Pending") {
+    // SD-1 — every reviewer correction resets validation. A capture is only
+    // converted on a verdict about the values being converted.
+    blocks.push({
+      code: "validation-pending",
+      message: "The corrected invoice has not been validated yet. Validate it again before converting.",
+    });
   }
 
   /*
-   * Phase 5N — the credit/debit note boundary.
+   * The document-type boundary (Phase 5N; credit notes enabled in SD-1).
    *
-   * THE ACCOUNTING CONSEQUENCE THIS PREVENTS: a supplier credit note
-   * REDUCES what the company owes. This function's only output is a
-   * purchase BILL, which INCREASES it. Convert one and the supplier's
-   * balance moves the wrong way by twice the document — the amount that
-   * should have come off, plus the amount that went on — and it does so
-   * silently, because every figure on the resulting bill is correct. Only
-   * its sign is wrong, and a sign is not something a reviewer checking
-   * totals will see.
+   * A supplier credit note REDUCES what the company owes; a bill INCREASES
+   * it. Booked as a bill, a credit note moves the balance the wrong way by
+   * twice the document, silently. So the output's document type is decided
+   * HERE, structurally, from the reviewed document type — never left to a
+   * default:
    *
-   * WHY THIS IS A REFUSAL AND NOT A FEATURE: `createPurchaseBill` does
-   * take a `documentType` of "Credit Note", so making this "work" is a
-   * one-line change. That is exactly why it is written out here. Booking
-   * a credit note correctly means the whole chain — posting rules, VAT
-   * return treatment, allocation against the original bill, the supplier
-   * ageing — agrees about the sign. None of that has been verified for
-   * this path, and a one-line change that produces a plausible-looking
-   * wrong number is the most dangerous kind.
+   *   Invoice (or not stated) -> a Draft supplier "Bill"
+   *   Credit Note             -> a Draft supplier "Credit Note"
+   *   anything else           -> refused
    *
-   * This block is deliberately INDEPENDENT of the `not-an-invoice`
-   * validation finding. That finding depends on the model having read the
-   * document's type; this one is a second, structural refusal that holds
-   * even if validation said Pass. Either alone would be a single point of
-   * failure for an error that is invisible once posted.
+   * SD-1 verified the existing credit-note path before enabling it:
+   * `createPurchaseBill` stores a Credit Note with positive amounts, and
+   * `approveAndPostBill` posts it through the seeded "Supplier Credit Note"
+   * rule (DR Creditors gross / CR expense net / CR VAT Input vat) after the
+   * same Submit -> Approve (with approval limit) workflow as a bill. The VAT
+   * return signs it as a reversal. No new posting mechanism exists here.
+   * (Known, pre-existing and unchanged: the supplier sub-ledger views —
+   * outstanding balance, per-supplier ageing, payment allocation — treat a
+   * credit note's `outstanding` like a bill's. See the SD-1 report.)
+   *
+   * Debit notes stay refused: enabling them is a separate decision.
    */
-  const documentType = subject.documentType?.trim();
-  if (documentType && documentType.toLowerCase() !== "invoice") {
+  const documentType = subject.documentType?.trim() || null;
+  const typeKey = documentType?.toLowerCase() ?? null;
+  const isCreditNote = typeKey === "credit note";
+  if (typeKey && typeKey !== "invoice" && !isCreditNote) {
     blocks.push({
       code: "not-an-invoice",
       message:
-        `This is a ${documentType.toLowerCase()}, not an invoice. Capturing it as a supplier bill would ` +
-        `increase what you owe instead of reducing it. Enter it by hand as a supplier ${documentType.toLowerCase()}.`,
+        `This is a ${typeKey}. Supplier ${typeKey}s cannot be captured yet — ` +
+        `enter it by hand so it is booked with the right sign.`,
     });
+  }
+
+  // A credit note may print its amounts negative. It is booked positive
+  // with the Credit Note document type carrying the sign — so every
+  // included line must agree on one sign, or the abs() below would be wrong.
+  const includedForSign = subject.lines.filter((l) => !l.isExcluded);
+  if (isCreditNote) {
+    const signs = new Set(
+      includedForSign
+        .map((l) => (isFiniteNumber(l.quantity) && isFiniteNumber(l.unitPrice) ? Math.sign(l.quantity * l.unitPrice) : 0))
+        .filter((s) => s !== 0),
+    );
+    if (signs.size > 1) {
+      blocks.push({
+        code: "credit-note-mixed-signs",
+        message: "This credit note has both positive and negative lines. Correct the lines so they agree, or enter it by hand.",
+      });
+    }
   }
 
   /*
@@ -237,7 +262,8 @@ export function assessConversion(subject: ConversionSubject): ConversionAssessme
     if (!line.vatCode?.trim()) {
       blocks.push({ code: "line-missing-vat-code", lineOrder: line.lineOrder, message: `Line ${line.lineOrder + 1} needs a VAT code.` });
     }
-    if (!isPositive(line.quantity) || !isFiniteNumber(line.unitPrice)) {
+    const quantity = isCreditNote && isFiniteNumber(line.quantity) ? Math.abs(line.quantity) : line.quantity;
+    if (!isPositive(quantity) || !isFiniteNumber(line.unitPrice)) {
       blocks.push({
         code: "line-missing-amounts",
         lineOrder: line.lineOrder,
@@ -248,13 +274,16 @@ export function assessConversion(subject: ConversionSubject): ConversionAssessme
 
   if (blocks.length > 0) return { ok: false, blocks };
 
+  // For a credit note the sign lives in the document type, so amounts are
+  // carried as magnitudes (every line was checked above to share one sign).
+  const magnitude = (value: number) => (isCreditNote ? Math.abs(value) : value);
   const lines: BillLineInput[] = included.map((line) => ({
     description: line.description?.trim() || "(no description)",
     glAccount: line.glAccount!.trim(),
     vatCode: line.vatCode!.trim(),
-    quantity: line.quantity!,
-    unitCost: line.unitPrice!,
-    discount: isFiniteNumber(line.discount) ? line.discount! : 0,
+    quantity: magnitude(line.quantity!),
+    unitCost: magnitude(line.unitPrice!),
+    discount: isFiniteNumber(line.discount) ? magnitude(line.discount!) : 0,
   }));
 
   return {
@@ -262,6 +291,7 @@ export function assessConversion(subject: ConversionSubject): ConversionAssessme
     input: {
       supplierId: subject.supplierId!,
       invoiceNumber: subject.invoiceNumber!.trim(),
+      documentType: isCreditNote ? "Credit Note" : "Bill",
       invoiceDate: subject.invoiceDate!,
       dueDate: subject.dueDate ?? null,
       // The multi-line path: header VAT and total become a real roll-up of
@@ -272,6 +302,31 @@ export function assessConversion(subject: ConversionSubject): ConversionAssessme
       lines,
     },
   };
+}
+
+/**
+ * SD-1 — the amount a conversion's approval limit is checked against.
+ *
+ * Previously the route used the EXTRACTED header total, which a reviewer
+ * could not correct and which — when missing — became 0 and passed every
+ * limit. Now:
+ *
+ *  - `computedDocumentTotal` is the total the purchase-bill engine itself
+ *    computes from the reviewed lines (the figure the Draft document will
+ *    actually carry). It is required: if it cannot be computed, there is
+ *    no amount, and the caller must refuse — never fall back to zero.
+ *  - `reviewedHeaderTotal` is the reviewed total printed on the document.
+ *    When present, the LARGER of the two is used, so a total that the lines
+ *    under-state can never slip under a limit.
+ *
+ * Both are magnitudes: a credit note's approval is about its size.
+ */
+export function conversionApprovalAmount(computedDocumentTotal: number, reviewedHeaderTotal: number | null): number {
+  if (!Number.isFinite(computedDocumentTotal) || computedDocumentTotal <= 0) {
+    throw new Error("The document total could not be computed, so there is no amount to check an approval limit against.");
+  }
+  const header = isFiniteNumber(reviewedHeaderTotal) ? Math.abs(reviewedHeaderTotal) : 0;
+  return Math.round(Math.max(Math.abs(computedDocumentTotal), header) * 100) / 100;
 }
 
 function isFiniteNumber(value: number | null): value is number {

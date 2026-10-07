@@ -333,13 +333,13 @@ export const CORPUS: CorpusCase[] = [
     key: "credit-note",
     profile: "credit-note",
     description:
-      "A supplier CREDIT NOTE. It reduces what is owed; booking it as a bill would increase it. Must be refused, not captured.",
+      "A supplier CREDIT NOTE. It reduces what is owed. SD-1: captured as a credit note (never as a bill), after a reviewer confirms the type.",
     answer: answer({
       header: header({ documentType: "Credit Note", invoiceNumber: "KW-CN-0007", subtotal: 500, vatAmount: 75, total: 575 }),
       lines: [line({ description: "Returned stock — damaged", quantity: 5, unitPrice: 100, vatAmount: 75, lineTotal: 500 })],
       invoiceNumbersSeen: ["KW-CN-0007"],
     }),
-    expect: { validation: "Incomplete", findings: ["not-an-invoice"], retryable: false },
+    expect: { validation: "Review", findings: ["not-an-invoice"], retryable: false },
   },
   {
     key: "debit-note",

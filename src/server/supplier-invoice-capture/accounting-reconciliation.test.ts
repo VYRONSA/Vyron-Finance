@@ -187,7 +187,9 @@ describe("the bill engine owns the accounting, not this feature", () => {
     // The conversion module's entire exported surface: an assessment and a
     // structural guard. Nothing that posts.
     const mod = await import("./conversion");
-    expect(Object.keys(mod).sort()).toEqual(["assertNoBypass", "assessConversion"]);
+    // SD-1 added `conversionApprovalAmount`: arithmetic on two numbers for
+    // the approval-limit check. It writes and posts nothing.
+    expect(Object.keys(mod).sort()).toEqual(["assertNoBypass", "assessConversion", "conversionApprovalAmount"]);
   });
 
   it("no module in this feature writes to an accounting table", async () => {
@@ -266,7 +268,6 @@ describe("the whole corpus converts consistently", () => {
    *   R1,200 is an ordinary number.
    */
   it.each([
-    ["credit-note", "not-an-invoice"],
     ["debit-note", "not-an-invoice"],
     ["foreign-currency", "foreign-currency-unsupported"],
   ])("the %s document is refused at the accounting boundary (%s)", (key, expectedBlock) => {
@@ -282,5 +283,19 @@ describe("the whole corpus converts consistently", () => {
     expect(conversion.ok).toBe(false);
     if (conversion.ok) return;
     expect(conversion.blocks.map((b) => b.code)).toContain(expectedBlock);
+  });
+
+  /* SD-1 — the credit note now converts, and ONLY as a Credit Note: the
+   * existing "Supplier Credit Note" posting rule then reverses it, after the
+   * ordinary Submit -> Approve workflow. Never as a "Bill". */
+  it("the credit-note document converts to a Draft supplier Credit Note, never a Bill", () => {
+    const testCase = CORPUS.find((c) => c.key === "credit-note")!;
+    const confirm = testCase.answer.lines.map(() => ({ glAccount: "5100", vatCode: "Standard Rated" }));
+    const conversion = assessConversion(reviewed(testCase.answer, confirm));
+    expect(conversion.ok).toBe(true);
+    if (!conversion.ok) return;
+    expect(conversion.input.documentType).toBe("Credit Note");
+    const net = (conversion.input.lines ?? []).reduce((sum, l) => sum + l.quantity * l.unitCost - (l.discount ?? 0), 0);
+    expect(net).toBe(testCase.answer.header.subtotal);
   });
 });

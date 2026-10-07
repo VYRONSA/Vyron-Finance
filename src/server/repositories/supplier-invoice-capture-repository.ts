@@ -24,6 +24,7 @@
 
 import { createAdminClient, isSupabaseAdminConfigured } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { SameFileDocument } from "@/server/supplier-invoice-capture/duplicate-detection";
 import type {
   CaptureStatus,
   DuplicateStatus,
@@ -80,6 +81,10 @@ export type CaptureRow = {
   bill_id: number | null;
   converted_at: string | null;
   converted_by: string | null;
+  /** SD-1 (0112) — the extraction exactly as received; null for a manual entry. */
+  extraction_snapshot: unknown;
+  manual_entry: boolean;
+  validated_at: string | null;
   uploaded_by: string;
   created_at: string;
   updated_at: string;
@@ -131,6 +136,42 @@ export async function getCapture(companyId: string, captureId: number): Promise<
     .maybeSingle<CaptureRow>();
   if (error) throw error;
   return data;
+}
+
+/** System reads (SD-1): duplicate evaluation and re-validation must see
+ * the capture whatever the current user may read. */
+export async function getCaptureAsSystem(companyId: string, captureId: number): Promise<CaptureRow | null> {
+  const { data, error } = await systemClient()
+    .from("supplier_invoice_captures")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("id", captureId)
+    .maybeSingle<CaptureRow>();
+  if (error) throw error;
+  return data;
+}
+
+export async function listCaptureLinesAsSystem(companyId: string, captureId: number): Promise<CaptureLineRow[]> {
+  const { data, error } = await systemClient()
+    .from("supplier_invoice_capture_lines")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("capture_id", captureId)
+    .order("line_order", { ascending: true })
+    .returns<CaptureLineRow[]>();
+  if (error) throw error;
+  return data;
+}
+
+export async function getDocumentHashAsSystem(companyId: string, documentId: number): Promise<string | null> {
+  const { data, error } = await systemClient()
+    .from("documents")
+    .select("content_sha256")
+    .eq("company_id", companyId)
+    .eq("id", documentId)
+    .maybeSingle<{ content_sha256: string | null }>();
+  if (error) throw error;
+  return data?.content_sha256 ?? null;
 }
 
 export async function getCaptureByDocument(companyId: string, documentId: number): Promise<CaptureRow | null> {
@@ -226,6 +267,28 @@ export async function updateCaptureAsSystem(companyId: string, captureId: number
   return data;
 }
 
+/** System write that applies only if the capture has not changed since it
+ * was read (`updated_at` as read). Returns null when it had — e.g. a
+ * reviewer corrected it while it was being validated — so a verdict is
+ * never recorded against values it did not see. */
+export async function updateCaptureAsSystemIfUnchanged(
+  companyId: string,
+  captureId: number,
+  readUpdatedAt: string,
+  fields: Record<string, unknown>,
+): Promise<CaptureRow | null> {
+  const { data, error } = await systemClient()
+    .from("supplier_invoice_captures")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("company_id", companyId)
+    .eq("id", captureId)
+    .eq("updated_at", readUpdatedAt)
+    .select("*")
+    .maybeSingle<CaptureRow>();
+  if (error) throw error;
+  return data;
+}
+
 /**
  * Claims a capture for extraction.
  *
@@ -267,11 +330,52 @@ export async function replaceCaptureLines(
   if (error) throw error;
 }
 
+/** The line values a reviewer may set (0112): what the document shows, and
+ * the reviewer's GL/VAT confirmations. Suggestions stay system-owned. */
+export type ReviewerLineFields = Partial<Pick<
+  CaptureLineRow,
+  | "description" | "supplier_sku" | "quantity" | "uom" | "unit_price" | "discount"
+  | "vat_rate_percent" | "vat_amount" | "line_total"
+  | "gl_account_confirmed" | "vat_code_confirmed" | "is_excluded"
+>>;
+
+/** Adds reviewer-entered lines after the existing ones (manual entry, or a
+ * line the extraction missed). */
+export async function addCaptureLinesAsReviewer(companyId: string, captureId: number, lines: ReviewerLineFields[]): Promise<void> {
+  if (lines.length === 0) return;
+  const supabase = await createClient();
+  const { data: last, error: lastError } = await supabase
+    .from("supplier_invoice_capture_lines")
+    .select("line_order")
+    .eq("company_id", companyId)
+    .eq("capture_id", captureId)
+    .order("line_order", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ line_order: number }>();
+  if (lastError) throw lastError;
+  const start = (last?.line_order ?? -1) + 1;
+  const { error } = await supabase
+    .from("supplier_invoice_capture_lines")
+    .insert(lines.map((line, i) => ({ description: "", ...line, company_id: companyId, capture_id: captureId, line_order: start + i })));
+  if (error) throw error;
+}
+
+export async function removeCaptureLineAsReviewer(companyId: string, captureId: number, lineOrder: number): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("supplier_invoice_capture_lines")
+    .delete()
+    .eq("company_id", companyId)
+    .eq("capture_id", captureId)
+    .eq("line_order", lineOrder);
+  if (error) throw error;
+}
+
 export async function updateCaptureLine(
   companyId: string,
   captureId: number,
   lineOrder: number,
-  fields: Partial<Pick<CaptureLineRow, "description" | "quantity" | "unit_price" | "discount" | "gl_account_confirmed" | "vat_code_confirmed" | "is_excluded">>,
+  fields: ReviewerLineFields,
 ): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase
@@ -286,11 +390,13 @@ export async function updateCaptureLine(
 export type CaptureEventType =
   | "Uploaded" | "Queued" | "ExtractionStarted" | "ExtractionSucceeded" | "ExtractionFailed"
   | "ValidationEvaluated" | "SupplierResolved" | "DuplicateEvaluated" | "FieldCorrected"
-  | "SupplierCreated" | "ConvertedToBill" | "Cancelled" | "Requeued";
+  | "SupplierCreated" | "ConvertedToBill" | "Cancelled" | "Requeued"
+  | "ManualEntryStarted" | "SubmittedForReview";
 
-/** The events a reviewer's own action produces (0111 accepts only these
+/** The events a reviewer's own action produces (0111/0112 accept only these
  * from a signed-in user, each with the permission and state it implies). */
-export type ReviewerCaptureEventType = "Queued" | "FieldCorrected" | "Cancelled" | "ConvertedToBill";
+export type ReviewerCaptureEventType =
+  | "Queued" | "FieldCorrected" | "Cancelled" | "ConvertedToBill" | "ManualEntryStarted" | "SubmittedForReview";
 
 /** Appends one audit event for a reviewer's action. The actor is taken
  * from the session by the database — there is deliberately no parameter
@@ -355,62 +461,143 @@ export async function listCaptureEvents(companyId: string, captureId: number): P
   return data;
 }
 
-/** Candidate rows for the duplicate check — deliberately the narrow
- * projection `assessDuplicate` needs, not whole captures. */
-export async function listDuplicateCandidates(companyId: string): Promise<
-  { captureId: number; supplierId: number | null; invoiceNumber: string | null; invoiceDate: string | null; total: number | null; contentSha256: string | null; status: string }[]
-> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("supplier_invoice_captures")
-    .select("id, supplier_id, invoice_number, invoice_date, total, status, documents!inner(content_sha256)")
-    .eq("company_id", companyId)
-    .limit(LIST_CAP);
-  if (error) throw error;
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    captureId: row.id as number,
-    supplierId: (row.supplier_id as number | null) ?? null,
-    invoiceNumber: (row.invoice_number as string | null) ?? null,
-    invoiceDate: (row.invoice_date as string | null) ?? null,
-    total: row.total === null || row.total === undefined ? null : Number(row.total),
-    contentSha256: ((row.documents as { content_sha256: string | null } | null)?.content_sha256) ?? null,
-    status: row.status as string,
-  }));
+// ---------------------------------------------------------------------
+// Duplicate evidence — read with the service role (SD-1).
+//
+// A duplicate check must see every record that could make this capture a
+// duplicate, whatever the current user is allowed to read; reading under
+// the session would let a narrower role miss the very bill that should
+// block it. The queries are targeted (same supplier, same file) and paged,
+// rather than an unordered first-500 of the whole company.
+// ---------------------------------------------------------------------
+
+const DUPLICATE_PAGE = 1000;
+const DUPLICATE_MAX_PAGES = 20;
+
+type CaptureCandidateRow = { id: number; supplier_id: number | null; invoice_number: string | null; invoice_date: string | null; total: number | string | null; status: string; documents: { content_sha256: string | null } | null };
+
+export type DuplicateCaptureCandidate = {
+  captureId: number; supplierId: number | null; invoiceNumber: string | null; invoiceDate: string | null; total: number | null; contentSha256: string | null; status: string;
+};
+
+/** Captures that could duplicate this one: every capture of the same
+ * supplier, and every capture of a document with the same bytes. */
+export async function listDuplicateCandidates(
+  companyId: string,
+  subject: { supplierId: number | null; contentSha256: string | null },
+): Promise<DuplicateCaptureCandidate[]> {
+  const supabase = systemClient();
+  const byId = new Map<number, DuplicateCaptureCandidate>();
+  const take = (rows: CaptureCandidateRow[]) => {
+    for (const row of rows) {
+      byId.set(row.id, {
+        captureId: row.id,
+        supplierId: row.supplier_id ?? null,
+        invoiceNumber: row.invoice_number ?? null,
+        invoiceDate: row.invoice_date ?? null,
+        total: row.total === null || row.total === undefined ? null : Number(row.total),
+        contentSha256: row.documents?.content_sha256 ?? null,
+        status: row.status,
+      });
+    }
+  };
+  const select = "id, supplier_id, invoice_number, invoice_date, total, status, documents!inner(content_sha256)";
+
+  if (subject.supplierId !== null) {
+    for (let page = 0; page < DUPLICATE_MAX_PAGES; page++) {
+      const { data, error } = await supabase
+        .from("supplier_invoice_captures")
+        .select(select)
+        .eq("company_id", companyId)
+        .eq("supplier_id", subject.supplierId)
+        .order("id", { ascending: true })
+        .range(page * DUPLICATE_PAGE, (page + 1) * DUPLICATE_PAGE - 1)
+        .returns<CaptureCandidateRow[]>();
+      if (error) throw error;
+      take(data ?? []);
+      if ((data ?? []).length < DUPLICATE_PAGE) break;
+    }
+  }
+  if (subject.contentSha256) {
+    const { data, error } = await supabase
+      .from("supplier_invoice_captures")
+      .select(select)
+      .eq("company_id", companyId)
+      .eq("documents.content_sha256", subject.contentSha256)
+      .order("id", { ascending: true })
+      .limit(LIST_CAP)
+      .returns<CaptureCandidateRow[]>();
+    if (error) throw error;
+    take(data ?? []);
+  }
+  return [...byId.values()];
 }
 
+/** Every bill of the supplier (paged), for the supplier + number and the
+ * supplier + amount checks. */
 export async function listBillDuplicateCandidates(companyId: string, supplierId: number): Promise<
   { billId: number; supplierId: number; invoiceNumber: string; invoiceDate: string | null; total: number | null }[]
 > {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("ae_imported_bills")
-    .select("id, supplier_id, invoice_number, invoice_date, total")
-    .eq("company_id", companyId)
-    .eq("supplier_id", supplierId)
-    .limit(LIST_CAP);
-  if (error) throw error;
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    billId: row.id as number,
-    supplierId: row.supplier_id as number,
-    invoiceNumber: (row.invoice_number as string) ?? "",
-    invoiceDate: (row.invoice_date as string | null) ?? null,
-    total: row.total === null || row.total === undefined ? null : Number(row.total),
-  }));
+  const supabase = systemClient();
+  const out: { billId: number; supplierId: number; invoiceNumber: string; invoiceDate: string | null; total: number | null }[] = [];
+  for (let page = 0; page < DUPLICATE_MAX_PAGES; page++) {
+    const { data, error } = await supabase
+      .from("ae_imported_bills")
+      .select("id, supplier_id, invoice_number, invoice_date, total")
+      .eq("company_id", companyId)
+      .eq("supplier_id", supplierId)
+      .order("id", { ascending: true })
+      .range(page * DUPLICATE_PAGE, (page + 1) * DUPLICATE_PAGE - 1);
+    if (error) throw error;
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      out.push({
+        billId: row.id as number,
+        supplierId: row.supplier_id as number,
+        invoiceNumber: (row.invoice_number as string) ?? "",
+        invoiceDate: (row.invoice_date as string | null) ?? null,
+        total: row.total === null || row.total === undefined ? null : Number(row.total),
+      });
+    }
+    if ((data ?? []).length < DUPLICATE_PAGE) break;
+  }
+  return out;
 }
 
-/** A document already uploaded for this company with the same bytes. The
- * hash index added by 0108 makes this a lookup, not a scan. */
-export async function findDocumentByHash(companyId: string, contentSha256: string): Promise<{ id: number; filename: string } | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
+/**
+ * SD-1 — every stored document of this company with the same bytes, with
+ * the capture (if any) made from each. Ordered, and the caller excludes the
+ * document being uploaded: the previous `.limit(1).maybeSingle()` could
+ * return the new document itself (it already carries its hash), so the real
+ * earlier copy went unseen.
+ */
+export async function findSameFileDocuments(companyId: string, contentSha256: string): Promise<SameFileDocument[]> {
+  const supabase = systemClient();
+  const { data: documents, error } = await supabase
     .from("documents")
     .select("id, filename")
     .eq("company_id", companyId)
     .eq("content_sha256", contentSha256)
-    .limit(1)
-    .maybeSingle<{ id: number; filename: string }>();
+    .order("id", { ascending: true })
+    .limit(LIST_CAP)
+    .returns<{ id: number; filename: string }[]>();
   if (error) throw error;
-  return data;
+  if (!documents || documents.length === 0) return [];
+
+  const { data: captures, error: captureError } = await supabase
+    .from("supplier_invoice_captures")
+    .select("id, document_id, status")
+    .eq("company_id", companyId)
+    .in("document_id", documents.map((d) => d.id))
+    .returns<{ id: number; document_id: number; status: string }[]>();
+  if (captureError) throw captureError;
+  const captureByDocument = new Map((captures ?? []).map((c) => [c.document_id, c]));
+
+  return documents.map((d) => ({
+    documentId: d.id,
+    filename: d.filename,
+    captureId: captureByDocument.get(d.id)?.id ?? null,
+    captureStatus: captureByDocument.get(d.id)?.status ?? null,
+  }));
 }
 
 // ---------------------------------------------------------------------

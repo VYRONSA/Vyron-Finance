@@ -319,12 +319,12 @@ describe("the fabricated-table scenario end to end", () => {
  * a bill increases it — the opposite sign, silently, on a real liability.
  * ------------------------------------------------------------------- */
 describe("a document that is not an invoice is refused, not guessed at", () => {
-  it("blocks a supplier credit note and explains the consequence", () => {
+  it("SD-1: asks a person to confirm a supplier credit note, rather than refusing it", () => {
     const report = validateExtraction(result({ header: { documentType: "Credit Note" } as never }));
-    expect(report.status).toBe("Incomplete");
     const finding = report.findings.find((f) => f.code === "not-an-invoice");
-    expect(finding?.severity).toBe("blocking");
-    expect(finding?.message).toMatch(/reduces the balance rather than adding to it/i);
+    expect(finding?.severity).toBe("review");
+    expect(finding?.message).toMatch(/reduces what is owed/i);
+    expect(report.findings.some((f) => f.code === "not-an-invoice" && f.severity === "blocking")).toBe(false);
   });
 
   it("blocks a supplier debit note", () => {

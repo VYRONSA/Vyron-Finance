@@ -64,7 +64,10 @@ export type ValidationFinding = {
     | "missing-required-field"
     | "not-an-invoice"
     | "multiple-invoices"
-    | "negative-amount";
+    | "negative-amount"
+    /** SD-1 — a credit note whose lines carry both positive and negative
+     * amounts cannot be booked by sign convention alone. */
+    | "credit-note-mixed-signs";
   severity: "blocking" | "review";
   message: string;
   /** Which line (0-based), when the finding is about one row. */
@@ -308,23 +311,49 @@ export function validateExtraction(result: ExtractionResult): ValidationReport {
    * rather than mis-booked. Handling them properly is its own change —
    * see the phase report's required improvements. */
   const documentType = result.header.documentType;
+  const isCreditNote = documentType === "Credit Note";
+  /* SD-1 — supplier credit notes ARE captured now, as a Draft supplier
+   * credit note through the existing purchase-bill path (see
+   * conversion.ts). The finding keeps its code — certification scores
+   * findings by code, and a credit note is still "not an invoice" — but
+   * for a credit note it asks a person to confirm the document type
+   * instead of refusing it. Debit notes and anything else stay refused. */
   if (documentType && documentType !== "Invoice") {
     findings.push({
       code: "not-an-invoice",
-      severity: "blocking",
+      severity: isCreditNote ? "review" : "blocking",
       message:
         documentType === "Other"
           ? "This does not look like a supplier invoice. Capture is for invoices; check the document."
-          : `This is a ${documentType.toLowerCase()}, not an invoice. Supplier ${documentType.toLowerCase()}s cannot be captured yet — capture it by hand so it reduces the balance rather than adding to it.`,
+          : isCreditNote
+            ? "This is a supplier credit note. It will be captured as a credit note, which reduces what is owed — confirm that against the document before converting."
+            : `This is a ${documentType.toLowerCase()}, not an invoice. Supplier ${documentType.toLowerCase()}s cannot be captured yet — capture it by hand so it reduces the balance rather than adding to it.`,
     });
   }
 
   const boundary = assessInvoiceBoundary(result);
   if (boundary.kind === "multiple") {
+    /* A credit note normally prints the number of the invoice it credits as
+     * well as its own (certification case `credit-note`, Run #47). Exactly
+     * that shape — its own number plus ONE other — is a question for the
+     * reviewer, not proof of a multi-invoice file. Anything else on a
+     * credit note, and every case on any other document, still blocks. */
+    const ownNumber = normaliseInvoiceNumber(result.header.invoiceNumber);
+    const referencesOneInvoice =
+      isCreditNote &&
+      boundary.numbers.length === 2 &&
+      ownNumber !== "" &&
+      boundary.numbers.some((n) => normaliseInvoiceNumber(n) === ownNumber);
     findings.push({
       code: "multiple-invoices",
-      severity: "blocking",
-      message: `This file contains ${boundary.numbers.length} different invoice numbers (${boundary.numbers.join(", ")}). Split it and upload each invoice separately.`,
+      severity: referencesOneInvoice ? "review" : "blocking",
+      message: referencesOneInvoice
+        ? `This credit note also shows invoice number ${
+            // As printed, not normalised — the reviewer compares it with the page.
+            result.invoiceNumbersSeen.find((n) => normaliseInvoiceNumber(n) !== ownNumber) ??
+            boundary.numbers.find((n) => normaliseInvoiceNumber(n) !== ownNumber)
+          }. Check that is the invoice being credited.`
+        : `This file contains ${boundary.numbers.length} different invoice numbers (${boundary.numbers.join(", ")}). Split it and upload each invoice separately.`,
     });
   }
 
@@ -371,7 +400,21 @@ export function validateExtraction(result: ExtractionResult): ValidationReport {
     }
   }
 
-  for (const [index, line] of lines.entries()) {
+  // A credit note commonly prints its amounts negative; that is its sign,
+  // not an error. What it may NOT do is mix signs across its lines.
+  if (isCreditNote) {
+    const signs = new Set(lines.map(lineSign).filter((s) => s !== 0));
+    if (signs.size > 1) {
+      findings.push({
+        code: "credit-note-mixed-signs",
+        severity: "blocking",
+        message:
+          "This credit note has both positive and negative lines. It cannot be captured automatically — enter it by hand so every line is booked with the right sign.",
+      });
+    }
+  }
+
+  for (const [index, line] of isCreditNote ? [] : lines.entries()) {
     for (const [field, value] of [["quantity", line.quantity], ["unitPrice", line.unitPrice], ["lineTotal", line.lineTotal]] as const) {
       if (isNum(value) && value < 0) {
         findings.push({
@@ -482,6 +525,14 @@ export function validateExtraction(result: ExtractionResult): ValidationReport {
       : "Pass";
 
   return { status, findings, reconciliation, coherentRows, checkableRows, incoherentRowIndexes };
+}
+
+/** The sign of a line's money: its printed total when there is one,
+ * otherwise quantity × unit price. 0 when nothing is readable. */
+function lineSign(line: { quantity: number | null; unitPrice: number | null; lineTotal: number | null }): number {
+  if (isNum(line.lineTotal) && line.lineTotal !== 0) return Math.sign(line.lineTotal);
+  if (isNum(line.quantity) && isNum(line.unitPrice)) return Math.sign(line.quantity * line.unitPrice);
+  return 0;
 }
 
 function humanField(field: string): string {

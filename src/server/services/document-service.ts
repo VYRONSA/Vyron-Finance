@@ -17,6 +17,8 @@ import type { DocumentEntityType, DocumentRecord } from "@/server/documents/type
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
+/** SD-1 — the document is accounting evidence and cannot be deleted. */
+export class RetainedDocumentError extends Error {}
 export class UsageLimitExceededError extends Error {}
 
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25MB — a real, enforced ceiling, not an unbounded upload
@@ -131,6 +133,11 @@ export async function uploadDocument(
 export async function deleteDocument(companyId: string, documentId: number): Promise<void> {
   const document = await repo.getDocument(companyId, documentId);
   if (!document) throw new NotFoundError(`No document with id ${documentId}.`);
+  if (await repo.isCaptureEvidence(documentId)) {
+    throw new RetainedDocumentError(
+      "This document is the original of a captured supplier invoice and is kept as accounting evidence. It cannot be deleted.",
+    );
+  }
   await repo.deleteDocument(companyId, documentId, document.storagePath);
 }
 
@@ -152,8 +159,14 @@ export async function listRetentionDue(companyId: string): Promise<DocumentRecor
  * pass to fabricate safely). */
 export async function purgeRetentionDue(companyId: string): Promise<{ purged: number }> {
   const due = await listRetentionDue(companyId);
-  for (const doc of due) await repo.deleteDocument(companyId, doc.id, doc.storagePath);
-  return { purged: due.length };
+  let purged = 0;
+  for (const doc of due) {
+    // Captured supplier invoices are retained whatever their retention date.
+    if (await repo.isCaptureEvidence(doc.id)) continue;
+    await repo.deleteDocument(companyId, doc.id, doc.storagePath);
+    purged += 1;
+  }
+  return { purged };
 }
 
 export { groupVersions };

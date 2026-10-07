@@ -162,6 +162,17 @@ function summarizeBillLines(lines: BillLineInput[], vatTreatments: VatTreatment[
   };
 }
 
+/** The header totals `createPurchaseBill` WOULD compute for these lines —
+ * the same `summarizeBillLines` roll-up, without writing anything. Used by
+ * Supplier Invoice Capture (SD-1) to check an approval limit against the
+ * amount the Draft document will actually carry. Throws the same
+ * `ValidationError`s creation would. */
+export async function previewPurchaseBillTotals(companyId: string, lines: BillLineInput[]): Promise<{ subtotal: number; vat: number; total: number }> {
+  if (lines.length === 0) throw new ValidationError("A bill needs at least one line.");
+  const summary = summarizeBillLines(lines, await listVatTreatments(companyId));
+  return { subtotal: summary.subtotal, vat: summary.vat, total: summary.total };
+}
+
 export async function createPurchaseBill(companyId: string, input: CreatePurchaseBillInput): Promise<ImportedBill> {
   if (!input.supplierId) throw new ValidationError("Supplier is required.");
   if (!input.invoiceNumber?.trim()) throw new ValidationError("Invoice number is required.");

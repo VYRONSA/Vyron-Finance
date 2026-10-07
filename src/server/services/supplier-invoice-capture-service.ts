@@ -20,10 +20,17 @@ import * as repo from "@/server/repositories/supplier-invoice-capture-repository
 import { listSuppliers } from "@/server/repositories/supplier-reconciliation-repository";
 import { getCompany } from "@/server/repositories/company-repository";
 import { listVatTreatments } from "@/server/services/vat-treatment-service";
-import { createPurchaseBill } from "@/server/services/purchase-bill-service";
+import {
+  cancelBill,
+  createPurchaseBill,
+  previewPurchaseBillTotals,
+  ValidationError as BillValidationError,
+  type CreatePurchaseBillInput,
+} from "@/server/services/purchase-bill-service";
 import { getPerformedByLabel } from "@/server/auth/require-session";
-import { assessConversion, type ConversionLine } from "@/server/supplier-invoice-capture/conversion";
-import { assessDuplicate } from "@/server/supplier-invoice-capture/duplicate-detection";
+import { assessConversion, conversionApprovalAmount, type ConversionLine } from "@/server/supplier-invoice-capture/conversion";
+import { assessDuplicate, assessFileHashMatches } from "@/server/supplier-invoice-capture/duplicate-detection";
+import { buildReviewedExtraction, readExtractionSnapshot, type ExtractionSnapshot } from "@/server/supplier-invoice-capture/review-validation";
 import { normaliseDescription, normaliseSku, suggestGlAccount, suggestVatCode } from "@/server/supplier-invoice-capture/gl-vat-suggestion";
 import { parsePackDescription } from "@/server/supplier-invoice-capture/pack-size";
 import { logExtractionEvent, operatorMessageFor, sanitizeProviderMessage } from "@/server/supplier-invoice-capture/redaction";
@@ -36,7 +43,7 @@ import {
   type ExtractionProvider,
 } from "@/server/supplier-invoice-capture/extraction-provider";
 import { selectExtractionProvider } from "@/server/supplier-invoice-capture/provider-selection";
-import type { ExtractionResult } from "@/server/supplier-invoice-capture/types";
+import type { ExtractionResult, ValidationStatus } from "@/server/supplier-invoice-capture/types";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -92,25 +99,51 @@ export async function queueDocumentForExtraction(
     return { captureId: existing.id, status: existing.status === "Duplicate" ? "Duplicate" : "Queued", duplicateOfDocumentId: null, message: null };
   }
 
-  if (contentSha256) {
-    const priorDocument = await repo.findDocumentByHash(companyId, contentSha256);
-    if (priorDocument && priorDocument.id !== documentId) {
-      await repo.updateCaptureAsSystem(companyId, capture.id, {
-        status: "Duplicate",
-        duplicate_status: "Blocked",
-        duplicate_reason: `This is the same file as “${priorDocument.filename}”, already captured.`,
-      });
-      await repo.recordSystemCaptureEvent(companyId, capture.id, "DuplicateEvaluated", { layer: "file-hash", priorDocumentId: priorDocument.id }, performedBy);
-      return {
-        captureId: capture.id,
-        status: "Duplicate",
-        duplicateOfDocumentId: priorDocument.id,
-        message: `This file has already been uploaded as “${priorDocument.filename}”. Open that invoice instead of capturing it twice.`,
-      };
-    }
+  // SD-1 — decided from every OTHER document with the same bytes (the
+  // uploaded one already carries its hash and used to match itself), and
+  // aware of what became of each: a copy whose capture was rejected does
+  // not block a legitimate re-upload, but is still flagged.
+  const fileDecision = contentSha256
+    ? assessFileHashMatches(documentId, await repo.findSameFileDocuments(companyId, contentSha256))
+    : ({ kind: "none" } as const);
+
+  if (fileDecision.kind === "blocked") {
+    await repo.updateCaptureAsSystem(companyId, capture.id, {
+      status: "Duplicate",
+      duplicate_status: "Blocked",
+      duplicate_of_capture_id: fileDecision.ofCaptureId,
+      duplicate_reason: `This is the same file as “${fileDecision.filename}”, already ${fileDecision.ofCaptureId === null ? "stored" : "captured"}.`,
+    });
+    await repo.recordSystemCaptureEvent(
+      companyId, capture.id, "DuplicateEvaluated",
+      { layer: "file-hash", status: "Blocked", priorDocumentId: fileDecision.ofDocumentId, priorCaptureId: fileDecision.ofCaptureId },
+      performedBy,
+    );
+    return {
+      captureId: capture.id,
+      status: "Duplicate",
+      duplicateOfDocumentId: fileDecision.ofDocumentId,
+      message: `This file has already been uploaded as “${fileDecision.filename}”. Open that invoice instead of capturing it twice.`,
+    };
   }
 
-  await repo.updateCaptureAsSystem(companyId, capture.id, { status: "Queued" });
+  await repo.updateCaptureAsSystem(companyId, capture.id, {
+    status: "Queued",
+    ...(fileDecision.kind === "possible"
+      ? {
+          duplicate_status: fileDecision.decision.status,
+          duplicate_of_capture_id: fileDecision.decision.ofCaptureId,
+          duplicate_reason: fileDecision.decision.reason,
+        }
+      : {}),
+  });
+  if (fileDecision.kind === "possible") {
+    await repo.recordSystemCaptureEvent(
+      companyId, capture.id, "DuplicateEvaluated",
+      { layer: "file-hash", status: "Possible", priorCaptureId: fileDecision.decision.ofCaptureId },
+      performedBy,
+    );
+  }
   await repo.recordCaptureEvent(companyId, capture.id, "Queued", { documentId });
   return { captureId: capture.id, status: "Queued", duplicateOfDocumentId: null, message: null };
 }
@@ -296,6 +329,17 @@ async function persistExtraction(
     extraction_attempts: 0,
     last_error_category: null,
     last_error_message: null,
+    // SD-1 — the extraction exactly as received, kept apart from the
+    // reviewed columns so corrections never erase what was read.
+    extraction_snapshot: {
+      header: result.header,
+      lines: result.lines,
+      invoiceNumbersSeen: result.invoiceNumbersSeen,
+      declaredLineCount: result.declaredLineCount,
+      missingFields: result.missingFields,
+      warnings: result.warnings,
+    } satisfies ExtractionSnapshot,
+    validated_at: new Date().toISOString(),
   });
 
   await repo.recordSystemCaptureEvent(companyId, captureId, "SupplierResolved", {
@@ -443,14 +487,16 @@ async function recordAttempt(
  * the supplier or invoice number changes during review — the verdict must
  * reflect what the reviewer has actually settled on. */
 export async function evaluateDuplicate(companyId: string, captureId: number, performedBy: string): Promise<void> {
-  const capture = await repo.getCapture(companyId, captureId);
+  // SD-1 — read as the system: the verdict must not depend on what the
+  // current user happens to be allowed to see.
+  const capture = await repo.getCaptureAsSystem(companyId, captureId);
   if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
+  const contentSha256 = await repo.getDocumentHashAsSystem(companyId, capture.document_id);
 
   const [captures, bills] = await Promise.all([
-    repo.listDuplicateCandidates(companyId),
+    repo.listDuplicateCandidates(companyId, { supplierId: capture.supplier_id, contentSha256 }),
     capture.supplier_id ? repo.listBillDuplicateCandidates(companyId, capture.supplier_id) : Promise.resolve([]),
   ]);
-  const self = captures.find((c) => c.captureId === captureId);
 
   const decision = assessDuplicate(
     {
@@ -459,7 +505,7 @@ export async function evaluateDuplicate(companyId: string, captureId: number, pe
       invoiceNumber: capture.invoice_number,
       invoiceDate: capture.invoice_date,
       total: capture.total === null ? null : Number(capture.total),
-      contentSha256: self?.contentSha256 ?? null,
+      contentSha256,
     },
     captures,
     bills,
@@ -480,65 +526,242 @@ export type HeaderCorrection = Partial<{
   invoiceDate: string | null;
   dueDate: string | null;
   orderReference: string | null;
+  /** SD-1 — the reviewed figures printed on the document. */
+  documentType: "Invoice" | "Credit Note" | "Debit Note" | "Other" | null;
+  currencyCode: string | null;
+  subtotal: number | null;
+  discountTotal: number | null;
+  vatAmount: number | null;
+  total: number | null;
 }>;
 
-/** Applies a reviewer's header corrections and re-evaluates anything that
- * depends on them. Every changed field is recorded by NAME — never with its
- * value, which would put invoice content into the audit trail. */
+const EDITABLE_STATUSES = new Set(["NeedsReview", "ManualEntry"]);
+
+function requireEditable(capture: repo.CaptureRow): void {
+  if (!EDITABLE_STATUSES.has(capture.status)) {
+    throw new ValidationError(`This invoice cannot be edited (it is ${capture.status}).`);
+  }
+}
+
+function moneyOrNull(value: unknown, field: string): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) throw new ValidationError(`${field} must be a number.`);
+  return Math.round(n * 100) / 100;
+}
+
+/** Applies a reviewer's header corrections, then re-checks duplicates and
+ * re-validates. Every changed field is recorded by NAME — never with its
+ * value, which would put invoice content into the audit trail; the values
+ * as extracted remain in `extraction_snapshot`, the values as corrected in
+ * the capture itself. */
 export async function applyHeaderCorrection(companyId: string, captureId: number, correction: HeaderCorrection): Promise<void> {
   const performedBy = await getPerformedByLabel();
   const capture = await repo.getCapture(companyId, captureId);
   if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
-  if (capture.status !== "NeedsReview") throw new ValidationError(`This invoice cannot be edited (it is ${capture.status}).`);
+  requireEditable(capture);
 
   const fields: Record<string, unknown> = {};
   if ("supplierId" in correction) {
     fields.supplier_id = correction.supplierId;
     fields.supplier_match_tier = correction.supplierId ? "manual" : null;
   }
-  if ("invoiceNumber" in correction) fields.invoice_number = correction.invoiceNumber;
-  if ("invoiceDate" in correction) fields.invoice_date = correction.invoiceDate;
-  if ("dueDate" in correction) fields.due_date = correction.dueDate;
-  if ("orderReference" in correction) fields.order_reference = correction.orderReference;
+  if ("invoiceNumber" in correction) fields.invoice_number = correction.invoiceNumber?.trim() || null;
+  if ("invoiceDate" in correction) fields.invoice_date = correction.invoiceDate || null;
+  if ("dueDate" in correction) fields.due_date = correction.dueDate || null;
+  if ("orderReference" in correction) fields.order_reference = correction.orderReference?.trim() || null;
+  if ("documentType" in correction) {
+    const type = correction.documentType ?? null;
+    if (type !== null && !["Invoice", "Credit Note", "Debit Note", "Other"].includes(type)) {
+      throw new ValidationError("Document type must be Invoice, Credit Note, Debit Note or Other.");
+    }
+    fields.document_type = type;
+  }
+  if ("currencyCode" in correction) fields.currency_code = correction.currencyCode?.trim().toUpperCase() || null;
+  if ("subtotal" in correction) fields.subtotal = moneyOrNull(correction.subtotal, "Subtotal");
+  if ("discountTotal" in correction) fields.discount_total = moneyOrNull(correction.discountTotal, "Discount");
+  if ("vatAmount" in correction) fields.vat_amount = moneyOrNull(correction.vatAmount, "VAT");
+  if ("total" in correction) fields.total = moneyOrNull(correction.total, "Total");
   if (Object.keys(fields).length === 0) return;
 
   await repo.updateCaptureAsReviewer(companyId, captureId, fields);
   await repo.recordCaptureEvent(companyId, captureId, "FieldCorrected", { fields: Object.keys(correction) });
 
-  if ("supplierId" in correction || "invoiceNumber" in correction || "invoiceDate" in correction) {
-    await evaluateDuplicate(companyId, captureId, performedBy);
-  }
+  await evaluateDuplicate(companyId, captureId, performedBy);
+  await revalidateCapture(companyId, captureId, performedBy);
 }
 
 export type LineCorrection = {
   lineOrder: number;
   description?: string;
+  supplierSku?: string | null;
   quantity?: number | null;
+  uom?: string | null;
   unitPrice?: number | null;
   discount?: number | null;
+  vatRatePercent?: number | null;
+  vatAmount?: number | null;
+  lineTotal?: number | null;
   glAccount?: string | null;
   vatCode?: string | null;
   isExcluded?: boolean;
 };
 
-export async function applyLineCorrections(companyId: string, captureId: number, corrections: LineCorrection[]): Promise<void> {
+export type NewLine = Omit<LineCorrection, "lineOrder" | "isExcluded">;
+
+function lineFields(line: Omit<LineCorrection, "lineOrder">): repo.ReviewerLineFields {
+  const fields: repo.ReviewerLineFields = {};
+  if (line.description !== undefined) fields.description = line.description ?? "";
+  if (line.supplierSku !== undefined) fields.supplier_sku = line.supplierSku;
+  if (line.quantity !== undefined) fields.quantity = line.quantity;
+  if (line.uom !== undefined) fields.uom = line.uom;
+  if (line.unitPrice !== undefined) fields.unit_price = line.unitPrice;
+  if (line.discount !== undefined) fields.discount = line.discount;
+  if (line.vatRatePercent !== undefined) fields.vat_rate_percent = line.vatRatePercent;
+  if (line.vatAmount !== undefined) fields.vat_amount = line.vatAmount;
+  if (line.lineTotal !== undefined) fields.line_total = line.lineTotal;
+  if (line.glAccount !== undefined) fields.gl_account_confirmed = line.glAccount;
+  if (line.vatCode !== undefined) fields.vat_code_confirmed = line.vatCode;
+  if (line.isExcluded !== undefined) fields.is_excluded = line.isExcluded;
+  return fields;
+}
+
+/** Corrects, adds and removes lines, then re-validates. */
+export async function applyLineCorrections(
+  companyId: string,
+  captureId: number,
+  corrections: LineCorrection[],
+  changes: { add?: NewLine[]; remove?: number[] } = {},
+): Promise<void> {
+  const performedBy = await getPerformedByLabel();
   const capture = await repo.getCapture(companyId, captureId);
   if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
-  if (capture.status !== "NeedsReview") throw new ValidationError(`This invoice cannot be edited (it is ${capture.status}).`);
+  requireEditable(capture);
 
   for (const correction of corrections) {
-    const fields: Record<string, unknown> = {};
-    if (correction.description !== undefined) fields.description = correction.description;
-    if (correction.quantity !== undefined) fields.quantity = correction.quantity;
-    if (correction.unitPrice !== undefined) fields.unit_price = correction.unitPrice;
-    if (correction.discount !== undefined) fields.discount = correction.discount;
-    if (correction.glAccount !== undefined) fields.gl_account_confirmed = correction.glAccount;
-    if (correction.vatCode !== undefined) fields.vat_code_confirmed = correction.vatCode;
-    if (correction.isExcluded !== undefined) fields.is_excluded = correction.isExcluded;
+    const fields = lineFields(correction);
     if (Object.keys(fields).length === 0) continue;
     await repo.updateCaptureLine(companyId, captureId, correction.lineOrder, fields);
   }
-  await repo.recordCaptureEvent(companyId, captureId, "FieldCorrected", { lines: corrections.map((c) => c.lineOrder) });
+  for (const lineOrder of changes.remove ?? []) {
+    await repo.removeCaptureLineAsReviewer(companyId, captureId, lineOrder);
+  }
+  if (changes.add && changes.add.length > 0) {
+    await repo.addCaptureLinesAsReviewer(companyId, captureId, changes.add.map((line) => lineFields(line)));
+  }
+
+  await repo.recordCaptureEvent(companyId, captureId, "FieldCorrected", {
+    lines: corrections.map((c) => c.lineOrder),
+    added: changes.add?.length ?? 0,
+    removed: changes.remove ?? [],
+  });
+  await revalidateCapture(companyId, captureId, performedBy);
+}
+
+/**
+ * SD-1 — enter an invoice by hand from the original document.
+ *
+ * For a capture nothing will extract: live AI is off, or extraction failed.
+ * The original document stays attached and viewable; the reviewer types the
+ * header and lines, then submits it for review, where it is validated and
+ * duplicate-checked exactly like an extracted one.
+ */
+export async function startManualEntry(companyId: string, captureId: number): Promise<void> {
+  const capture = await repo.getCapture(companyId, captureId);
+  if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
+  if (capture.status !== "Queued" && capture.status !== "Failed") {
+    throw new ValidationError(`Only an invoice waiting for extraction, or one whose extraction failed, can be entered by hand (this one is ${capture.status}).`);
+  }
+  await repo.updateCaptureAsReviewer(companyId, captureId, { status: "ManualEntry" });
+  await repo.recordCaptureEvent(companyId, captureId, "ManualEntryStarted", { from: capture.status });
+}
+
+/** Moves a manual entry into review, then checks it. */
+export async function submitForReview(companyId: string, captureId: number): Promise<void> {
+  const performedBy = await getPerformedByLabel();
+  const capture = await repo.getCapture(companyId, captureId);
+  if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
+  if (capture.status !== "ManualEntry") {
+    throw new ValidationError(`Only an invoice being entered by hand can be submitted for review (this one is ${capture.status}).`);
+  }
+  await repo.updateCaptureAsReviewer(companyId, captureId, { status: "NeedsReview" });
+  await repo.recordCaptureEvent(companyId, captureId, "SubmittedForReview", {});
+  await evaluateDuplicate(companyId, captureId, performedBy);
+  await revalidateCapture(companyId, captureId, performedBy);
+}
+
+/**
+ * SD-1 — validates the capture as it stands now (reviewed header, kept
+ * lines), with the same deterministic checks extraction uses.
+ *
+ * The verdict is written only if the capture has not changed since it was
+ * read, so it is always a verdict about the values it describes. Returns
+ * the status written, or "Pending" when a concurrent edit got there first
+ * (the capture then stays Pending, which blocks conversion until validated).
+ */
+export async function revalidateCapture(companyId: string, captureId: number, performedBy: string): Promise<ValidationStatus> {
+  const capture = await repo.getCaptureAsSystem(companyId, captureId);
+  if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
+  if (!EDITABLE_STATUSES.has(capture.status)) return capture.validation_status;
+
+  const [lines, suppliers] = await Promise.all([
+    repo.listCaptureLinesAsSystem(companyId, captureId),
+    capture.supplier_id ? listSuppliers(companyId) : Promise.resolve([]),
+  ]);
+  const supplier = capture.supplier_id ? (suppliers.find((s: { id: number }) => s.id === capture.supplier_id) as { name?: string } | undefined) : undefined;
+
+  const reviewed = buildReviewedExtraction(
+    {
+      documentType: capture.document_type,
+      supplierName: supplier?.name ?? capture.supplier_name_extracted,
+      supplierVatNumber: capture.supplier_vat_number_extracted,
+      supplierRegistrationNumber: capture.supplier_registration_number_extracted,
+      invoiceNumber: capture.invoice_number,
+      invoiceDate: capture.invoice_date,
+      dueDate: capture.due_date,
+      orderReference: capture.order_reference,
+      currencyCode: capture.currency_code,
+      subtotal: numberOrNull(capture.subtotal),
+      discountTotal: numberOrNull(capture.discount_total),
+      vatAmount: numberOrNull(capture.vat_amount),
+      total: numberOrNull(capture.total),
+    },
+    lines.map((l) => ({
+      description: l.description,
+      supplierSku: l.supplier_sku,
+      quantity: numberOrNull(l.quantity),
+      uom: l.uom,
+      unitPrice: numberOrNull(l.unit_price),
+      discount: numberOrNull(l.discount),
+      vatRatePercent: numberOrNull(l.vat_rate_percent),
+      vatAmount: numberOrNull(l.vat_amount),
+      lineTotal: numberOrNull(l.line_total),
+      isExcluded: l.is_excluded,
+    })),
+    readExtractionSnapshot(capture.extraction_snapshot),
+  );
+  const report = validateExtraction(reviewed);
+
+  const written = await repo.updateCaptureAsSystemIfUnchanged(companyId, captureId, capture.updated_at, {
+    validation_status: report.status,
+    validation_findings: report.findings,
+    validated_at: new Date().toISOString(),
+  });
+  if (!written) return "Pending";
+
+  await repo.recordSystemCaptureEvent(companyId, captureId, "ValidationEvaluated", {
+    basis: "review",
+    status: report.status,
+    findingCount: report.findings.length,
+    codes: report.findings.map((f) => f.code),
+  }, performedBy);
+  return report.status;
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 export async function cancelCapture(companyId: string, captureId: number): Promise<void> {
@@ -553,20 +776,9 @@ export async function cancelCapture(companyId: string, captureId: number): Promi
 // Conversion — the accounting boundary
 // ---------------------------------------------------------------------
 
-/**
- * Converts a reviewed capture into a DRAFT purchase bill.
- *
- * The permission and approval-limit checks live at the route, as they do
- * for every other purchasing action. This function refuses on its own terms
- * as well: `assessConversion` takes one argument and there is no parameter
- * on this function through which any of its blocks could be waived.
- *
- * Idempotent: a capture that already has a bill is refused by
- * `assessConversion`, and `supplier_invoice_captures_bill_unique` makes a
- * concurrent second conversion impossible at the database.
- */
-export async function convertCaptureToBill(companyId: string, captureId: number): Promise<{ billId: number }> {
-  const performedBy = await getPerformedByLabel();
+type PreparedConversion = { input: CreatePurchaseBillInput; approvalAmount: number; lines: repo.CaptureLineRow[]; capture: repo.CaptureRow };
+
+async function buildConversion(companyId: string, captureId: number): Promise<PreparedConversion> {
   const capture = await repo.getCapture(companyId, captureId);
   if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
 
@@ -610,18 +822,84 @@ export async function convertCaptureToBill(companyId: string, captureId: number)
     throw new ValidationError(assessment.blocks.map((b) => b.message).join(" "));
   }
 
+  // SD-1 — the approval amount is what the purchase-bill engine itself will
+  // compute for these reviewed lines (never the extracted header total,
+  // which a missing value used to turn into 0), raised to the reviewed
+  // printed total when that is larger.
+  let approvalAmount: number;
+  try {
+    const totals = await previewPurchaseBillTotals(companyId, assessment.input.lines ?? []);
+    approvalAmount = conversionApprovalAmount(totals.total, numberOrNull(capture.total));
+  } catch (error) {
+    // No computable amount means no approval check is possible: refuse.
+    if (error instanceof BillValidationError || error instanceof Error) throw new ValidationError(error.message);
+    throw error;
+  }
+
+  return { input: assessment.input, approvalAmount, lines, capture };
+}
+
+/**
+ * SD-1 — everything conversion would do, short of doing it: every refusal
+ * reason, and the amount the reviewer's approval limit must cover. The
+ * route checks the limit against this amount before converting.
+ */
+export async function prepareConversion(companyId: string, captureId: number): Promise<{ approvalAmount: number; documentType: "Bill" | "Credit Note" }> {
+  const prepared = await buildConversion(companyId, captureId);
+  return { approvalAmount: prepared.approvalAmount, documentType: prepared.input.documentType === "Credit Note" ? "Credit Note" : "Bill" };
+}
+
+/**
+ * Converts a reviewed capture into a DRAFT purchase document — a supplier
+ * Bill, or (SD-1) a supplier Credit Note.
+ *
+ * The permission and approval-limit checks live at the route, as they do
+ * for every other purchasing action; `approvedAmount` is the amount that
+ * check was made against. If the capture now converts to MORE than that
+ * (it was corrected in between), this refuses, so a limit can never be
+ * checked against one figure and a larger one booked.
+ *
+ * Idempotent: a capture that already has a bill is refused by
+ * `assessConversion`, and `supplier_invoice_captures_bill_unique` makes a
+ * concurrent second conversion impossible at the database. The guard in
+ * 0112 additionally only accepts the very Draft document created here.
+ */
+export async function convertCaptureToBill(companyId: string, captureId: number, approvedAmount: number): Promise<{ billId: number }> {
+  const performedBy = await getPerformedByLabel();
+  const prepared = await buildConversion(companyId, captureId);
+  if (!(Number.isFinite(approvedAmount) && prepared.approvalAmount <= approvedAmount + 0.005)) {
+    throw new ValidationError("This invoice changed after its approval was checked. Convert it again.");
+  }
+
   // The existing purchasing service owns every figure from here.
-  const bill = await createPurchaseBill(companyId, assessment.input);
+  const bill = await createPurchaseBill(companyId, prepared.input);
 
-  await repo.updateCaptureAsReviewer(companyId, captureId, {
-    status: "Converted",
-    bill_id: bill.id,
-    converted_at: new Date().toISOString(),
-    converted_by: performedBy,
+  try {
+    await repo.updateCaptureAsReviewer(companyId, captureId, {
+      status: "Converted",
+      bill_id: bill.id,
+      // Both are set by the database from the session and its clock (0111).
+      converted_at: new Date().toISOString(),
+      converted_by: performedBy,
+    });
+  } catch (error) {
+    // The Draft was created but could not be linked. Cancel it through the
+    // ordinary bill workflow (Draft -> Cancelled, no journal exists) rather
+    // than leave an unlinked document a second conversion would duplicate.
+    try {
+      await cancelBill(companyId, bill.id);
+    } catch {
+      // Cancelling is best effort; the error that matters is the original.
+    }
+    throw error;
+  }
+  await repo.recordCaptureEvent(companyId, captureId, "ConvertedToBill", {
+    billId: bill.id,
+    documentType: prepared.input.documentType ?? "Bill",
+    lineCount: prepared.input.lines?.length ?? 0,
   });
-  await repo.recordCaptureEvent(companyId, captureId, "ConvertedToBill", { billId: bill.id, lineCount: assessment.input.lines?.length ?? 0 });
 
-  await learnFromConversion(companyId, captureId, capture.supplier_id!, lines, performedBy);
+  await learnFromConversion(companyId, captureId, prepared.capture.supplier_id!, prepared.lines, performedBy);
 
   return { billId: bill.id };
 }

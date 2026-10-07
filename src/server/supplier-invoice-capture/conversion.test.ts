@@ -9,7 +9,7 @@
  * cannot reappear.
  */
 import { describe, expect, it } from "vitest";
-import { assertNoBypass, assessConversion } from "./conversion";
+import { assertNoBypass, assessConversion, conversionApprovalAmount } from "./conversion";
 import type { ConversionLine, ConversionSubject } from "./conversion";
 
 function line(overrides: Partial<ConversionLine> = {}): ConversionLine {
@@ -54,6 +54,7 @@ describe("a reviewed capture converts to a Draft bill input", () => {
       supplierId: 7,
       invoiceNumber: "INV-001",
       invoiceDate: "2026-06-01",
+      documentType: "Bill",
       dueDate: "2026-06-30",
       lines: [{ description: "Consulting", glAccount: "5100", vatCode: "Standard Rated", quantity: 2, unitCost: 500, discount: 0 }],
     });
@@ -207,95 +208,114 @@ describe("no bypass exists", () => {
 });
 
 /**
- * Phase 5N — the credit/debit note boundary.
+ * The document-type boundary — Phase 5N, credit notes enabled in SD-1.
  *
- * THE ACCOUNTING CONSEQUENCE BEING PREVENTED, stated once here because it
- * is the reason every test below exists:
+ * THE ACCOUNTING CONSEQUENCE STILL BEING PREVENTED: a supplier credit note
+ * REDUCES what the company owes; a bill INCREASES it. Booked as a Bill, a
+ * R575 credit note leaves the supplier's balance R1,150 wrong with every
+ * figure on the document correct. So the output's document type is decided
+ * structurally from the reviewed document type, and a credit note can
+ * never come out as a "Bill".
  *
- *   A supplier credit note REDUCES what the company owes that supplier.
- *   The only thing `assessConversion` can produce is an input to
- *   `createPurchaseBill`, which INCREASES it. Convert a R575 credit note
- *   and the supplier's balance ends up R1,150 wrong — R575 that should
- *   have come off, plus R575 that went on — with a correct-looking bill to
- *   explain it. Every figure on that bill is right. Only the sign is
- *   wrong, and nobody reconciling totals sees a sign.
- *
- * This is a REFUSAL and not a feature on purpose. `createPurchaseBill`
- * already accepts a `documentType` of "Credit Note", so making this
- * "work" is one line. Booking one correctly means the posting rules, the
- * VAT return treatment, the allocation against the original bill and the
- * supplier ageing all agree about the sign — none of which has been
- * verified for this path. A one-line change that produces a plausible
- * wrong number is the most dangerous kind there is.
+ * SD-1 verified the existing credit-note path before enabling it: the
+ * seeded "Supplier Credit Note" posting rule reverses a bill (DR Creditors /
+ * CR expense / CR VAT Input), it is approved through the same limits, and
+ * the VAT return signs it as a reversal. Debit notes remain refused.
  */
-describe("credit and debit notes are refused, never converted", () => {
-  it("a CREDIT NOTE cannot become an ordinary Bill", () => {
+describe("the document-type boundary: invoices and credit notes convert, nothing else", () => {
+  it("a CREDIT NOTE becomes a Draft supplier Credit Note — never an ordinary Bill", () => {
     const r = assessConversion(subject({ documentType: "Credit Note" }));
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.blocks.map((b) => b.code)).toContain("not-an-invoice");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.input.documentType).toBe("Credit Note");
   });
 
-  it("a DEBIT NOTE cannot become an ordinary Bill", () => {
-    const r = assessConversion(subject({ documentType: "Debit Note" }));
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.blocks.map((b) => b.code)).toContain("not-an-invoice");
-  });
-
-  it("the refusal holds even when EVERYTHING else about the capture is perfect", () => {
-    // The dangerous case is not a broken credit note — it is a flawless
-    // one. Supplier resolved, arithmetic reconciled, no duplicate,
-    // validation Pass. Without this block it would convert silently.
+  it("a credit note printed with negative amounts is carried as magnitudes; the type carries the sign", () => {
     const r = assessConversion(
-      subject({ documentType: "Credit Note", validationStatus: "Pass", duplicate: { status: "None", reason: "" } }),
+      subject({ documentType: "Credit Note", lines: [line({ quantity: -2, unitPrice: 500, discount: -10 })] }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.input.lines).toEqual([
+      { description: "Consulting", glAccount: "5100", vatCode: "Standard Rated", quantity: 2, unitCost: 500, discount: 10 },
+    ]);
+  });
+
+  it("a credit note whose lines disagree in sign is refused rather than guessed", () => {
+    const r = assessConversion(
+      subject({
+        documentType: "Credit Note",
+        lines: [line({ lineOrder: 0, quantity: 2, unitPrice: 500 }), line({ lineOrder: 1, quantity: -1, unitPrice: 100 })],
+      }),
     );
     expect(r.ok).toBe(false);
-  });
-
-  it("the block does not depend on the validation finding", () => {
-    // Two independent layers. `not-an-invoice` at validation depends on
-    // the model having read the heading; this one is structural. Either
-    // alone would be a single point of failure for an error that is
-    // invisible once posted.
-    const r = assessConversion(subject({ documentType: "Credit Note", validationStatus: "Pass" }));
-    expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.blocks.map((b) => b.code)).toEqual(["not-an-invoice"]);
+    expect(r.blocks.map((b) => b.code)).toContain("credit-note-mixed-signs");
   });
 
-  it("tells the reviewer what would have gone wrong, not merely that it stopped", () => {
-    const r = assessConversion(subject({ documentType: "Credit Note" }));
-    if (r.ok) return;
-    const message = r.blocks.find((b) => b.code === "not-an-invoice")!.message;
-    expect(message).toMatch(/increase what you owe/i);
-    expect(message).toMatch(/by hand/i);
-  });
-
-  it("an ordinary invoice, and an unknown document type, still convert", () => {
-    // Null is every capture taken before 0109, and most documents never
-    // print the word "invoice" in a place a model reads as a heading.
-    // Refusing those would refuse almost everything for no safety gain —
-    // the validation finding remains the layer that catches a misread.
-    expect(assessConversion(subject({ documentType: "Invoice" })).ok).toBe(true);
-    expect(assessConversion(subject({ documentType: null })).ok).toBe(true);
-    expect(assessConversion(subject({ documentType: "  " })).ok).toBe(true);
+  it("an INVOICE (or an unknown type) becomes a Draft Bill, stated explicitly", () => {
+    for (const documentType of ["Invoice", null, "  "]) {
+      const r = assessConversion(subject({ documentType }));
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.input.documentType).toBe("Bill");
+    }
   });
 
   it("does not care how the word is cased", () => {
-    expect(assessConversion(subject({ documentType: "invoice" })).ok).toBe(true);
-    expect(assessConversion(subject({ documentType: "CREDIT NOTE" })).ok).toBe(false);
+    const invoice = assessConversion(subject({ documentType: "invoice" }));
+    const credit = assessConversion(subject({ documentType: "CREDIT NOTE" }));
+    expect(invoice.ok && invoice.input.documentType).toBe("Bill");
+    expect(credit.ok && credit.input.documentType).toBe("Credit Note");
   });
 
-  it("the resulting bill input never carries a documentType at all", () => {
-    // The brief is explicit: do not pass document_type into the accounting
-    // conversion merely to make a corpus pass. The only documents that get
-    // this far are invoices, so the field would be noise at best and a
-    // sign change at worst.
-    const r = assessConversion(subject());
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect("documentType" in r.input).toBe(false);
+  it("a DEBIT NOTE is still refused, and the reviewer is told to enter it by hand", () => {
+    const r = assessConversion(subject({ documentType: "Debit Note" }));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    const block = r.blocks.find((b) => b.code === "not-an-invoice")!;
+    expect(block.message).toMatch(/by hand/i);
+  });
+
+  it("anything that is not a supplier document type is refused", () => {
+    const r = assessConversion(subject({ documentType: "Other" }));
+    expect(r.ok).toBe(false);
+  });
+
+  it("a credit note is held to every other block — a blocked duplicate still stops it", () => {
+    const r = assessConversion(subject({ documentType: "Credit Note", duplicate: { status: "Blocked", reason: "already captured" } }));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.blocks.map((b) => b.code)).toContain("duplicate-blocked");
+  });
+});
+
+describe("validation must describe the values being converted (SD-1)", () => {
+  it("a Pending verdict — the capture was corrected and not yet re-validated — stops conversion", () => {
+    const r = assessConversion(subject({ validationStatus: "Pending" }));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.blocks.map((b) => b.code)).toContain("validation-pending");
+  });
+});
+
+describe("the approval amount (SD-1)", () => {
+  it("is the computed document total when the printed total is missing — never zero", () => {
+    expect(conversionApprovalAmount(1150, null)).toBe(1150);
+  });
+
+  it("takes the larger of the computed and the printed total, so a limit cannot be undercut", () => {
+    expect(conversionApprovalAmount(1150, 9200)).toBe(9200);
+    expect(conversionApprovalAmount(9200, 1150)).toBe(9200);
+  });
+
+  it("is a magnitude for a credit note printed negative", () => {
+    expect(conversionApprovalAmount(575, -575)).toBe(575);
+  });
+
+  it("refuses when no total can be computed, rather than defaulting to zero", () => {
+    expect(() => conversionApprovalAmount(0, 1150)).toThrow(/no amount/i);
+    expect(() => conversionApprovalAmount(Number.NaN, null)).toThrow(/no amount/i);
   });
 });
 
@@ -355,7 +375,7 @@ describe("a foreign-currency invoice is refused, never converted", () => {
   });
 
   it("reports both boundaries at once when a document trips both", () => {
-    const r = assessConversion(subject({ documentType: "Credit Note", currencyCode: "GBP", baseCurrencyCode: "ZAR" }));
+    const r = assessConversion(subject({ documentType: "Debit Note", currencyCode: "GBP", baseCurrencyCode: "ZAR" }));
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.blocks.map((b) => b.code)).toEqual(

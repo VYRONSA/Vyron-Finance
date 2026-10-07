@@ -28,6 +28,9 @@ export type CaptureStatus =
   | "Uploaded"
   | "Queued"
   | "Extracting"
+  /** SD-1 — a person is entering the document by hand from the original
+   * (extraction failed, or live AI is not enabled). */
+  | "ManualEntry"
   | "NeedsReview"
   | "Converted"
   | "Duplicate"
