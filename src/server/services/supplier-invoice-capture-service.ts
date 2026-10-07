@@ -95,12 +95,12 @@ export async function queueDocumentForExtraction(
   if (contentSha256) {
     const priorDocument = await repo.findDocumentByHash(companyId, contentSha256);
     if (priorDocument && priorDocument.id !== documentId) {
-      await repo.updateCapture(companyId, capture.id, {
+      await repo.updateCaptureAsSystem(companyId, capture.id, {
         status: "Duplicate",
         duplicate_status: "Blocked",
         duplicate_reason: `This is the same file as “${priorDocument.filename}”, already captured.`,
       });
-      await repo.recordCaptureEvent(companyId, capture.id, "DuplicateEvaluated", { layer: "file-hash", priorDocumentId: priorDocument.id }, performedBy);
+      await repo.recordSystemCaptureEvent(companyId, capture.id, "DuplicateEvaluated", { layer: "file-hash", priorDocumentId: priorDocument.id }, performedBy);
       return {
         captureId: capture.id,
         status: "Duplicate",
@@ -110,8 +110,8 @@ export async function queueDocumentForExtraction(
     }
   }
 
-  await repo.updateCapture(companyId, capture.id, { status: "Queued" });
-  await repo.recordCaptureEvent(companyId, capture.id, "Queued", { documentId }, performedBy);
+  await repo.updateCaptureAsSystem(companyId, capture.id, { status: "Queued" });
+  await repo.recordCaptureEvent(companyId, capture.id, "Queued", { documentId });
   return { captureId: capture.id, status: "Queued", duplicateOfDocumentId: null, message: null };
 }
 
@@ -187,7 +187,7 @@ export async function runSupplierInvoiceExtractionSweep(
     outcome.attempted += 1;
     const attemptNumber = claimed.extraction_attempts + 1;
     const startedAt = Date.now();
-    await repo.recordCaptureEvent(companyId, claimed.id, "ExtractionStarted", { attempt: attemptNumber }, performedBy);
+    await repo.recordSystemCaptureEvent(companyId, claimed.id, "ExtractionStarted", { attempt: attemptNumber }, performedBy);
 
     let document: { bytes: Uint8Array; mimeType: string };
     try {
@@ -238,8 +238,8 @@ export async function runSupplierInvoiceExtractionSweep(
 
     if (retry) {
       // Deterministic failure, attempts remaining: back into the queue.
-      await repo.updateCapture(companyId, claimed.id, { status: "Queued", extraction_attempts: attemptNumber });
-      await repo.recordCaptureEvent(companyId, claimed.id, "Requeued", { attempt: attemptNumber, reason: "deterministic-validation-failed" }, performedBy);
+      await repo.updateCaptureAsSystem(companyId, claimed.id, { status: "Queued", extraction_attempts: attemptNumber });
+      await repo.recordSystemCaptureEvent(companyId, claimed.id, "Requeued", { attempt: attemptNumber, reason: "deterministic-validation-failed" }, performedBy);
       continue;
     }
 
@@ -270,7 +270,7 @@ async function persistExtraction(
   const supplierId = resolution.outcome === "resolved" ? resolution.supplierId : null;
   const candidates = resolution.outcome === "resolved" ? [] : resolution.candidates;
 
-  await repo.updateCapture(companyId, captureId, {
+  await repo.updateCaptureAsSystem(companyId, captureId, {
     status: "NeedsReview",
     // Phase 5N — persisted so conversion can refuse a credit note
     // structurally, not only because validation happened to flag it.
@@ -298,12 +298,12 @@ async function persistExtraction(
     last_error_message: null,
   });
 
-  await repo.recordCaptureEvent(companyId, captureId, "SupplierResolved", {
+  await repo.recordSystemCaptureEvent(companyId, captureId, "SupplierResolved", {
     outcome: resolution.outcome,
     tier: resolution.outcome === "resolved" ? resolution.tier : null,
     candidateCount: candidates.length,
   }, performedBy);
-  await repo.recordCaptureEvent(companyId, captureId, "ValidationEvaluated", {
+  await repo.recordSystemCaptureEvent(companyId, captureId, "ValidationEvaluated", {
     status: report.status,
     findingCount: report.findings.length,
     codes: report.findings.map((f) => f.code),
@@ -385,13 +385,13 @@ async function failCapture(
 ): Promise<void> {
   const message = operatorMessageFor(category as never);
   const terminal = attemptNumber >= MAX_EXTRACTION_ATTEMPTS;
-  await repo.updateCapture(companyId, captureId, {
+  await repo.updateCaptureAsSystem(companyId, captureId, {
     status: terminal ? "Failed" : "Queued",
     extraction_attempts: attemptNumber,
     last_error_category: category,
     last_error_message: message,
   });
-  await repo.recordCaptureEvent(companyId, captureId, "ExtractionFailed", { attempt: attemptNumber, category, terminal }, performedBy);
+  await repo.recordSystemCaptureEvent(companyId, captureId, "ExtractionFailed", { attempt: attemptNumber, category, terminal }, performedBy);
   await recordAttempt(
     companyId, captureId, taskRunId, attemptNumber,
     providerReached ? "provider_error" : "document_error",
@@ -465,13 +465,13 @@ export async function evaluateDuplicate(companyId: string, captureId: number, pe
     bills,
   );
 
-  await repo.updateCapture(companyId, captureId, {
+  await repo.updateCaptureAsSystem(companyId, captureId, {
     duplicate_status: decision.status,
     duplicate_of_capture_id: decision.ofCaptureId,
     duplicate_of_bill_id: decision.ofBillId,
     duplicate_reason: decision.reason,
   });
-  await repo.recordCaptureEvent(companyId, captureId, "DuplicateEvaluated", { status: decision.status, layer: decision.layer }, performedBy);
+  await repo.recordSystemCaptureEvent(companyId, captureId, "DuplicateEvaluated", { status: decision.status, layer: decision.layer }, performedBy);
 }
 
 export type HeaderCorrection = Partial<{
@@ -502,8 +502,8 @@ export async function applyHeaderCorrection(companyId: string, captureId: number
   if ("orderReference" in correction) fields.order_reference = correction.orderReference;
   if (Object.keys(fields).length === 0) return;
 
-  await repo.updateCapture(companyId, captureId, fields);
-  await repo.recordCaptureEvent(companyId, captureId, "FieldCorrected", { fields: Object.keys(correction) }, performedBy);
+  await repo.updateCaptureAsReviewer(companyId, captureId, fields);
+  await repo.recordCaptureEvent(companyId, captureId, "FieldCorrected", { fields: Object.keys(correction) });
 
   if ("supplierId" in correction || "invoiceNumber" in correction || "invoiceDate" in correction) {
     await evaluateDuplicate(companyId, captureId, performedBy);
@@ -522,7 +522,6 @@ export type LineCorrection = {
 };
 
 export async function applyLineCorrections(companyId: string, captureId: number, corrections: LineCorrection[]): Promise<void> {
-  const performedBy = await getPerformedByLabel();
   const capture = await repo.getCapture(companyId, captureId);
   if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
   if (capture.status !== "NeedsReview") throw new ValidationError(`This invoice cannot be edited (it is ${capture.status}).`);
@@ -539,16 +538,15 @@ export async function applyLineCorrections(companyId: string, captureId: number,
     if (Object.keys(fields).length === 0) continue;
     await repo.updateCaptureLine(companyId, captureId, correction.lineOrder, fields);
   }
-  await repo.recordCaptureEvent(companyId, captureId, "FieldCorrected", { lines: corrections.map((c) => c.lineOrder) }, performedBy);
+  await repo.recordCaptureEvent(companyId, captureId, "FieldCorrected", { lines: corrections.map((c) => c.lineOrder) });
 }
 
 export async function cancelCapture(companyId: string, captureId: number): Promise<void> {
-  const performedBy = await getPerformedByLabel();
   const capture = await repo.getCapture(companyId, captureId);
   if (!capture) throw new NotFoundError(`No capture with id ${captureId}.`);
   if (capture.bill_id) throw new ValidationError(`This invoice has already become bill #${capture.bill_id} and cannot be discarded.`);
-  await repo.updateCapture(companyId, captureId, { status: "Cancelled" });
-  await repo.recordCaptureEvent(companyId, captureId, "Cancelled", {}, performedBy);
+  await repo.updateCaptureAsReviewer(companyId, captureId, { status: "Cancelled" });
+  await repo.recordCaptureEvent(companyId, captureId, "Cancelled", {});
 }
 
 // ---------------------------------------------------------------------
@@ -615,13 +613,13 @@ export async function convertCaptureToBill(companyId: string, captureId: number)
   // The existing purchasing service owns every figure from here.
   const bill = await createPurchaseBill(companyId, assessment.input);
 
-  await repo.updateCapture(companyId, captureId, {
+  await repo.updateCaptureAsReviewer(companyId, captureId, {
     status: "Converted",
     bill_id: bill.id,
     converted_at: new Date().toISOString(),
     converted_by: performedBy,
   });
-  await repo.recordCaptureEvent(companyId, captureId, "ConvertedToBill", { billId: bill.id, lineCount: assessment.input.lines?.length ?? 0 }, performedBy);
+  await repo.recordCaptureEvent(companyId, captureId, "ConvertedToBill", { billId: bill.id, lineCount: assessment.input.lines?.length ?? 0 });
 
   await learnFromConversion(companyId, captureId, capture.supplier_id!, lines, performedBy);
 
@@ -656,7 +654,7 @@ async function learnFromConversion(
         captureId,
       });
     } catch (error) {
-      await repo.recordCaptureEvent(
+      await repo.recordSystemCaptureEvent(
         companyId, captureId, "FieldCorrected",
         { learningFailed: true, lineOrder: line.line_order, reason: sanitizeProviderMessage(error) },
         performedBy,

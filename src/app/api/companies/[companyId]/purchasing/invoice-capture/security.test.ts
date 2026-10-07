@@ -163,6 +163,20 @@ describe("permissions used", () => {
     expect(requirePermission).toHaveBeenCalledWith("co_1", "Purchasing:Edit");
   });
 
+  it("requires Purchasing:Reject (not Edit) to reject a capture, and rejects nothing without it", async () => {
+    const { PATCH } = await import("./[captureId]/route");
+    await PATCH(new Request("http://test/api", { method: "PATCH", body: JSON.stringify({ action: "cancel" }) }), captureParams);
+    expect(requirePermission).toHaveBeenCalledWith("co_1", "Purchasing:Reject");
+    expect(requirePermission).not.toHaveBeenCalledWith("co_1", "Purchasing:Edit");
+
+    vi.clearAllMocks();
+    requireSession.mockResolvedValue({ ok: true });
+    requirePermission.mockResolvedValue(FORBIDDEN);
+    const response = await PATCH(new Request("http://test/api", { method: "PATCH", body: JSON.stringify({ action: "cancel" }) }), captureParams);
+    expect(response.status).toBe(403);
+    expect(cancelCapture).not.toHaveBeenCalled();
+  });
+
   it("checks the permission against the company in the PATH, not one supplied by the caller", async () => {
     const { GET } = await import("./route");
     await GET(new Request("http://test/api?companyId=someone-else"), params);

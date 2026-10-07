@@ -74,7 +74,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
         break;
       }
       case "cancel": {
-        const check = await requirePermission(companyId, "Purchasing:Edit");
+        // Phase SD-0 — rejecting a supplier invoice is a Reject, not an
+        // Edit; the database guard (0111) enforces the same permission.
+        const check = await requirePermission(companyId, "Purchasing:Reject");
         if (!check.ok) return check.response;
         await cancelCapture(companyId, id);
         break;

@@ -10,8 +10,19 @@
  * `gl_transactions`. Conversion goes through `purchase-bill-service`, and
  * `accounting-reconciliation.test.ts` asserts that no module in this
  * feature writes to an accounting table.
+ *
+ * Phase SD-0 (migration 0111) — two kinds of write, two clients:
+ *  * reviewer actions (upload, correct, reject, convert) use the caller's
+ *    session, so RLS and the capture guard trigger check the caller's own
+ *    Purchasing permissions and the actor comes from the session;
+ *  * system processing (extraction, validation, duplicate evaluation, the
+ *    AI gate and attempt log) uses the service-role client, as the AI
+ *    classification safety repository does, because no signed-in user may
+ *    write those results — whichever context the work runs in (the
+ *    unattended runner or a user's "Run Task Now").
  */
 
+import { createAdminClient, isSupabaseAdminConfigured } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
   CaptureStatus,
@@ -23,6 +34,13 @@ import type {
 } from "@/server/supplier-invoice-capture/types";
 
 const LIST_CAP = 500;
+
+function systemClient() {
+  if (!isSupabaseAdminConfigured()) {
+    throw new Error("Supplier invoice capture processing is not configured (SUPABASE_SERVICE_ROLE_KEY is missing).");
+  }
+  return createAdminClient();
+}
 
 export type CaptureRow = {
   id: number;
@@ -178,9 +196,26 @@ export async function listCaptureLines(companyId: string, captureId: number): Pr
   return data;
 }
 
-export async function updateCapture(companyId: string, captureId: number, fields: Record<string, unknown>): Promise<CaptureRow> {
+/** A reviewer's change, under the caller's session. The capture guard
+ * trigger (0111) decides which fields and transitions the caller's
+ * Purchasing permissions allow. */
+export async function updateCaptureAsReviewer(companyId: string, captureId: number, fields: Record<string, unknown>): Promise<CaptureRow> {
   const supabase = await createClient();
   const { data, error } = await supabase
+    .from("supplier_invoice_captures")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("company_id", companyId)
+    .eq("id", captureId)
+    .select("*")
+    .single<CaptureRow>();
+  if (error) throw error;
+  return data;
+}
+
+/** System processing results (queue state, extraction, validation,
+ * duplicate verdicts). Service role only. */
+export async function updateCaptureAsSystem(companyId: string, captureId: number, fields: Record<string, unknown>): Promise<CaptureRow> {
+  const { data, error } = await systemClient()
     .from("supplier_invoice_captures")
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq("company_id", companyId)
@@ -199,8 +234,7 @@ export async function updateCapture(companyId: string, captureId: number, fields
  * journals. Returns null when another runner got there first.
  */
 export async function claimCaptureForExtraction(companyId: string, captureId: number): Promise<CaptureRow | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data, error } = await systemClient()
     .from("supplier_invoice_captures")
     .update({ status: "Extracting", updated_at: new Date().toISOString() })
     .eq("company_id", companyId)
@@ -219,7 +253,7 @@ export async function replaceCaptureLines(
   captureId: number,
   lines: Omit<CaptureLineRow, "id" | "capture_id">[],
 ): Promise<void> {
-  const supabase = await createClient();
+  const supabase = systemClient();
   const { error: deleteError } = await supabase
     .from("supplier_invoice_capture_lines")
     .delete()
@@ -254,19 +288,47 @@ export type CaptureEventType =
   | "ValidationEvaluated" | "SupplierResolved" | "DuplicateEvaluated" | "FieldCorrected"
   | "SupplierCreated" | "ConvertedToBill" | "Cancelled" | "Requeued";
 
-/** Appends one audit event. `detail` must be metadata — never document
- * content; `pii-logging.test.ts` covers the shape callers may pass. */
+/** The events a reviewer's own action produces (0111 accepts only these
+ * from a signed-in user, each with the permission and state it implies). */
+export type ReviewerCaptureEventType = "Queued" | "FieldCorrected" | "Cancelled" | "ConvertedToBill";
+
+/** Appends one audit event for a reviewer's action. The actor is taken
+ * from the session by the database — there is deliberately no parameter
+ * for it. `detail` must be metadata — never document content;
+ * `pii-logging.test.ts` covers the shape callers may pass. */
 export async function recordCaptureEvent(
+  companyId: string,
+  captureId: number,
+  eventType: ReviewerCaptureEventType,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("fn_supplier_invoice_capture_record_event", {
+    p_company_id: companyId,
+    p_capture_id: captureId,
+    p_event_type: eventType,
+    p_detail: detail,
+  });
+  if (error) throw error;
+}
+
+/** Appends one audit event for system processing. Service role only;
+ * `performedBy` is the actor the server established (the runner, or the
+ * session that triggered the work). */
+export async function recordSystemCaptureEvent(
   companyId: string,
   captureId: number,
   eventType: CaptureEventType,
   detail: Record<string, unknown>,
   performedBy: string,
 ): Promise<void> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("supplier_invoice_capture_events")
-    .insert({ company_id: companyId, capture_id: captureId, event_type: eventType, detail, performed_by: performedBy });
+  const { error } = await systemClient().rpc("fn_supplier_invoice_capture_record_system_event", {
+    p_company_id: companyId,
+    p_capture_id: captureId,
+    p_event_type: eventType,
+    p_detail: detail,
+    p_performed_by: performedBy,
+  });
   if (error) throw error;
 }
 
@@ -411,8 +473,7 @@ export type ExtractionGateDecision = {
 };
 
 export async function openExtractionGate(companyId: string, captureId: number): Promise<ExtractionGateDecision> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("fn_ai_extraction_gate", { p_company_id: companyId, p_capture_id: captureId });
+  const { data, error } = await systemClient().rpc("fn_ai_extraction_gate", { p_company_id: companyId, p_capture_id: captureId });
   if (error) throw error;
   return data as ExtractionGateDecision;
 }
@@ -435,8 +496,7 @@ export async function recordExtractionAttempt(input: {
   circuitSignal: "success" | "auth" | "timeout" | "provider_failure" | "rate_limit" | "none";
   probe: boolean;
 }): Promise<void> {
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("fn_ai_extraction_record_attempt", {
+  const { error } = await systemClient().rpc("fn_ai_extraction_record_attempt", {
     p_company_id: input.companyId,
     p_capture_id: input.captureId,
     p_task_run_id: input.taskRunId,
