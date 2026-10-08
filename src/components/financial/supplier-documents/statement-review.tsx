@@ -511,7 +511,8 @@ export function StatementReviewWorkspace({
             <p className="text-xs text-vf-ink-faint">
               Received {formatDate(statement.createdAt)}
               {statement.pageCount ? ` · ${statement.pageCount} page${statement.pageCount === 1 ? "" : "s"}` : ""}
-              {statement.manualEntry ? " · entered by hand" : ""}.
+              {statement.manualEntry ? " · entered by hand" : ""}
+              {statement.extractionMethod === "ai" ? " · read by AI from the scan — every value was checked by the same rules as any statement; compare it with the original" : ""}.
             </p>
           </div>
         </div>

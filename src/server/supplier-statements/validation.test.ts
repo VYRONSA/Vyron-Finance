@@ -175,3 +175,26 @@ describe("validateStatement", () => {
     expect(report.status).toBe("Pass");
   });
 });
+
+describe("SD-3F — V9 row count against an AI transcription", () => {
+  const lines = () => [line({ debit: 100, runningBalance: 200 }), line({ credit: 50, runningBalance: 150 })];
+  it("matches → nothing to report", () => {
+    expect(codes(input({ closingBalance: 150, lines: lines(), aiDeclaredTransactions: 2 }))).not.toContain("row-count-mismatch");
+  });
+  it("fewer read than declared → Incomplete (a truncated read)", () => {
+    const report = validateStatement(input({ closingBalance: 150, lines: lines(), aiDeclaredTransactions: 3 }));
+    expect(report.status).toBe("Incomplete");
+    expect(report.findings.find((f) => f.code === "row-count-mismatch")?.severity).toBe("incomplete");
+  });
+  it("more read than declared → Review (a line read twice?)", () => {
+    const report = validateStatement(input({ closingBalance: 150, lines: lines(), aiDeclaredTransactions: 1 }));
+    expect(report.status).toBe("Review");
+  });
+  it("no declared count (not an AI read) → not checked", () => {
+    expect(codes(input({ closingBalance: 150, lines: lines(), aiDeclaredTransactions: null }))).not.toContain("row-count-mismatch");
+  });
+  it("excluded rows do not count as transactions", () => {
+    const withExcluded = [...lines(), line({ isExcluded: true, exclusionReason: "closing-balance" })];
+    expect(codes(input({ closingBalance: 150, lines: withExcluded, aiDeclaredTransactions: 2 }))).not.toContain("row-count-mismatch");
+  });
+});

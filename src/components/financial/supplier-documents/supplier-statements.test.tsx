@@ -245,3 +245,28 @@ describe("Statement review — a proposal that arrives after the page opened", (
     await waitFor(() => expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ action: "confirm-supplier", supplierId: 3 }));
   });
 });
+
+describe("Statement review — SD-3F AI provenance", () => {
+  const AI_LINES: StatementLineView[] = [
+    { ...LINES[0], id: 50, extractedBy: "ai" },
+    { ...LINES[0], id: 51, lineOrder: 2, referenceText: "0001057", extractedBy: "ai", corrected: true },
+    { ...LINES[0], id: 52, lineOrder: 3, referenceText: "0001093", extractedBy: "reviewer" },
+  ];
+
+  it("AI-read lines are marked, a reviewer's correction is still shown, and the statement says it was read by AI", () => {
+    render(
+      <StatementReviewWorkspace companyId="co_1" statement={statement({ extractionMethod: "ai", sourceType: "pdf-scanned" })} lines={AI_LINES} events={[]}
+        document={{ id: 70, filename: "scan.pdf", mimeType: "application/pdf", sizeBytes: 70000 }} suppliers={SUPPLIERS} can={ALL} runs={[]} selectedRun={null}
+        latestRunId={null} resolutions={[]} stale={false} />,
+    );
+    expect(screen.getAllByText("AI read")).toHaveLength(2);
+    expect(screen.getAllByText("Corrected").length).toBeGreaterThan(0);
+    expect(screen.getByText(/read by AI from the scan/)).toBeTruthy();
+  });
+
+  it("a statement read deterministically carries no AI mark", () => {
+    review();
+    expect(screen.queryByText("AI read")).toBeNull();
+    expect(screen.queryByText(/read by AI from the scan/)).toBeNull();
+  });
+});

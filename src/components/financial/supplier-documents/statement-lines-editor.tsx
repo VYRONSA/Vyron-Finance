@@ -212,6 +212,7 @@ export function StatementLinesEditor({
                     <TableCell className="max-w-[18rem] text-sm">
                       <span className="block truncate" title={l.description ?? undefined}>{isExcluded ? EXCLUSION_LABEL[l.exclusionReason ?? ""] ?? "Excluded" : (l.description ?? "—")}</span>
                       {l.unresolvedFields.length > 0 && l.rawText && <span className="block text-xs text-vf-danger">As read: {l.rawText}</span>}
+                      {l.extractedBy === "ai" && <Badge tone="warn" className="mt-1" title="Transcribed by AI from the scan — compare with the original">AI read</Badge>}
                       {l.corrected && <Badge tone="good" className="mt-1">Corrected</Badge>}
                     </TableCell>
                     <TableCell className="text-sm">{isExcluded ? "—" : TRANSACTION_TYPE_LABEL[l.transactionType] ?? l.transactionType}</TableCell>

@@ -251,6 +251,10 @@ export const EVENT_LABEL: Record<string, string> = {
   ProcessingStarted: "Reading started",
   Extracted: "Read",
   ExtractionFailed: "Could not be read",
+  AiExtractionSkipped: "Automatic reading off",
+  AiExtractionRefused: "Automatic reading not attempted",
+  AiExtracted: "Read by AI (check against the original)",
+  AiExtractionFailed: "Automatic reading failed",
   ManualEntryRequired: "Needs entering by hand",
   ValidationEvaluated: "Checked",
   SupplierProposed: "Supplier proposed",
@@ -277,12 +281,16 @@ export function statementEventSummary(type: string, detail: Record<string, unkno
   const n = (k: string) => (typeof detail[k] === "number" ? (detail[k] as number) : null);
   switch (type) {
     case "Extracted":
+    case "AiExtracted":
       return n("transactions") !== null ? `${n("transactions")} transactions${n("unreadLines") ? `, ${n("unreadLines")} with unread values` : ""}` : null;
+    case "AiExtractionRefused":
+      return detail.decision === "circuit_open" ? "paused after provider failures" : detail.decision === "daily_cap" ? "daily budget used" : null;
     case "ValidationEvaluated":
       return typeof detail.status === "string" ? String(detail.status) : null;
     case "ReconciliationRun":
       return n("runNumber") !== null ? `run ${n("runNumber")}` : null;
     case "ExtractionFailed":
+    case "AiExtractionFailed":
       return typeof detail.category === "string" ? String(detail.category) : null;
     case "FieldCorrected":
       return Array.isArray(detail.fields) ? `${(detail.fields as unknown[]).length} field(s)` : null;

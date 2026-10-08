@@ -5,7 +5,7 @@
  * modules — reader, validation, supplier proposal — are the real ones).
  */
 import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const repo = vi.hoisted(() => ({
   insertStatement: vi.fn(),
@@ -31,6 +31,8 @@ const repo = vi.hoisted(() => ({
   listStatements: vi.fn(),
   listStatementLines: vi.fn(),
   listStatementEvents: vi.fn(),
+  statementAiGate: vi.fn(),
+  recordStatementAiAttempt: vi.fn(),
 }));
 const { readSupplierOriginalBytes, setSupplierOurAccountNumber } = vi.hoisted(() => ({ readSupplierOriginalBytes: vi.fn(), setSupplierOurAccountNumber: vi.fn() }));
 
@@ -119,20 +121,23 @@ describe("processing (after the response)", () => {
     expect(repo.updateStatementAsSystemIfUnchanged).toHaveBeenCalled();
   });
 
-  it("a scanned PDF goes to manual entry (no OCR in SD-3C) — nothing is guessed", async () => {
+  it("a scanned PDF goes to manual entry while automatic reading is off — nothing is guessed", async () => {
     repo.claimQueuedStatement.mockResolvedValue(statementRow({ status: "Processing" }));
     repo.getDocumentForProcessing.mockResolvedValue({ storagePath: "p", filename: "scanned.pdf", mimeType: "application/pdf" });
     readSupplierOriginalBytes.mockResolvedValue(file("scanned.pdf"));
-    expect(await service.processStatement(CO, 7, "System")).toBe("ManualEntry");
+    expect(await service.processStatement(CO, 7, "System", { env: {} })).toBe("ManualEntry");
     expect(repo.updateStatementAsSystem).toHaveBeenCalledWith(CO, 7, expect.objectContaining({ status: "ManualEntry", source_type: "pdf-scanned", manual_entry: true }));
     expect(repo.replaceLinesAsSystem).not.toHaveBeenCalled();
+    expect(repo.recordSystemStatementEvent).toHaveBeenCalledWith(CO, 7, "AiExtractionSkipped", { switchOn: false, credentialPresent: false }, "System");
+    expect(repo.statementAiGate).not.toHaveBeenCalled();
+    expect(repo.recordStatementAiAttempt).not.toHaveBeenCalled();
   });
 
   it("an image statement goes to manual entry", async () => {
     repo.claimQueuedStatement.mockResolvedValue(statementRow({ status: "Processing" }));
     repo.getDocumentForProcessing.mockResolvedValue({ storagePath: "p", filename: "scan-png.png", mimeType: "image/png" });
     readSupplierOriginalBytes.mockResolvedValue(file("scan-png.png"));
-    expect(await service.processStatement(CO, 7, "System")).toBe("ManualEntry");
+    expect(await service.processStatement(CO, 7, "System", { env: {} })).toBe("ManualEntry");
   });
 
   it("an encrypted PDF fails with the reason, and the original is still kept", async () => {
@@ -208,7 +213,7 @@ describe("reviewer actions", () => {
 });
 
 describe("boundaries", () => {
-  it("the statement workflow imports no accounting or AI module, and touches only its own tables", () => {
+  it("the statement workflow imports no accounting module, reaches AI only through the SD-3F boundary, and touches only its own tables", () => {
     const files = [
       "src/server/services/supplier-statement-service.ts",
       "src/server/repositories/supplier-statement-repository.ts",
@@ -219,11 +224,202 @@ describe("boundaries", () => {
       const source = readFileSync(path, "utf8");
       const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
       for (const spec of imports) {
-        expect(spec, `${path} imports ${spec}`).not.toMatch(/purchase-bill|posting|journal|supplier-payment|allocation|party-ledger|report-centre|\/ai\/|extraction-provider|provider-selection|gateway/);
+        expect(spec, `${path} imports ${spec}`).not.toMatch(/purchase-bill|posting|journal|supplier-payment|allocation|party-ledger|report-centre|provider-selection|gateway/);
+        // AI only through the statement boundary (and the shared, pure error taxonomy).
+        if (/\/ai\/|extraction-provider/.test(spec)) {
+          expect(spec, `${path} imports ${spec}`).toMatch(/^@\/server\/supplier-statements\/ai\/|^@\/server\/supplier-invoice-capture\/extraction-provider$/);
+        }
       }
       const tables = [...source.matchAll(/\.from\("([a-z_]+)"\)/g)].map((m) => m[1]);
       for (const table of tables) expect(allowedTables.has(table), `${path} touches ${table}`).toBe(true);
-      expect(source, path).not.toMatch(/generateObject|AI_GATEWAY_API_KEY|VYRON_AI_/);
+      expect(source, path).not.toMatch(/generateObject|AI_GATEWAY_API_KEY|VYRON_AI_|fetch\(/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------
+// SD-3F — the AI boundary inside processing (fake provider; never a real one)
+// ---------------------------------------------------------------------
+
+describe("SD-3F — AI reading of scanned statements", () => {
+  const ON = { VYRON_AI_STATEMENT_EXTRACTION: "certification", AI_GATEWAY_API_KEY: "test-only-not-a-real-key" };
+  const realFetch = globalThis.fetch;
+  const fetchSpy = vi.fn(() => {
+    throw new Error("No network call may be made in this test.");
+  });
+
+  const transcription = {
+    supplierName: "Karoo Building Supplies (Pty) Ltd", supplierVatNumber: "4123456789", supplierRegistrationNumber: null, accountNumber: "000123",
+    statementDateText: "30/09/2026", periodText: null, currencyText: null, openingBalanceText: null, closingBalanceText: null,
+    rows: [
+      { page: 1, dateText: "01/09/2026", referenceText: "BAL B/F", description: "Balance brought forward", typeText: null, debitText: null, creditText: null, amountText: null, balanceText: "1 500.00", rowText: "B/F 1 500.00" },
+      { page: 1, dateText: "05/09/2026", referenceText: "0001042", description: "Invoice", typeText: "INV", debitText: "2 300.00", creditText: null, amountText: null, balanceText: "3 800.00", rowText: "0001042 2 300.00" },
+    ],
+    declaredTransactionRows: 1,
+    warnings: [],
+  };
+  const fakeProvider = (result: unknown) => ({ name: "test" as const, transcribe: vi.fn(async () => result as never) });
+  const aiLine = { line_order: 2, page_number: 1, transaction_date: "2026-09-05", reference_text: "0001042", debit: "2300", credit: null, running_balance: "3800", unresolved_fields: [], is_excluded: false, exclusion_reason: null };
+
+  function scanned() {
+    repo.claimQueuedStatement.mockResolvedValue(statementRow({ status: "Processing", source_type: "pdf" }));
+    repo.getDocumentForProcessing.mockResolvedValue({ storagePath: "p", filename: "scanned.pdf", mimeType: "application/pdf" });
+    readSupplierOriginalBytes.mockResolvedValue(file("scanned.pdf"));
+  }
+
+  beforeEach(() => {
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    fetchSpy.mockClear();
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it("switch on but no key → skipped: no gate, no reservation, provider never called", async () => {
+    scanned();
+    const provider = fakeProvider({ ok: true, transcription, model: "m", usage: null });
+    expect(await service.processStatement(CO, 7, "System", { env: { VYRON_AI_STATEMENT_EXTRACTION: "certification" }, provider })).toBe("ManualEntry");
+    expect(repo.recordSystemStatementEvent).toHaveBeenCalledWith(CO, 7, "AiExtractionSkipped", { switchOn: true, credentialPresent: false }, "System");
+    expect(repo.statementAiGate).not.toHaveBeenCalled();
+    expect(provider.transcribe).not.toHaveBeenCalled();
+    expect(repo.updateStatementAsSystem).toHaveBeenCalledWith(CO, 7, expect.objectContaining({ status: "ManualEntry", status_reason: expect.stringMatching(/not configured/) }));
+  });
+
+  it("an injected provider is ignored while the switch is off", async () => {
+    scanned();
+    const provider = fakeProvider({ ok: true, transcription, model: "m", usage: null });
+    expect(await service.processStatement(CO, 7, "System", { env: {}, provider })).toBe("ManualEntry");
+    expect(provider.transcribe).not.toHaveBeenCalled();
+    expect(repo.statementAiGate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["circuit_open", /paused after repeated provider failures/],
+    ["daily_cap", /budget is used up/],
+    ["not_processing", /not attempted/],
+  ])("gate refuses (%s) → manual entry, nothing sent, no attempt recorded", async (decision, reason) => {
+    scanned();
+    repo.statementAiGate.mockResolvedValue({ decision });
+    const provider = fakeProvider({ ok: true, transcription, model: "m", usage: null });
+    expect(await service.processStatement(CO, 7, "System", { env: ON, provider })).toBe("ManualEntry");
+    expect(provider.transcribe).not.toHaveBeenCalled();
+    expect(repo.recordStatementAiAttempt).not.toHaveBeenCalled();
+    expect(repo.recordSystemStatementEvent).toHaveBeenCalledWith(CO, 7, "AiExtractionRefused", { decision }, "System");
+    expect(repo.updateStatementAsSystem).toHaveBeenCalledWith(CO, 7, expect.objectContaining({ status: "ManualEntry", status_reason: expect.stringMatching(reason) }));
+    expect(repo.replaceLinesAsSystem).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["payment-required", 402, "auth", true, "provider_error"],
+    ["unauthorized", 401, "auth", true, "provider_error"],
+    ["timeout", null, "timeout", true, "provider_error"],
+    ["server-error", 503, "provider_failure", true, "provider_error"],
+    ["rate-limit", 429, "rate_limit", true, "provider_error"],
+    ["missing-api-key", null, "auth", false, "provider_error"],
+    ["malformed-response", null, "none", true, "invalid_response"],
+  ])("provider fails (%s) → attempt recorded with the right circuit signal, manual entry", async (category, httpStatus, signal, reached, outcome) => {
+    scanned();
+    repo.statementAiGate.mockResolvedValue({ decision: "allow" });
+    const provider = fakeProvider({ ok: false, category, httpStatus, message: "Bearer sk-secretABCDEFGHIJKLMNOP123 failed", model: "m" });
+    expect(await service.processStatement(CO, 7, "System", { env: ON, provider })).toBe("ManualEntry");
+    const attempt = repo.recordStatementAiAttempt.mock.calls[0][0];
+    expect(attempt).toMatchObject({ outcome, providerRequestMade: reached, errorCategory: category, circuitSignal: signal, probe: false, httpStatus });
+    expect(String(attempt.providerMessage)).not.toMatch(/sk-secretABCDEFGHIJKLMNOP123/);
+    expect(repo.recordSystemStatementEvent).toHaveBeenCalledWith(CO, 7, "AiExtractionFailed", { category }, "System");
+    expect(repo.replaceLinesAsSystem).not.toHaveBeenCalled();
+    expect(repo.updateStatementAsSystem).toHaveBeenCalledWith(CO, 7, expect.objectContaining({ status: "ManualEntry", extraction_method: "manual" }));
+  });
+
+  it("a provider that throws is contained: recorded as an unknown failure, manual entry", async () => {
+    scanned();
+    repo.statementAiGate.mockResolvedValue({ decision: "allow" });
+    const provider = {
+      name: "test" as const,
+      transcribe: vi.fn(async () => {
+        throw new Error("boom");
+      }),
+    };
+    expect(await service.processStatement(CO, 7, "System", { env: ON, provider })).toBe("ManualEntry");
+    expect(repo.recordStatementAiAttempt.mock.calls[0][0]).toMatchObject({ outcome: "provider_error", errorCategory: "unknown", circuitSignal: "none" });
+  });
+
+  it("a probe is reported as a probe", async () => {
+    scanned();
+    repo.statementAiGate.mockResolvedValue({ decision: "probe" });
+    const provider = fakeProvider({ ok: false, category: "server-error", httpStatus: 500, message: "x", model: "m" });
+    await service.processStatement(CO, 7, "System", { env: ON, provider });
+    expect(repo.recordStatementAiAttempt.mock.calls[0][0]).toMatchObject({ probe: true, circuitSignal: "provider_failure" });
+  });
+
+  it("a transcription is stored as AI-read evidence, validated, and the supplier is only PROPOSED", async () => {
+    scanned();
+    repo.statementAiGate.mockResolvedValue({ decision: "allow" });
+    repo.getStatementAsSystem.mockResolvedValue(
+      statementRow({ status: "NeedsReview", extraction_method: "ai", opening_balance: "1500", closing_balance: "3800", extraction_snapshot: { ai: { declaredTransactionRows: 1 } } }),
+    );
+    repo.listStatementLinesAsSystem.mockResolvedValue([aiLine]);
+    const provider = fakeProvider({ ok: true, transcription, model: "test-model", usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 } });
+
+    expect(await service.processStatement(CO, 7, "System", { env: ON, provider })).toBe("NeedsReview");
+
+    expect(provider.transcribe).toHaveBeenCalledWith(expect.objectContaining({ mimeType: "application/pdf" }));
+    const lines = repo.replaceLinesAsSystem.mock.calls[0][2] as { reference_text: string | null; extracted_by: string; debit: number | null; is_excluded: boolean }[];
+    expect(lines.every((l) => l.extracted_by === "ai")).toBe(true);
+    expect(lines.filter((l) => !l.is_excluded).map((l) => [l.reference_text, l.debit])).toEqual([["0001042", 2300]]);
+
+    const header = repo.updateStatementAsSystem.mock.calls.find((c) => c[2].status === "NeedsReview")![2];
+    expect(header).toMatchObject({ extraction_method: "ai", source_type: "pdf-scanned", supplier_id: 1 });
+    expect(header).not.toHaveProperty("supplier_confirmed_at");
+    expect(header.extraction_snapshot).toMatchObject({ method: "ai", ai: { model: "test-model", declaredTransactionRows: 1, provider: "vercel-ai-gateway" } });
+
+    expect(repo.recordStatementAiAttempt.mock.calls[0][0]).toMatchObject({ outcome: "extracted", providerRequestMade: true, circuitSignal: "success", model: "test-model" });
+    expect(repo.recordSystemStatementEvent).toHaveBeenCalledWith(CO, 7, "AiExtracted", expect.objectContaining({ method: "ai" }), "System");
+    expect(repo.recordSystemStatementEvent).not.toHaveBeenCalledWith(CO, 7, "Extracted", expect.anything(), expect.anything());
+    // Validated by the same deterministic rules (here: it adds up and the row count matches).
+    expect(repo.updateStatementAsSystemIfUnchanged).toHaveBeenCalledWith(CO, 7, "u1", expect.objectContaining({ validation_status: "Pass" }));
+  });
+
+  it("validation compares the AI's declared row count with what was read (a truncated read is Incomplete)", async () => {
+    repo.getStatementAsSystem.mockResolvedValue(
+      statementRow({ status: "NeedsReview", extraction_method: "ai", opening_balance: "1500", closing_balance: "3800", extraction_snapshot: { ai: { declaredTransactionRows: 3 } } }),
+    );
+    repo.listStatementLinesAsSystem.mockResolvedValue([aiLine]);
+    await service.revalidateStatement(CO, 7, "System");
+    const written = repo.updateStatementAsSystemIfUnchanged.mock.calls[0][3];
+    expect(written.validation_status).toBe("Incomplete");
+    expect(written.validation_findings.map((f: { code: string }) => f.code)).toContain("row-count-mismatch");
+  });
+
+  it("a non-AI statement is never checked against an AI row count", async () => {
+    repo.getStatementAsSystem.mockResolvedValue(
+      statementRow({ status: "NeedsReview", extraction_method: "layout", opening_balance: "1500", closing_balance: "3800", extraction_snapshot: { ai: { declaredTransactionRows: 3 } } }),
+    );
+    repo.listStatementLinesAsSystem.mockResolvedValue([aiLine]);
+    await service.revalidateStatement(CO, 7, "System");
+    expect(repo.updateStatementAsSystemIfUnchanged.mock.calls[0][3].validation_status).toBe("Pass");
+  });
+
+  it("a write failure after a successful read is recorded as write_error and the statement fails safely", async () => {
+    scanned();
+    repo.statementAiGate.mockResolvedValue({ decision: "allow" });
+    repo.replaceLinesAsSystem.mockRejectedValueOnce(new Error("db down"));
+    const provider = fakeProvider({ ok: true, transcription, model: "m", usage: null });
+    expect(await service.processStatement(CO, 7, "System", { env: ON, provider })).toBe("Failed");
+    expect(repo.recordStatementAiAttempt.mock.calls[0][0]).toMatchObject({ outcome: "write_error", providerRequestMade: true });
+  });
+
+  it("text PDFs never go near the AI boundary, even with the switch on", async () => {
+    repo.claimQueuedStatement.mockResolvedValue(statementRow({ status: "Processing" }));
+    repo.getDocumentForProcessing.mockResolvedValue({ storagePath: "p", filename: "karoo-point.pdf", mimeType: "application/pdf" });
+    readSupplierOriginalBytes.mockResolvedValue(file("karoo-point.pdf"));
+    repo.getStatementAsSystem.mockResolvedValue(statementRow({ status: "NeedsReview" }));
+    const provider = fakeProvider({ ok: true, transcription, model: "m", usage: null });
+    await service.processStatement(CO, 7, "System", { env: ON, provider });
+    expect(provider.transcribe).not.toHaveBeenCalled();
+    expect(repo.statementAiGate).not.toHaveBeenCalled();
+  });
+
+  it("no network call is made on any path in this suite", () => {
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

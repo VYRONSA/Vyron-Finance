@@ -15,8 +15,11 @@
  *   2. NO GUESSING. Unreadable values stay unresolved; a supplier is only
  *      ever PROPOSED here and must be confirmed by a reviewer; the debit/
  *      credit convention is never flipped automatically.
- *   3. NO AI. Scanned statements go to manual entry (SD-3C has no OCR and
- *      live AI is off). The reader is provider-agnostic for later.
+ *   3. AI ONLY THROUGH THE SD-3F BOUNDARY. A scanned statement may be
+ *      transcribed (text only) when the certification switch is on and the
+ *      budget/circuit gate admits it; the transcription is read by the same
+ *      deterministic parsers and validated like any statement. Switched off,
+ *      refused or failed, it goes to manual entry with the reason recorded.
  *   4. The actor always comes from the session — never a request body.
  *   5. Audit details carry field names and ids, never statement content.
  */
@@ -30,6 +33,16 @@ import { readStatementFile } from "@/server/supplier-statements/read-statement";
 import { proposeStatementSupplier } from "@/server/supplier-statements/supplier-match";
 import { validateStatement } from "@/server/supplier-statements/validation";
 import type { PrintedAgeing, SignConvention, StatementExtraction, StatementStatus, StatementTransactionType } from "@/server/supplier-statements/types";
+import { detectInlineFileType } from "@/server/documents/inline-file-type";
+import { circuitSignalFor, providerWasReached } from "@/server/supplier-invoice-capture/extraction-provider";
+import { sanitizeProviderMessage } from "@/server/supplier-invoice-capture/redaction";
+import {
+  decideStatementProvider,
+  selectStatementProvider,
+  type StatementExtractionProvider,
+  type StatementProviderResult,
+} from "@/server/supplier-statements/ai/statement-ai-provider";
+import { transcriptionToExtraction } from "@/server/supplier-statements/ai/transcription-to-extraction";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -90,7 +103,13 @@ export async function registerUploadedStatement(
 
 export type ProcessOutcome = "NeedsReview" | "ManualEntry" | "Failed" | "NotQueued";
 
-export async function processStatement(companyId: string, statementId: number, performedBy: string): Promise<ProcessOutcome> {
+/** SD-3F — what the AI boundary may use. Production passes nothing: the
+ * process environment decides (OFF unless certified) and the provider is
+ * selected from it. Tests inject a fake provider, which is still only used
+ * when the environment's switch rule makes a provider available. */
+export type StatementAiDeps = { env?: Record<string, string | undefined>; provider?: StatementExtractionProvider };
+
+export async function processStatement(companyId: string, statementId: number, performedBy: string, deps: StatementAiDeps = {}): Promise<ProcessOutcome> {
   const claimed = await repo.claimQueuedStatement(companyId, statementId);
   if (!claimed) return "NotQueued";
   await repo.recordSystemStatementEvent(companyId, statementId, "ProcessingStarted", {}, performedBy);
@@ -109,13 +128,18 @@ export async function processStatement(companyId: string, statementId: number, p
       return fail(companyId, statementId, performedBy, outcome.sourceType, outcome.category, outcome.reason);
     }
     if (outcome.kind === "manual-entry") {
+      // SD-3F — a scanned statement may be read by the AI boundary if, and
+      // only if, it is switched on and the gate admits it. Every other case
+      // keeps the manual workflow, with the reason recorded.
+      const ai = await tryAiReading(companyId, statementId, bytes, outcome.sourceType, outcome.pageCount, performedBy, deps);
+      if (ai.done) return "NeedsReview";
       await repo.updateStatementAsSystem(companyId, statementId, {
         status: "ManualEntry",
         source_type: outcome.sourceType,
         extraction_method: "manual",
         manual_entry: true,
         page_count: outcome.pageCount,
-        status_reason: outcome.reason,
+        status_reason: ai.reason ?? outcome.reason,
         validation_status: "Pending",
         validated_at: null,
       });
@@ -146,13 +170,18 @@ async function fail(
   return "Failed";
 }
 
+/** SD-3F — set when the lines were transcribed by the AI boundary. */
+type AiProvenance = { model: string | null; declaredTransactionRows: number | null; pagesSent: number | null };
+
 async function persistExtraction(
   companyId: string,
   statementId: number,
   sourceType: string,
   extraction: StatementExtraction,
   performedBy: string,
+  ai: AiProvenance | null = null,
 ): Promise<void> {
+  const method = ai ? "ai" : extraction.method;
   const h = extraction.header;
   const { suppliers, accountNumbers } = await repo.listSuppliersForMatching(companyId);
   const proposal = proposeStatementSupplier(
@@ -180,6 +209,7 @@ async function persistExtraction(
       unresolved_fields: l.unresolvedFields,
       is_excluded: l.isExcluded,
       exclusion_reason: l.exclusionReason,
+      extracted_by: ai ? ("ai" as const) : ("reader" as const),
     })),
   );
 
@@ -187,7 +217,7 @@ async function persistExtraction(
     status: "NeedsReview",
     status_reason: "",
     source_type: sourceType,
-    extraction_method: extraction.method,
+    extraction_method: method,
     page_count: extraction.pageCount,
     supplier_name_extracted: h.supplierName,
     supplier_vat_extracted: h.supplierVatNumber,
@@ -206,7 +236,15 @@ async function persistExtraction(
     supplier_id: proposal.supplierId,
     supplier_match_tier: proposal.tier,
     supplier_candidates: proposal.candidates,
-    extraction_snapshot: { header: h, lines: extraction.lines, method: extraction.method, pageCount: extraction.pageCount },
+    // The as-read evidence, kept unchanged. For an AI read it also records
+    // which model read it and how many rows it said the statement shows.
+    extraction_snapshot: {
+      header: h,
+      lines: extraction.lines,
+      method,
+      pageCount: extraction.pageCount,
+      ...(ai ? { ai: { provider: "vercel-ai-gateway", model: ai.model, declaredTransactionRows: ai.declaredTransactionRows, pagesSent: ai.pagesSent } } : {}),
+    },
     warnings: extraction.warnings,
     validation_status: "Pending",
     validated_at: null,
@@ -216,9 +254,9 @@ async function persistExtraction(
   await repo.recordSystemStatementEvent(
     companyId,
     statementId,
-    "Extracted",
+    ai ? "AiExtracted" : "Extracted",
     {
-      method: extraction.method,
+      method,
       sourceType,
       pageCount: extraction.pageCount,
       transactions: transactions.length,
@@ -235,6 +273,137 @@ async function persistExtraction(
     { outcome: proposal.outcome, supplierId: proposal.supplierId, tier: proposal.tier, candidates: proposal.candidates.map((c) => c.supplierId) },
     performedBy,
   );
+}
+
+// ---------------------------------------------------------------------
+// SD-3F — the AI boundary (fail-closed; OFF unless certified)
+// ---------------------------------------------------------------------
+
+function aiDeclared(snapshot: unknown): number | null {
+  const ai = (snapshot as { ai?: { declaredTransactionRows?: unknown } } | null)?.ai;
+  return typeof ai?.declaredTransactionRows === "number" ? ai.declaredTransactionRows : null;
+}
+
+const MANUAL_AFTER_AI = "Enter this statement by hand from the original.";
+
+/**
+ * One attempt to read a scanned statement through the AI boundary. Returns
+ * `done: true` only when a transcription was stored (and then validated
+ * like any statement); otherwise the reason the manual workflow applies.
+ *
+ *   switch off / no key  → AiExtractionSkipped: no gate call, no reservation, no request
+ *   gate refuses         → AiExtractionRefused (circuit open / daily cap): nothing sent
+ *   provider fails       → attempt recorded, circuit signalled, AiExtractionFailed
+ *   transcription stored → AI-read lines (extracted_by 'ai'), AiExtracted, validated
+ *
+ * The AI never chooses the supplier (only the deterministic matcher
+ * PROPOSES one), never calculates, and never touches an accounting record.
+ */
+async function tryAiReading(
+  companyId: string,
+  statementId: number,
+  bytes: Uint8Array,
+  sourceType: string,
+  pageCount: number | null,
+  performedBy: string,
+  deps: StatementAiDeps,
+): Promise<{ done: true } | { done: false; reason: string | null }> {
+  const env = deps.env ?? process.env;
+  const decision = decideStatementProvider(env);
+  if (decision.provider === "unavailable") {
+    await repo.recordSystemStatementEvent(
+      companyId,
+      statementId,
+      "AiExtractionSkipped",
+      { switchOn: decision.switchOn, credentialPresent: decision.credentialPresent },
+      performedBy,
+    );
+    return { done: false, reason: decision.reason };
+  }
+
+  const gate = await repo.statementAiGate(companyId, statementId);
+  if (gate.decision !== "allow" && gate.decision !== "probe") {
+    await repo.recordSystemStatementEvent(companyId, statementId, "AiExtractionRefused", { decision: gate.decision }, performedBy);
+    const why =
+      gate.decision === "circuit_open"
+        ? "Automatic reading is paused after repeated provider failures."
+        : gate.decision === "daily_cap"
+          ? "Today's automatic-reading budget is used up."
+          : "Automatic reading was not attempted.";
+    return { done: false, reason: `${why} ${MANUAL_AFTER_AI}` };
+  }
+  const probe = gate.decision === "probe";
+  const attempt = {
+    companyId,
+    statementId,
+    performedBy,
+    probe,
+    pagesSent: pageCount,
+    usage: null as Record<string, unknown> | null,
+    httpStatus: null as number | null,
+    providerMessage: null as string | null,
+  };
+
+  const mimeType = detectInlineFileType(bytes);
+  if (mimeType === null) {
+    // Nothing was sent: the reservation is given back.
+    await repo.recordStatementAiAttempt({
+      ...attempt, outcome: "document_error", providerRequestMade: false, model: null, errorCategory: "unsupported-document",
+      durationMs: 0, pagesSent: null, circuitSignal: "none",
+    });
+    await repo.recordSystemStatementEvent(companyId, statementId, "AiExtractionFailed", { category: "unsupported-document" }, performedBy);
+    return { done: false, reason: `Automatic reading did not succeed. ${MANUAL_AFTER_AI}` };
+  }
+
+  const provider = deps.provider ?? (await selectStatementProvider(env));
+  const started = Date.now();
+  let result: StatementProviderResult;
+  try {
+    result = await provider.transcribe({ bytes, mimeType, pageCount });
+  } catch (error) {
+    // A provider must return typed failures; anything thrown is treated as
+    // an unknown failure that may have reached the provider.
+    result = { ok: false, category: "unknown", httpStatus: null, message: sanitizeProviderMessage(error), model: null };
+  }
+  const durationMs = Date.now() - started;
+
+  if (!result.ok) {
+    await repo.recordStatementAiAttempt({
+      ...attempt,
+      outcome: result.category === "malformed-response" ? "invalid_response" : "provider_error",
+      providerRequestMade: providerWasReached(result.category),
+      model: result.model,
+      errorCategory: result.category,
+      httpStatus: result.httpStatus,
+      providerMessage: sanitizeProviderMessage(result.message) || null,
+      durationMs,
+      circuitSignal: circuitSignalFor(result.category),
+    });
+    await repo.recordSystemStatementEvent(companyId, statementId, "AiExtractionFailed", { category: result.category }, performedBy);
+    return { done: false, reason: `Automatic reading did not succeed. ${MANUAL_AFTER_AI}` };
+  }
+
+  // The provider answered: whatever happens next, the request was made and
+  // the circuit sees a success.
+  const usage = (result.usage ?? null) as Record<string, unknown> | null;
+  const extraction = transcriptionToExtraction(result.transcription, pageCount);
+  try {
+    await persistExtraction(companyId, statementId, sourceType, extraction, performedBy, {
+      model: result.model,
+      declaredTransactionRows: result.transcription.declaredTransactionRows,
+      pagesSent: pageCount,
+    });
+  } catch (error) {
+    await repo.recordStatementAiAttempt({
+      ...attempt, outcome: "write_error", providerRequestMade: true, model: result.model, errorCategory: null, usage, durationMs, circuitSignal: "success",
+    });
+    throw error;
+  }
+  await repo.recordStatementAiAttempt({
+    ...attempt, outcome: "extracted", providerRequestMade: true, model: result.model, errorCategory: null, usage, durationMs, circuitSignal: "success",
+  });
+  await revalidateStatement(companyId, statementId, performedBy);
+  return { done: true };
 }
 
 // ---------------------------------------------------------------------
@@ -265,6 +434,7 @@ export async function revalidateStatement(companyId: string, statementId: number
     signConvention: statement.sign_convention,
     baseCurrencyCode: baseCurrency,
     possibleDuplicateOf: similar,
+    aiDeclaredTransactions: statement.extraction_method === "ai" ? aiDeclared(statement.extraction_snapshot) : null,
     lines: lines.map((l) => ({
       lineOrder: l.line_order,
       pageNumber: l.page_number,
@@ -657,6 +827,7 @@ export async function getSupplierStatement(companyId: string, statementId: numbe
       isExcluded: l.is_excluded,
       exclusionReason: l.exclusion_reason,
       corrected: l.corrected,
+      extractedBy: l.extracted_by ?? "reader",
     })),
     events: events.map((e) => ({ id: e.id, type: e.event_type, detail: e.detail, performedBy: e.performed_by, occurredAt: e.occurred_at })),
   };

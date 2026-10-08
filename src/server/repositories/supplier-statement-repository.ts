@@ -42,7 +42,7 @@ export type StatementRow = {
   document_id: number;
   content_sha256: string;
   source_type: StatementSourceType;
-  extraction_method: "layout" | "tabular" | "manual" | null;
+  extraction_method: "layout" | "tabular" | "manual" | "ai" | null;
   status: StatementStatus;
   status_reason: string;
   duplicate_of_statement_id: number | null;
@@ -98,6 +98,8 @@ export type StatementLineRow = {
   is_excluded: boolean;
   exclusion_reason: ExclusionReason | null;
   corrected: boolean;
+  /** SD-3F (0116) — how the line was obtained. */
+  extracted_by?: "reader" | "ai" | "reviewer";
   created_at: string;
   updated_at: string;
 };
@@ -117,7 +119,9 @@ export type StatementEventType =
   | "FieldCorrected" | "LineCorrected" | "LineAdded" | "LineRemoved" | "ManualEntryStarted" | "SubmittedForReview"
   | "MarkedReady" | "Reopened" | "Rejected" | "ProcessingRequeued"
   // SD-3D (0115)
-  | "ReconciliationRun" | "ResolutionRecorded" | "ResolutionRevoked";
+  | "ReconciliationRun" | "ResolutionRecorded" | "ResolutionRevoked"
+  // SD-3F (0116)
+  | "AiExtractionSkipped" | "AiExtractionRefused" | "AiExtracted" | "AiExtractionFailed";
 
 /** Header fields a reviewer may correct (the guard enforces the same list). */
 export type ReviewerStatementFields = Partial<{
@@ -400,6 +404,8 @@ export type NewSystemLine = {
   unresolved_fields: UnresolvedField[];
   is_excluded: boolean;
   exclusion_reason: ExclusionReason | null;
+  /** SD-3F — 'ai' for lines read by the AI boundary; the reader otherwise. */
+  extracted_by?: "reader" | "ai";
 };
 
 export async function replaceLinesAsSystem(companyId: string, statementId: number, lines: NewSystemLine[]): Promise<void> {
@@ -502,4 +508,52 @@ export async function requeueStaleProcessing(companyId: string, statementId: num
     .select("id");
   if (error) throw error;
   return (data ?? []).length > 0;
+}
+
+// ---------------------------------------------------------------------
+// SD-3F — the AI boundary (service role only; nothing here runs unless the
+// certification switch is on, which the service decides).
+// ---------------------------------------------------------------------
+
+export type AiGateDecision = { decision: "allow" | "probe" | "circuit_open" | "daily_cap" | "not_processing"; [key: string]: unknown };
+
+export async function statementAiGate(companyId: string, statementId: number): Promise<AiGateDecision> {
+  const { data, error } = await systemClient().rpc("fn_ai_statement_extraction_gate", { p_company_id: companyId, p_statement_id: statementId });
+  if (error) throw error;
+  return data as AiGateDecision;
+}
+
+export async function recordStatementAiAttempt(input: {
+  companyId: string;
+  statementId: number;
+  outcome: "extracted" | "validation_failed" | "invalid_response" | "provider_error" | "document_error" | "write_error";
+  providerRequestMade: boolean;
+  model: string | null;
+  errorCategory: string | null;
+  httpStatus: number | null;
+  providerMessage: string | null;
+  usage: Record<string, unknown> | null;
+  durationMs: number | null;
+  pagesSent: number | null;
+  performedBy: string;
+  circuitSignal: "success" | "auth" | "timeout" | "provider_failure" | "rate_limit" | "none";
+  probe: boolean;
+}): Promise<void> {
+  const { error } = await systemClient().rpc("fn_ai_statement_extraction_record_attempt", {
+    p_company_id: input.companyId,
+    p_statement_id: input.statementId,
+    p_outcome: input.outcome,
+    p_provider_request_made: input.providerRequestMade,
+    p_model: input.model,
+    p_error_category: input.errorCategory,
+    p_http_status: input.httpStatus,
+    p_provider_message: input.providerMessage,
+    p_usage: input.usage,
+    p_duration_ms: input.durationMs,
+    p_pages_sent: input.pagesSent,
+    p_performed_by: input.performedBy,
+    p_circuit_signal: input.circuitSignal,
+    p_probe: input.probe,
+  });
+  if (error) throw error;
 }

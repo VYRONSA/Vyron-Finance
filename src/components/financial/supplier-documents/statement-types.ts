@@ -43,6 +43,8 @@ export type StatementLineView = {
   isExcluded: boolean;
   exclusionReason: string | null;
   corrected: boolean;
+  /** SD-3F — who first wrote the line: the deterministic reader, the AI transcription, or a reviewer. */
+  extractedBy?: "reader" | "ai" | "reviewer";
 };
 
 export type StatementEventView = { id: number; type: string; detail: Record<string, unknown>; performedBy: string; occurredAt: string };

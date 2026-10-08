@@ -40,7 +40,8 @@ export type StatementFinding = {
     | "repeated-line"
     | "sign-convention-suspected"
     | "unsupported-currency"
-    | "possible-duplicate-statement";
+    | "possible-duplicate-statement"
+    | "row-count-mismatch";
   severity: FindingSeverity;
   message: string;
   lineOrder?: number;
@@ -78,6 +79,9 @@ export type ValidationInput = {
   baseCurrencyCode: string | null;
   /** Another live statement for the same supplier, date and closing balance. */
   possibleDuplicateOf?: number | null;
+  /** SD-3F (V9) — for a statement read by AI: how many transaction rows the
+   * reader said the statement shows. */
+  aiDeclaredTransactions?: number | null;
 };
 
 export type ValidationReport = { status: Exclude<StatementValidationStatus, "Pending">; findings: StatementFinding[] };
@@ -304,6 +308,26 @@ export function validateStatement(input: ValidationInput): ValidationReport {
       severity: "review",
       message: `Unsupported currency (${input.currencyCode}): this statement cannot be reconciled until exchange-rate handling exists. Manual review required.`,
     });
+  }
+
+  // V9 — an AI read: fewer transaction lines than the statement shows is a
+  // truncated read (Incomplete until a person enters the missing lines);
+  // more is worth a look. Never "fixed" by adding or removing anything.
+  if (input.aiDeclaredTransactions !== null && input.aiDeclaredTransactions !== undefined) {
+    const read = transactions.length;
+    if (read < input.aiDeclaredTransactions) {
+      findings.push({
+        code: "row-count-mismatch",
+        severity: "incomplete",
+        message: `The statement shows ${input.aiDeclaredTransactions} transaction rows but ${read} were read. Enter the missing lines from the original.`,
+      });
+    } else if (read > input.aiDeclaredTransactions) {
+      findings.push({
+        code: "row-count-mismatch",
+        severity: "review",
+        message: `${read} transaction lines were read but the statement was counted as showing ${input.aiDeclaredTransactions}. Check for lines read twice.`,
+      });
+    }
   }
 
   if (input.possibleDuplicateOf) {
