@@ -36,10 +36,26 @@ function sizeLabel(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-export function OriginalDocumentViewer({ companyId, captureId, document }: { companyId: string; captureId: number; document: ViewerDocument }) {
+export function OriginalDocumentViewer({
+  companyId,
+  captureId,
+  originalUrl,
+  page,
+  document,
+}: {
+  companyId: string;
+  /** An invoice capture's original (SD-2)… */
+  captureId?: number;
+  /** …or any other audited original route, e.g. a supplier statement's (SD-3E). */
+  originalUrl?: string;
+  /** Open a PDF at this page (a statement line's page). */
+  page?: number | null;
+  document: ViewerDocument;
+}) {
   const [shown, setShown] = useState(true);
   const [failed, setFailed] = useState(false);
-  const src = `/api/companies/${companyId}/purchasing/invoice-capture/${captureId}/original`;
+  const src = originalUrl ?? `/api/companies/${companyId}/purchasing/invoice-capture/${captureId}/original`;
+  const frameSrc = page ? `${src}#page=${page}` : src;
 
   if (!document) {
     return (
@@ -90,7 +106,8 @@ export function OriginalDocumentViewer({ companyId, captureId, document }: { com
       <div className={cn("bg-vf-paper-alt", !shown && "hidden xl:block")}>
         {kind === "pdf" && (
           <iframe
-            src={src}
+            key={frameSrc}
+            src={frameSrc}
             title={`Original document: ${document.filename}`}
             className="block h-[70vh] min-h-[420px] w-full border-0 xl:h-[calc(100vh-9rem)]"
           />

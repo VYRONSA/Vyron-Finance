@@ -98,10 +98,13 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         // SD-2 — Supplier Document Intelligence. Its own route segment, so
         // the Purchasing item does not also light up on these pages.
-        // Supplier Statements join here in SD-3.
+        // SD-3E — Supplier Statements (statement reconciliation).
         label: "Supplier Documents",
         icon: IconFileText,
-        children: [{ label: "Invoice Capture", href: "supplier-documents/invoice-capture", icon: IconReceipt }],
+        children: [
+          { label: "Invoice Capture", href: "supplier-documents/invoice-capture", icon: IconReceipt },
+          { label: "Statements", href: "supplier-documents/statements", icon: IconReconcile },
+        ],
       },
       { label: "Inventory", href: "inventory", icon: IconSliders },
     ],

@@ -196,6 +196,20 @@ export async function listStatements(companyId: string, options: { status?: Stat
   return data;
 }
 
+/** SD-3E — file names of statement originals, under the caller's session. */
+export async function listDocumentFilenames(companyId: string, documentIds: number[]): Promise<Map<number, string>> {
+  if (documentIds.length === 0) return new Map();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("documents")
+    .select("id, filename")
+    .eq("company_id", companyId)
+    .in("id", documentIds.slice(0, LIST_CAP))
+    .returns<{ id: number; filename: string }[]>();
+  if (error) throw error;
+  return new Map(data.map((d) => [d.id, d.filename]));
+}
+
 export async function listStatementLines(companyId: string, statementId: number): Promise<StatementLineRow[]> {
   const supabase = await createClient();
   const { data, error } = await supabase

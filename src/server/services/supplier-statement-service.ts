@@ -545,6 +545,7 @@ export async function requeueStatement(companyId: string, statementId: number): 
 
 export type StatementSummary = {
   id: number;
+  documentId: number;
   status: StatementStatus;
   statusReason: string;
   sourceType: string;
@@ -562,6 +563,7 @@ export type StatementSummary = {
 function summary(row: repo.StatementRow): StatementSummary {
   return {
     id: row.id,
+    documentId: row.document_id,
     status: row.status,
     statusReason: row.status_reason,
     sourceType: row.source_type,
@@ -579,6 +581,24 @@ function summary(row: repo.StatementRow): StatementSummary {
 
 export async function listSupplierStatements(companyId: string, options: { status?: StatementStatus; limit?: number } = {}): Promise<StatementSummary[]> {
   return (await repo.listStatements(companyId, options)).map(summary);
+}
+
+function extractedHeader(snapshot: unknown): Record<string, unknown> | null {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const header = (snapshot as { header?: unknown }).header;
+  if (!header || typeof header !== "object") return null;
+  const h = header as Record<string, unknown>;
+  const pick = (k: string) => (k in h ? h[k] : undefined);
+  return {
+    statementDate: pick("statementDate"),
+    periodFrom: pick("periodFrom"),
+    periodTo: pick("periodTo"),
+    currencyCode: pick("currencyCode"),
+    openingBalance: pick("openingBalance"),
+    closingBalance: pick("closingBalance"),
+    printedTotalDebits: pick("printedTotalDebits"),
+    printedTotalCredits: pick("printedTotalCredits"),
+  };
 }
 
 export async function getSupplierStatement(companyId: string, statementId: number) {
@@ -615,6 +635,8 @@ export async function getSupplierStatement(companyId: string, statementId: numbe
       /** Owner decision: a statement in another currency is refused for
        * reconciliation and marked for manual review. */
       currencySupported: statement.currency_code === null || statement.currency_code === baseCurrency,
+      /** SD-3E — the header exactly as it was read, for "corrected" marks. */
+      extractedHeader: extractedHeader(statement.extraction_snapshot),
     },
     lines: lines.map((l) => ({
       id: l.id,
