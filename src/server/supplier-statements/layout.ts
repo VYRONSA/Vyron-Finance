@@ -251,7 +251,8 @@ const TYPE_WORDS: [RegExp, StatementTransactionType][] = [
   [/\bcredit\s*note\b|\bc\/n\b/i, "credit-note"],
   [/\bdebit\s*note\b/i, "debit-note"],
   [/\b(tax\s*)?invoice\b/i, "invoice"],
-  [/\b(payment|receipt|eft|deposit|paid|remittance)\b/i, "payment"],
+  // "Unapplied cash": a receipt not yet allocated to an invoice — a payment.
+  [/\b(payment|receipt|eft|deposit|paid|remittance)\b|\bunapplied\s+cash\b|\bcash\s+(received|receipt)\b/i, "payment"],
   [/\binterest\b/i, "interest"],
   [/\b(journal|adjustment)\b/i, "adjustment"],
 ];
@@ -288,11 +289,18 @@ export function inferTransactionType(
 // 5. Header facts
 // ---------------------------------------------------------------------
 
-type LabelRule = { field: "account" | "statementDate" | "vat" | "registration" | "period" | "currency" | "opening" | "closing"; pattern: RegExp };
+type LabelField = "account" | "statementDate" | "vat" | "registration" | "period" | "currency" | "opening" | "closing";
+/** `anywhere`: the label may follow other text in its cell. `headerOnly`:
+ * only above the transaction table (a bare "Date" is also a column heading). */
+type LabelRule = { field: LabelField; pattern: RegExp; anywhere?: boolean; headerOnly?: boolean };
 
+/** Matched against the cell's NORMALISED text (dotted abbreviations closed up:
+ * "V.A.T. REG. No." → "VAT REG. No."). */
 const LABELS: LabelRule[] = [
   { field: "account", pattern: /^(?:our\s+)?(?:acc(?:ount)?|customer|debtor|client)\.?\s*(?:no|number|code|#|ref(?:erence)?)\.?\s*:?\s*(.*)$/i },
   { field: "statementDate", pattern: /^(?:statement\s*date|date\s*of\s*statement|as\s*at(?:\s*date)?)\s*:?\s*(.*)$/i },
+  { field: "statementDate", pattern: /\b(?:statement\s*date|date\s*of\s*statement)\s*:?\s*(.*)$/i, anywhere: true },
+  { field: "statementDate", pattern: /^date\s*:?\s*(.*)$/i, headerOnly: true },
   { field: "vat", pattern: /^vat\s*(?:reg(?:istration)?\.?)?\s*(?:no|number)?\.?\s*:?\s*(.*)$/i },
   { field: "registration", pattern: /^(?:co(?:mpany)?\.?\s*)?reg(?:istration)?\.?\s*(?:no|number)\.?\s*:?\s*(.*)$/i },
   { field: "period", pattern: /^(?:statement\s*)?(?:period|for\s*the\s*period)\s*:?\s*(.*)$/i },
@@ -301,51 +309,116 @@ const LABELS: LabelRule[] = [
   { field: "closing", pattern: /^(?:closing\s*balance|balance\s*due|amount\s*due|total\s*due|amount\s*payable)\s*:?\s*(.*)$/i },
 ];
 
-type LabelHits = Partial<Record<LabelRule["field"], string>>;
+type LabelHits = Partial<Record<LabelField, string>>;
 
-/** A value taken from the NEXT cell must look like what the label names —
- * otherwise "Total Due" sitting beside the "Current" heading would read the
- * heading as its value. */
-function plausible(field: LabelRule["field"], value: string): boolean {
-  if (field === "opening" || field === "closing") return looksLikeMoney(value) || /^\(?-?\s*(R\s*)?[0-9][0-9 .,']*\)?$/i.test(value);
-  if (field === "statementDate") return looksLikeDate(value);
-  return true;
+/** "V.A.T." → "VAT", "P.O." → "PO": labels are printed both ways. */
+export function normaliseLabelText(text: string): string {
+  return text.replace(/\b(?:[A-Za-z]\.){2,}/g, (m) => m.replace(/\./g, "")).replace(/\s+/g, " ").trim();
 }
 
-/** A bare "Date" label, read only in the statement's header (above the
- * table), and only when its value is a date. */
-const BARE_DATE = /^date\s*:?\s*(.*)$/i;
-/** "… Statement Date: 06/10/2026" inside a longer cell. */
-const INLINE_STATEMENT_DATE = /\b(?:statement\s*date|date\s*of\s*statement)\s*:?\s*(\d{1,2}[/.\- ](?:\d{1,2}|[A-Za-z]{3,9})[/.\- ]\d{2,4}|\d{4}[/.-]\d{1,2}[/.-]\d{1,2})/i;
+/** Does a candidate value look like what the label names? A value found in
+ * the next cell, further along the row or BELOW the label must — otherwise a
+ * neighbouring heading ("Page", "Current") would be read as the value. */
+function plausible(field: LabelField, value: string): boolean {
+  const v = value.trim();
+  if (v === "") return false;
+  switch (field) {
+    case "opening":
+    case "closing":
+      return looksLikeMoney(v) || /^\(?-?\s*(R\s*)?[0-9][0-9 .,']*\)?$/i.test(v);
+    case "statementDate":
+      return looksLikeDate(v);
+    case "period":
+      return /\d/.test(v);
+    case "currency":
+      return /^[A-Za-z]{3}\b/.test(v) || /^R$/i.test(v);
+    default:
+      return /\d/.test(v) && !looksLikeDate(v) && !looksLikeMoney(v);
+  }
+}
 
-function readLabels(rows: Row[], headerRows: ReadonlySet<Row> = new Set()): LabelHits {
+/** The bank/payment details a supplier prints for remittance: a "Bank" line
+ * with an account number or branch code beneath it, in one column. Its first
+ * line, when it is a name, is the PAYEE — the supplier; its account number is
+ * the SUPPLIER's bank account, never our account number with the supplier. */
+type BankBlock = { payee: string | null; cells: Set<Cell>; accountNumber: string | null };
+
+const BANK_LINE = /\b(bank|banking)\b/i;
+const BANK_ACCOUNT_LINE = /\b(acc(?:ount)?\.?\s*(?:no|number|#)|branch\s*(?:code|no|number))\b/i;
+const PAYEE_LABEL = /^(?:account\s*(?:name|holder)|beneficiary|payee)\s*:?\s*(.+)$/i;
+
+function findBankBlock(rows: Row[]): BankBlock | null {
+  for (let i = 0; i < rows.length; i++) {
+    for (const bankCell of rows[i].cells) {
+      if (!BANK_LINE.test(bankCell.text) || /\bcharges?\b/i.test(bankCell.text)) continue;
+      const page = rows[i].pageNumber;
+      const sameColumn = (c: Cell) => Math.abs(c.x0 - bankCell.x0) <= 6;
+      const below: Cell[] = [];
+      for (let j = i + 1; j < rows.length && j <= i + 6 && rows[j].pageNumber === page; j++) below.push(...rows[j].cells.filter(sameColumn));
+      const accountCells = below.filter((c) => BANK_ACCOUNT_LINE.test(c.text));
+      if (accountCells.length === 0) continue;
+      const cells = new Set<Cell>([bankCell, ...below]);
+      let payee: string | null = null;
+      const labelled = [...cells].map((c) => PAYEE_LABEL.exec(c.text)).find((m) => m);
+      if (labelled) payee = labelled[1].trim();
+      const previous = i > 0 && rows[i - 1].pageNumber === page && rows[i].y - rows[i - 1].y <= rows[i].height * 3 ? rows[i - 1].cells.find(sameColumn) : undefined;
+      if (!payee && previous && /[A-Za-z]{2}/.test(previous.text) && !/\d|:/.test(previous.text) && !BANK_LINE.test(previous.text)) {
+        payee = previous.text.trim();
+        cells.add(previous);
+      }
+      const accountCell = accountCells.find((c) => /acc/i.test(c.text));
+      const accountNumber = accountCell ? (/[:#]\s*(.+)$/.exec(accountCell.text)?.[1] ?? null) : null;
+      return { payee, cells, accountNumber: accountNumber?.trim() ?? null };
+    }
+  }
+  return null;
+}
+
+/** Finds the value of a label, by POSITION: the rest of its own cell; the next
+ * cell; further along the same row; or BELOW it (the next rows on the page,
+ * overlapping it horizontally) — "Date / Page" over "06/10/2026 / 1 of 1". */
+function valueFor(field: LabelField, rows: Row[], rowIndex: number, cellIndex: number, rest: string): string | null {
+  if (rest !== "") return rest;
+  const row = rows[rowIndex];
+  const label = row.cells[cellIndex];
+  for (const cell of row.cells.slice(cellIndex + 1)) {
+    if (plausible(field, cell.text)) return cell.text.trim();
+    if (LABELS.some((r) => !r.anywhere && r.pattern.test(normaliseLabelText(cell.text)))) break; // the next label starts
+  }
+  for (let j = rowIndex + 1; j < rows.length && j <= rowIndex + 3; j++) {
+    const next = rows[j];
+    if (next.pageNumber !== row.pageNumber || next.y - row.y > Math.max(row.height, label.height) * 3.2) break;
+    const centre = (label.x0 + label.x1) / 2;
+    const under = next.cells
+      .filter((c) => Math.min(c.x1, label.x1) - Math.max(c.x0, label.x0) > 0 || Math.abs((c.x0 + c.x1) / 2 - centre) <= Math.max(20, label.x1 - label.x0))
+      .sort((a, b) => Math.abs((a.x0 + a.x1) / 2 - centre) - Math.abs((b.x0 + b.x1) / 2 - centre));
+    const hit = under.find((c) => plausible(field, c.text));
+    if (hit) return hit.text.trim();
+  }
+  return null;
+}
+
+function readLabels(rows: Row[], headerRows: ReadonlySet<Row>, bank: BankBlock | null): LabelHits {
   const hits: LabelHits = {};
-  for (const row of rows) {
-    row.cells.forEach((cell, i) => {
+  rows.forEach((row, rowIndex) => {
+    row.cells.forEach((cell, cellIndex) => {
+      const text = normaliseLabelText(cell.text);
       for (const rule of LABELS) {
         if (hits[rule.field] !== undefined) continue;
-        const m = rule.pattern.exec(cell.text);
+        if (rule.headerOnly && !headerRows.has(row)) continue;
+        // An account number in the bank details is the supplier's bank account.
+        if (rule.field === "account" && bank?.cells.has(cell)) continue;
+        const m = rule.pattern.exec(text);
         if (!m) continue;
-        let value = (m[1] ?? "").trim();
-        if (value === "" && row.cells[i + 1]) {
-          const next = row.cells[i + 1].text.trim();
-          if (plausible(rule.field, next)) value = next;
-        }
-        if (value !== "") hits[rule.field] = value;
-      }
-      if (hits.statementDate === undefined) {
-        const inline = INLINE_STATEMENT_DATE.exec(cell.text);
-        if (inline) hits.statementDate = inline[1].trim();
-      }
-      if (hits.statementDate === undefined && headerRows.has(row)) {
-        const bare = BARE_DATE.exec(cell.text);
-        if (bare) {
-          const value = (bare[1] ?? "").trim() || (row.cells[i + 1]?.text.trim() ?? "");
-          if (value && looksLikeDate(value)) hits.statementDate = value;
-        }
+        const rest = (m[1] ?? "").trim();
+        // A bare or inline label must have a value that looks right; a
+        // dedicated label keeps what follows it (and is reported if unreadable).
+        if ((rule.headerOnly || rule.anywhere) && rest !== "" && !plausible(rule.field, rest)) continue;
+        const value = valueFor(rule.field, rows, rowIndex, cellIndex, rest);
+        if (value !== null && (!(rule.headerOnly || rule.anywhere) || plausible(rule.field, value))) hits[rule.field] = value;
       }
     });
-  }
+  });
   return hits;
 }
 
@@ -361,6 +434,13 @@ function isTitle(text: string): boolean {
 /** Contact details, never a name: "T 021 555 0199", "Tel: …", "+27 …",
  * e-mail and web addresses, and anything that is mostly digits. */
 const CONTACT_LINE = /^(t|tel|telephone|phone|ph|f|fax|c|cell|m|mobile|e|email|e-mail|w|web)\b\s*[.:]?\s*[+(]?\d|^\+?\d[\d\s()-]{6,}$|@|www\.|https?:\/\//i;
+/** Registration, licence, VAT and similar numbers: "Liquor Licence No: 11435". */
+const IDENTIFIER_LINE = /\b(licen[cs]e|reg(?:istration)?|vat|tax|company|co)\b\.?.*\d|\b(?:no|number)\b\.?\s*:?\s*[\w/-]*\d/i;
+/** Postal and street address lines: "PRIVATE BAG X7", "SUITE No. 205", "CHEMPET 7442". */
+const ADDRESS_LINE =
+  /\b(p\s?o\s*box|private\s+bag|postnet\s+suite)\b|\b(suite|unit|shop|floor)\s*(?:no\.?\s*)?\d|^\d+[a-z]?\s+[\w' -]*\b(street|st|road|rd|avenue|ave|drive|dr|lane|way|crescent|boulevard)\b|^[A-Za-z][A-Za-z .'-]*\s\d{4}$|^\d{4}$/i;
+/** Header field words and values, never a name. */
+const FIELD_WORD = /^(date|page|terms?|account|due|\d+\s+of\s+\d+)\b/i;
 
 function isContact(text: string): boolean {
   const t = text.trim();
@@ -370,17 +450,39 @@ function isContact(text: string): boolean {
   return digitCount >= 6 && digitCount > letters * 2;
 }
 
-function letterheadName(page: LayoutPage | undefined, rows: Row[]): string | null {
+function couldBeName(text: string): boolean {
+  const t = normaliseLabelText(text);
+  if (t.length < 2 || !/[A-Za-z]{2}/.test(t)) return false;
+  if (isTitle(t) || isContact(t) || t.includes(":")) return false;
+  if (IDENTIFIER_LINE.test(t) || ADDRESS_LINE.test(t) || FIELD_WORD.test(t)) return false;
+  return !looksLikeDate(t) && !looksLikeMoney(t);
+}
+
+/**
+ * The supplier's name, as a PROPOSAL (a person confirms the supplier):
+ *   1. the largest name-like line in the letterhead band (top 15% of page 1),
+ *      ignoring contact details, registration/licence numbers, addresses,
+ *      field labels and titles — every cell, not only the first in its row;
+ *   2. otherwise (a letterhead printed as a LOGO), the payee of the bank
+ *      details the statement prints;
+ *   3. otherwise the largest name-like first cell in the top 30%.
+ */
+function letterheadName(page: LayoutPage | undefined, rows: Row[], bank: BankBlock | null): string | null {
   if (!page) return null;
-  const top = rows
-    .filter((r) => r.y <= page.height * 0.3 && !isTitle(r.text))
-    .map((r) => ({ row: r, text: r.cells[0]?.text.trim() ?? "" }))
-    .filter((c) => c.text.length >= 2 && !isContact(c.text));
-  if (top.length === 0) return null;
-  // The largest remaining line. (A company suffix is no signal: the
-  // customer's own name, in the address block, carries one too.)
-  const largest = top.reduce((a, b) => (b.row.height > a.row.height ? b : a));
-  return largest.text;
+  const pick = (cells: { cell: Cell; text: string }[]) =>
+    cells.length === 0 ? null : cells.reduce((a, b) => (b.cell.height > a.cell.height ? b : a)).text;
+  const band = rows
+    .filter((r) => r.y <= page.height * 0.15)
+    .flatMap((r) => r.cells.map((cell) => ({ cell, text: cell.text.trim() })))
+    .filter((c) => couldBeName(c.text));
+  const fromLetterhead = pick(band);
+  if (fromLetterhead) return fromLetterhead;
+  if (bank?.payee && couldBeName(bank.payee)) return bank.payee;
+  const wider = rows
+    .filter((r) => r.y <= page.height * 0.3 && r.cells[0])
+    .map((r) => ({ cell: r.cells[0], text: r.cells[0].text.trim() }))
+    .filter((c) => couldBeName(c.text));
+  return pick(wider);
 }
 
 // ---------------------------------------------------------------------
@@ -410,7 +512,8 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
   // The header: rows above the first table heading (on its page and before).
   const firstHeading = allRows.findIndex((r) => detectHeading(r) !== null);
   const headerRows = new Set(firstHeading > 0 ? allRows.slice(0, firstHeading) : []);
-  const labels = readLabels(allRows, headerRows);
+  const bank = findBankBlock(headerRows.size > 0 ? [...headerRows] : allRows);
+  const labels = readLabels(allRows, headerRows, bank);
   const dateFrom = (text: string | undefined, context: { statementDate?: string | null } = {}) => {
     if (!text) return null;
     const r = parseStatementDate(text, context);
@@ -435,7 +538,10 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
     const code = /\b([A-Z]{3})\b/.exec(labels.currency.toUpperCase());
     header.currencyCode = code ? code[1] : null;
   }
-  header.supplierName = letterheadName(pages[0], rowsByPage[0] ?? []);
+  header.supplierName = letterheadName(pages[0], rowsByPage[0] ?? [], bank);
+  if (bank?.accountNumber) {
+    warnings.push(`The account number ${bank.accountNumber} is printed with the supplier's bank details${bank.payee ? ` (${bank.payee})` : ""}: it is the supplier's bank account, not our account number with the supplier, so it is not used for that.`);
+  }
 
   const money = (text: string | undefined | null): { value: number | null; unresolved: boolean } => {
     if (text === undefined || text === null || text.trim() === "") return { value: null, unresolved: false };
@@ -488,10 +594,12 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
   let tableEnded = false;
   let lineOrder = 0;
   let lastTransaction: { line: ExtractedStatementLine; row: Row } | null = null;
-  // Credits printed with a minus sign IN the Credit column. Whether that is
-  // the statement's convention is decided once, for the whole statement.
-  const negativeCredits: { line: ExtractedStatementLine; value: number }[] = [];
-  let positiveCredits = 0;
+  // Every value printed in the Credit column, WITH its sign, and every period
+  // total ("Total: October 2026"): whether the Credit column carries signed
+  // amounts is decided once, for the whole statement, from its own totals.
+  const creditColumn = new Map<ExtractedStatementLine, number>();
+  const periods: { line: ExtractedStatementLine; debit: number | null; credit: number | null }[] = [];
+  let printedTotalCreditSigned: number | null = null;
 
   const push = (line: Omit<ExtractedStatementLine, "lineOrder">) => {
     lineOrder += 1;
@@ -574,7 +682,9 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
         continue;
       }
       if (PERIOD_SUBTOTAL.test(text) && hasMoney) {
-        excluded("subtotal", lastMoney(row));
+        // A period's own totals (debits, credits as printed, and its net).
+        const line = excluded("period-total", lastMoney(row));
+        periods.push({ line, debit: money(m.debit).value, credit: money(m.credit).value });
         lastTransaction = null;
         continue;
       }
@@ -590,6 +700,7 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
         excluded("statement-total", null);
         header.printedTotalDebits = money(m.debit).value;
         header.printedTotalCredits = money(m.credit).value;
+        printedTotalCreditSigned = header.printedTotalCredits;
         lastTransaction = null;
         continue;
       }
@@ -625,7 +736,7 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
 
       let debit: number | null = null;
       let credit: number | null = null;
-      let pendingNegativeCredit: number | null = null;
+      let creditPrinted: number | null = null;
       if (m.debit !== undefined || m.credit !== undefined) {
         const d = money(m.debit);
         const c = money(m.credit);
@@ -633,8 +744,7 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
         else debit = d.value;
         if (c.unresolved || (c.value !== null && c.value < 0)) unresolved.push("credit");
         else credit = c.value;
-        if (!c.unresolved && c.value !== null && c.value < 0) pendingNegativeCredit = c.value;
-        if (!c.unresolved && c.value !== null && c.value > 0) positiveCredits += 1;
+        if (!c.unresolved && c.value !== null) creditPrinted = c.value;
       } else if (m.amount !== undefined) {
         const a = money(m.amount);
         if (a.unresolved) unresolved.push("debit");
@@ -671,29 +781,96 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
         isExcluded: false,
         exclusionReason: null,
       });
-      if (pendingNegativeCredit !== null) negativeCredits.push({ line, value: pendingNegativeCredit });
+      if (creditPrinted !== null) creditColumn.set(line, creditPrinted);
       lastTransaction = { line, row };
     }
   }
 
-  // The Credit column carries a minus on EVERY credit (at least two, and no
-  // credit printed without one): that is this supplier's way of printing
-  // credits, so the minus marks the column, not a reversal. Anything less
-  // consistent stays unread for a person to check.
-  if (negativeCredits.length >= 2 && positiveCredits === 0) {
-    for (const { line, value } of negativeCredits) {
-      line.credit = Math.abs(value);
-      const at = line.unresolvedFields.indexOf("credit");
-      if (at >= 0) line.unresolvedFields.splice(at, 1);
+  // SIGNED CREDIT COLUMN. Some statements print the Credit column as signed
+  // amounts: a minus for what reduces the balance (payments, credits), no
+  // sign for what increases it (a reversal, re-applied cash). That is the
+  // statement's own convention when its printed credit TOTALS are negative,
+  // or when every credit it prints carries a minus. Then:
+  //   - a minus value is a credit;
+  //   - a value without a minus increases the balance — accepted ONLY where
+  //     the period's printed credit total proves it (the signed values add up
+  //     to it exactly); anywhere else it is left unread for a person.
+  // A statement that prints credits without signs is never affected.
+  const printedCredits = [...creditColumn.values()];
+  const negatives = printedCredits.filter((v) => v < 0).length;
+  const positives = printedCredits.filter((v) => v > 0).length;
+  const signedByTotals = periods.some((p) => p.credit !== null && p.credit < 0) || (printedTotalCreditSigned !== null && printedTotalCreditSigned < 0);
+  const signedByUse = negatives >= 2 && positives === 0;
+  if (signedByTotals || signedByUse) {
+    const cents = (v: number) => Math.round(v * 100);
+    // Which period each transaction belongs to: the period total that follows it.
+    const verified = new Set<ExtractedStatementLine>();
+    let start = 0;
+    const ordered = [...lines].sort((a, b) => a.lineOrder - b.lineOrder);
+    for (const period of periods) {
+      const end = ordered.indexOf(period.line);
+      const members = ordered.slice(start, end).filter((l) => !l.isExcluded);
+      start = end + 1;
+      if (period.credit === null) continue;
+      if (members.some((l) => l.unresolvedFields.includes("credit") && !creditColumn.has(l))) continue;
+      const sum = members.reduce((acc, l) => acc + cents(creditColumn.get(l) ?? 0), 0);
+      if (sum === cents(period.credit)) for (const l of members) verified.add(l);
     }
+    let readNegative = 0;
+    let readPositive = 0;
+    let unreadPositive = 0;
+    for (const [line, value] of creditColumn) {
+      const clear = (field: UnresolvedField) => {
+        const at = line.unresolvedFields.indexOf(field);
+        if (at >= 0) line.unresolvedFields.splice(at, 1);
+      };
+      if (value < 0) {
+        line.credit = Math.abs(value);
+        clear("credit");
+        readNegative += 1;
+      } else if (value > 0 && signedByTotals) {
+        if (verified.has(line) && line.debit === null) {
+          // Printed without a minus in a signed Credit column: it increases
+          // the balance, as the period's printed total proves.
+          line.credit = null;
+          line.debit = value;
+          readPositive += 1;
+        } else {
+          line.credit = null;
+          if (!line.unresolvedFields.includes("credit")) line.unresolvedFields.push("credit");
+          unreadPositive += 1;
+        }
+      }
+    }
+    for (const period of periods) if (period.credit !== null && period.credit < 0) period.line.credit = Math.abs(period.credit);
     if (header.printedTotalCredits !== null && header.printedTotalCredits < 0) header.printedTotalCredits = Math.abs(header.printedTotalCredits);
-    warnings.push(`This statement prints its credits with a minus sign in the Credit column; ${negativeCredits.length} credit${negativeCredits.length === 1 ? " was" : "s were"} read as credits on that basis.`);
+    warnings.push(
+      `This statement prints signed amounts in its Credit column: ${readNegative} value${readNegative === 1 ? "" : "s"} with a minus were read as credits` +
+        (readPositive > 0 ? `, and ${readPositive} printed without a minus ${readPositive === 1 ? "was" : "were"} read as increasing the balance, as each period's printed total proves` : "") +
+        (unreadPositive > 0 ? `; ${unreadPositive} printed without a minus could not be proven by a period total and ${unreadPositive === 1 ? "was" : "were"} left for review` : "") +
+        ".",
+    );
   }
+  for (const period of periods) period.line.debit = period.debit;
 
   // Summary boxes outside the table.
   if (header.openingBalance === null && labels.opening) header.openingBalance = money(labels.opening).value;
   if (header.closingBalance === null && ageingTotal !== null) header.closingBalance = ageingTotal;
   if (header.closingBalance === null && labels.closing) header.closingBalance = money(labels.closing).value;
+
+  // OPENING BALANCE 0.00 — only when the statement itself proves it: it prints
+  // no brought-forward or opening balance, every amount was read, and its
+  // lines add up EXACTLY to its closing balance from nothing. Otherwise the
+  // opening balance stays unavailable (never assumed).
+  if (header.openingBalance === null && !labels.opening && header.closingBalance !== null && !lines.some((l) => l.exclusionReason === "brought-forward")) {
+    const transactions = lines.filter((l) => !l.isExcluded);
+    const allRead = transactions.length > 0 && transactions.every((l) => !l.unresolvedFields.includes("debit") && !l.unresolvedFields.includes("credit") && (l.debit !== null || l.credit !== null));
+    const sum = transactions.reduce((acc, l) => acc + Math.round((l.debit ?? 0) * 100) - Math.round((l.credit ?? 0) * 100), 0);
+    if (allRead && sum === Math.round(header.closingBalance * 100)) {
+      header.openingBalance = 0;
+      warnings.push("No opening (brought-forward) balance is printed, and the statement's lines add up exactly to its closing balance from nothing, so its opening balance is 0.00.");
+    }
+  }
 
   if (!tableFound) {
     warnings.push("No transaction table was recognised on this statement. Enter its lines by hand from the original.");

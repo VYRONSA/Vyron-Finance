@@ -34,7 +34,8 @@ export type StatementTransactionType =
 export type UnresolvedField = "transaction_date" | "reference_text" | "debit" | "credit" | "running_balance" | "transaction_type";
 
 /** Why a kept row is not a transaction. */
-export type ExclusionReason = "brought-forward" | "carried-forward" | "page-total" | "subtotal" | "statement-total" | "closing-balance";
+/** "period-total": a period's own totals within the statement ("Total: October 2026"). */
+export type ExclusionReason = "brought-forward" | "carried-forward" | "page-total" | "subtotal" | "period-total" | "statement-total" | "closing-balance";
 
 export type ExtractedStatementLine = {
   lineOrder: number;

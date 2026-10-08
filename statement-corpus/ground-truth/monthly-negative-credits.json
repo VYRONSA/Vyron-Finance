@@ -13,7 +13,7 @@
     "periodFrom": null,
     "periodTo": null,
     "currencyCode": null,
-    "openingBalance": null,
+    "openingBalance": 0,
     "closingBalance": 23251.95,
     "printedTotalDebits": null,
     "printedTotalCredits": null,
@@ -34,9 +34,9 @@
     { "page": 2, "date": "2026-08-05", "reference": "000000002201001", "debit": 4250, "credit": null, "balance": 4250, "type": "unknown", "unresolved": [] }
   ],
   "excluded": [
-    { "page": 1, "reason": "subtotal", "value": 9480.6 },
-    { "page": 1, "reason": "subtotal", "value": 6420.85 },
-    { "page": 2, "reason": "subtotal", "value": 7350.5 }
+    { "page": 1, "reason": "period-total", "value": 9480.6 },
+    { "page": 1, "reason": "period-total", "value": 6420.85 },
+    { "page": 2, "reason": "period-total", "value": 7350.5 }
   ],
-  "validation": { "status": "Review", "codes": ["missing-opening-balance"] }
+  "validation": { "status": "Pass", "codes": [] }
 }

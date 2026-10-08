@@ -141,3 +141,39 @@ exactly with the engine that produced them; new runs never use it.
 - **Reader:** `layout-sd3g.test.ts`, plus a new corpus document, `monthly-negative-credits`. It is synthetic, in the UAT
   statement's layout, hash-pinned, and its answer key was typed by hand from the rendered page.
 - **Validation, input builder, supplier matching, reconciliation service and UI** test additions.
+
+## Reader correction after the real-PDF diagnosis (SD-3G follow-up)
+
+**Source:** production statement #1's retained original. It was downloaded by the owner through the audited viewer and
+verified byte-identical to the stored original (SHA-256). It was used locally only and is not committed. The
+regression fixture `remittance-structure` reproduces its structure item by item at the real coordinates, with invented
+data.
+
+**What the PDF contains, and why it was not read:**
+
+| Field | In the PDF | Why it was missed | Correction |
+|---|---|---|---|
+| Statement date | A `Date` / `Page` label row, with `06/10/2026` / `1 of 1` on the row **below** | Values were only sought in the label's own cell or the next one | Header values found **by position**: own cell, next cell, further along the row, or **below** the label (overlapping horizontally). Each must look like what the label names. |
+| Supplier | The letterhead is a **logo image**. The text near it is only phone, fax, e-mail, web, a licence number and an address. The business name appears as the **payee of the bank details** (bank, account number, branch code) on the same row as the bill-to customer. | "Largest early line" took the licence line, and only the first cell of each row was considered | Letterhead band (top 15%), every cell, excluding contact, identifier, address, label and title lines. If no name remains, the payee of the bank details is used, then the old rule. Still a proposal; a person confirms. |
+| VAT | `V.A.T. REG. No. 4350250850` | The dotted abbreviation was not matched | Dotted abbreviations are normalised. |
+| Account number | `Account Number: 40-8991-5292` inside the **bank details** | It is the supplier's bank account | Not used as our account number with the supplier; the reader adds a note naming it. |
+| Credits | The Credit column holds **signed** amounts: `-R` allocations, unsigned lump receipts (`_CR…`), `R 0,00` "Unapplied cash"; monthly credit totals are printed negative | The "every credit negative" rule correctly refused, so all were unread | A **signed Credit column** is established from the statement's own negative totals. A minus value is a credit. A value without a minus counts as increasing the balance **only where the period's printed credit total proves it**; otherwise it stays unread. "Unapplied cash" is a payment. |
+| Monthly totals | `Total: <Month YYYY>` | Already excluded (as "subtotal") | Excluded as **period totals** (their own exclusion reason), each checked against its own lines (V11). |
+| Opening balance | No brought-forward is printed | — | **0.00 only when proven**: no brought-forward, every amount read, and the lines add up exactly to the closing balance. Otherwise it stays unavailable. |
+| Running balance | Accumulated down the printed page, not row by row in date order | Breaks when walked in date order | Followed in printed or reversed order, whichever fits. If neither fits but **every period total and the statement total reconcile exactly**, the mismatch is a review note, not a blocker. |
+
+**Result on the real PDF** (local, production read path):
+- statement date 2026-10-06;
+- supplier "Gourmet Foods";
+- VAT 4350250850;
+- Total Due 197 556,79;
+- ageing including 90+;
+- opening 0.00, proven;
+- 472 transactions, 0 unread;
+- 15 period totals excluded;
+- 232 invoice lines and 240 payments (Out of Scope);
+- 448 zero-padded references kept exactly;
+- validation **Review** (not blocked).
+
+No migration is needed.
+

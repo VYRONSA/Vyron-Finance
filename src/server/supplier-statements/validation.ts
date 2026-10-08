@@ -22,7 +22,11 @@
  * closing balances are not needed to reconcile documents: their absence is a
  * review note, not a blocker. Unread values on invoice, debit-note and
  * credit-note lines still block. The running balance is followed in the
- * statement's own date order (some statements print newest first).
+ * order the statement itself uses (printed order or its reverse — whichever
+ * the printed balances follow); every PERIOD total ("Total: October 2026") is
+ * checked against its own lines. When every period total and the statement's
+ * total add up exactly, a running balance that follows neither order is a
+ * review note, not a blocker: the amounts themselves are proven.
  *
  * Pure; no I/O.
  */
@@ -53,7 +57,8 @@ export type StatementFinding = {
     | "possible-duplicate-statement"
     | "row-count-mismatch"
     | "payment-unread"
-    | "balance-not-verifiable";
+    | "balance-not-verifiable"
+    | "period-total-mismatch";
   severity: FindingSeverity;
   message: string;
   lineOrder?: number;
@@ -234,40 +239,95 @@ export function validateStatement(input: ValidationInput): ValidationReport {
     }
   }
 
-  // V3 — the printed running balance, line by line. The first break is
+  // V3 — the printed running balance, line by line, in the order the
+  // statement follows (printed, or reversed for a statement printed newest
+  // first) — whichever its printed balances agree with. The first break is
   // located; each later line is re-anchored to its own printed figure so a
   // single misread does not condemn every line after it.
+  const runningBreaks: StatementFinding[] = [];
   if (arithmeticReady) {
-    let previous: number | null = input.openingBalance === null ? null : toCents(input.openingBalance);
-    let breaks = 0;
-    for (const line of inDateOrder(transactions)) {
-      const expected = previous === null ? null : previous + movement(line, convention);
-      if (line.runningBalance !== null) {
-        const printed = toCents(line.runningBalance);
-        if (expected !== null && expected !== printed) {
-          breaks += 1;
-          if (breaks === 1) {
-            findings.push({
-              code: "running-balance-break",
-              severity: isPayment(line) ? "review" : "incomplete",
-              message: `The running balance first stops adding up at ${where(line)}: expected ${rands(expected)}, printed ${rands(printed)}.`,
-              lineOrder: line.lineOrder,
-              pageNumber: line.pageNumber,
-              expectedCents: expected,
-              actualCents: printed,
-              differenceCents: printed - expected,
-            });
-          }
+    const walk = (ordered: ValidationLine[]) => {
+      let previous: number | null = input.openingBalance === null ? null : toCents(input.openingBalance);
+      const found: { line: ValidationLine; expected: number; printed: number }[] = [];
+      for (const line of ordered) {
+        const expected = previous === null ? null : previous + movement(line, convention);
+        if (line.runningBalance !== null) {
+          const printed = toCents(line.runningBalance);
+          if (expected !== null && expected !== printed) found.push({ line, expected, printed });
+          previous = printed;
+        } else {
+          previous = expected;
         }
-        previous = printed;
-      } else {
-        previous = expected;
+      }
+      return found;
+    };
+    const asPrinted = walk(transactions);
+    const reversed = walk([...transactions].reverse());
+    const preferred = walk(inDateOrder(transactions));
+    const breaks = [asPrinted, reversed].reduce((best, b) => (b.length < best.length ? b : best), preferred);
+    if (breaks.length > 0) {
+      const first = breaks[0];
+      runningBreaks.push({
+        code: "running-balance-break",
+        severity: isPayment(first.line) ? "review" : "incomplete",
+        message: `The running balance first stops adding up at ${where(first.line)}: expected ${rands(first.expected)}, printed ${rands(first.printed)}.`,
+        lineOrder: first.line.lineOrder,
+        pageNumber: first.line.pageNumber,
+        expectedCents: first.expected,
+        actualCents: first.printed,
+        differenceCents: first.printed - first.expected,
+      });
+      if (breaks.length > 1) {
+        runningBreaks.push({
+          code: "running-balance-break",
+          severity: breaks.every((b) => isPayment(b.line)) ? "review" : "incomplete",
+          message: `The running balance breaks in ${breaks.length} places in total.`,
+        });
       }
     }
-    if (breaks > 1) {
-      findings.push({ code: "running-balance-break", severity: "incomplete", message: `The running balance breaks in ${breaks} places in total.` });
+  }
+
+  // V11 — each PERIOD total adds up: the period's lines (those printed before
+  // its total, after the previous one) come to the net the total prints.
+  const periodTotals = input.lines.filter((l) => l.exclusionReason === "period-total").sort((a, b) => a.lineOrder - b.lineOrder);
+  let periodsVerified = periodTotals.length > 0;
+  {
+    let from = -Infinity;
+    for (const total of periodTotals) {
+      const members = transactions.filter((l) => l.lineOrder > from && l.lineOrder < total.lineOrder);
+      from = total.lineOrder;
+      if (total.runningBalance === null || members.some((l) => l.unresolvedFields.some((f) => f === "debit" || f === "credit"))) {
+        periodsVerified = false;
+        continue;
+      }
+      const sum = members.reduce((acc, l) => acc + movement(l, convention), 0);
+      const printed = toCents(total.runningBalance);
+      if (sum !== printed) {
+        periodsVerified = false;
+        findings.push({
+          code: "period-total-mismatch",
+          severity: "review",
+          message: `The lines before ${where(total)} come to ${rands(sum)}, but that period total prints ${rands(printed)}.`,
+          lineOrder: total.lineOrder,
+          pageNumber: total.pageNumber,
+          expectedCents: sum,
+          actualCents: printed,
+          differenceCents: printed - sum,
+        });
+      }
     }
   }
+  const statementTotalProven =
+    arithmeticReady && input.openingBalance !== null && input.closingBalance !== null && !findings.some((f) => f.code === "balance-mismatch");
+  if (runningBreaks.length > 0 && periodsVerified && statementTotalProven) {
+    for (const f of runningBreaks) f.severity = "review";
+    runningBreaks.push({
+      code: "running-balance-break",
+      severity: "review",
+      message: "The printed running balance does not follow the order of the lines, but every period total and the statement's total add up exactly, so the amounts are proven. Not blocking.",
+    });
+  }
+  findings.push(...runningBreaks);
 
   // V6 — each page's carried-forward is the next page's brought-forward.
   const forwards = input.lines.filter((l) => l.exclusionReason === "carried-forward" || l.exclusionReason === "brought-forward").sort((a, b) => a.lineOrder - b.lineOrder);

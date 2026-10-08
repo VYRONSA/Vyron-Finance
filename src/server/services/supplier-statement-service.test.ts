@@ -530,7 +530,8 @@ describe("SD-3G — reprocessing a statement", () => {
     expect(await service.processStatement(CO, 7, "reviewer@synthetic.test")).toBe("NeedsReview");
     expect(repo.getDocumentForProcessing).toHaveBeenCalledWith(CO, 70);
     const header = repo.updateStatementAsSystem.mock.calls.find((c) => c[2].status === "NeedsReview")![2];
-    expect(header).toMatchObject({ statement_date: "2026-10-06", closing_balance: 23251.95, opening_balance: null, supplier_name_extracted: "Cape Harbour Fine Foods (Pty) Ltd" });
+    // Opening 0.00 is PROVEN (no brought-forward; the lines add up exactly to the Total Due).
+    expect(header).toMatchObject({ statement_date: "2026-10-06", closing_balance: 23251.95, opening_balance: 0, supplier_name_extracted: "Cape Harbour Fine Foods (Pty) Ltd" });
     const lines = repo.replaceLinesAsSystem.mock.calls[0][2] as { transaction_type: string; unresolved_fields: string[]; is_excluded: boolean }[];
     expect(lines.filter((l) => !l.is_excluded)).toHaveLength(12);
     expect(lines.filter((l) => l.transaction_type === "payment")).toHaveLength(4);

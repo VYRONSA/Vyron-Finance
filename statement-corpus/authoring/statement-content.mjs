@@ -355,6 +355,25 @@ export const STATEMENTS = [
     ageing: [["90+ Days", "R 0,00"], ["60 Days", "R 0,00"], ["30 Days", "R 9 771,35"], ["Current", "R 13 480,60"], ["Total Due", "23 251,95"], ["Overdue", "R 9 771,35"]],
     footer: "We look forward to your timeous payment as per your agreed terms.",
   },
+  // SD-3G (real-PDF diagnosis) — the STRUCTURE of the real supplier statement
+  // met in production UAT, reproduced item by item at the real PDF's own
+  // positions (points from the top-left), with INVENTED data:
+  //   - the letterhead name is a LOGO (an image, no text); the centred text is
+  //     only telephone, fax, e-mail, web, a licence number and an address;
+  //   - "STATEMENT", "V.A.T. REG. No. …", and a Date | Page box whose values
+  //     sit BELOW the labels;
+  //   - the customer (bill-to) on the left; the supplier's BANK details on the
+  //     right, headed by the payee name, with the supplier's bank account;
+  //   - "Overdue: …" and an ageing block (90+ days … Total Due) with values on
+  //     the row beneath, on page 1 and again at the end;
+  //   - Date | Invoice | Description | Our Reference | Debit | Credit | Balance
+  //     on every page; newest first; 15-digit zero-padded invoice numbers;
+  //   - a SIGNED Credit column: allocations "-R …", a lump receipt "_CR…"
+  //     printed WITHOUT a minus, "Unapplied cash R 0,00", "IMMEDIATE TRF CR";
+  //   - monthly "Total: <Month YYYY>" rows with signed credit totals;
+  //   - no brought-forward balance; the lines add up to the Total Due from 0;
+  //   - a Balance column accumulated down the page (not in date order).
+  remittanceStatement(),
   // Scans: the karoo-point statement, flattened to an image (no text layer).
   { key: "scanned", format: "scanned-pdf", from: "karoo-point" },
   { key: "scan-jpg", format: "jpg", from: "karoo-point" },
@@ -394,3 +413,81 @@ export const STATEMENTS = [
     ],
   },
 ];
+
+/** SD-3G — builds the positioned items of the "remittance-structure" document
+ * (see its entry in STATEMENTS). Every figure is invented and worked by hand:
+ * debits 6 500,75; signed credits −1 000,00; Total Due 5 500,75. */
+function remittanceStatement() {
+  const p1 = [];
+  const p2 = [];
+  const t = (items, x, top, text, size = 9, extra = {}) => items.push({ x, top, text, size, ...extra });
+  const r = (items, right, top, text, size = 9, extra = {}) => items.push({ right, top, text, size, ...extra });
+  // Letterhead (text only beside the logo).
+  t(p1, 262, 32, "T 021 555 0100", 10); t(p1, 262, 42, "F 021 555 0101", 10);
+  t(p1, 232, 52, "E accounts@atlanticgourmet.example", 10); t(p1, 235, 62, "W www.atlanticgourmet.example", 10);
+  t(p1, 240, 82, "Liquor Licence No: 99999", 10);
+  t(p1, 264, 102, "SUITE No. 12", 10); t(p1, 256, 112, "PRIVATE BAG X99", 10); t(p1, 261, 122, "SEAPOINT 8005", 10);
+  t(p1, 438, 36, "STATEMENT", 14, { bold: true }); t(p1, 415, 46, "V.A.T. REG. No. 4999888777", 10);
+  t(p1, 421, 80, "Date", 10, { bold: true }); t(p1, 519, 80, "Page", 10, { bold: true });
+  t(p1, 407, 94, "06/10/2026", 10); t(p1, 518, 94, "1 of 1", 10);
+  // Customer (left) and the supplier's bank details (right).
+  t(p1, 22, 158, "Riverbend Trading (Pty) Ltd", 9, { bold: true }); t(p1, 22, 223, "TERMS: 30", 9, { bold: true });
+  t(p1, 389, 158, "Atlantic Gourmet Foods", 9, { bold: true }); t(p1, 389, 171, "Example Bank", 9);
+  t(p1, 389, 197, "Business Banking", 9); t(p1, 389, 210, "Account Number: 40-0000-1234", 9); t(p1, 389, 223, "Branch Code: 600000", 9);
+  t(p1, 389, 249, "Overdue: R 2 000,75", 9, { bold: true });
+  const ageing = (items, top) => {
+    t(items, 52, top, "90+ days", 9, { bold: true }); t(items, 168, top, "60 days", 9, { bold: true }); t(items, 283, top, "30 Day", 9, { bold: true });
+    t(items, 394, top, "Current", 9, { bold: true }); t(items, 537, top, "Total Due", 9, { bold: true });
+    t(items, 58, top + 13, "R 0,00"); t(items, 160, top + 13, "R 2 000,75"); t(items, 270, top + 13, "R 0,00");
+    t(items, 386, top + 13, "R 3 500,00"); t(items, 533, top + 13, "5 500,75");
+  };
+  ageing(p1, 285);
+  const heading = (items, top) => {
+    for (const [x, label] of [[17, "Date"], [73.5, "Invoice"], [158.3, "Description"], [259.9, "Our Reference"], [408.6, "Debit"], [478.6, "Credit"], [543.5, "Balance"]]) t(items, x, top, label, 9, { bold: true });
+  };
+  const row = (items, top, [date, invoice, description, ours, debit, credit, balance]) => {
+    t(items, 17, top, date); t(items, 73.5, top, invoice);
+    if (description) t(items, 158.3, top, description);
+    if (ours) t(items, 259.9, top, ours);
+    if (debit) r(items, 431, top, debit);
+    if (credit) r(items, 505, top, credit);
+    r(items, 578, top, balance);
+  };
+  const total = (items, top, [label, period, debit, credit, net]) => {
+    t(items, 17, top, label); t(items, 74, top, period); r(items, 431, top, debit); r(items, 505, top, credit); r(items, 578, top, net);
+  };
+  heading(p1, 329);
+  const page1 = [
+    ["06/10/2026", "000000002300002", "PO-200002", "000000010400002", "R 1 500,00", "", "R 3 500,00"],
+    ["02/10/2026", "000000002300001", "PO-200001", "000000010400001", "R 2 000,00", "", "R 5 500,00"],
+  ];
+  let top = 342;
+  for (const line of page1) { row(p1, top, line); top += 13; }
+  total(p1, top, ["Total:", "October 2026", "R 3 500,00", "R 0,00", "R 3 500,00"]); top += 13;
+  for (const line of [
+    ["09/09/2026", "000000002290003", "Payment", "", "", "-R 700,00", "R 4 800,00"],
+    ["09/09/2026", "000000002290004", "Payment", "", "", "-R 300,00", "R 4 500,00"],
+    ["09/09/2026", "_CR00002", "Payment", "", "", "R 1 000,00", "R 5 500,00"],
+    ["08/09/2026", "_CR00002", "Unapplied cash", "", "", "R 0,00", "R 5 500,00"],
+    ["08/09/2026", "_CR00002", "Payment", "IMMEDIATE TRF CR", "", "-R 1 000,00", "R 4 500,00"],
+    ["05/09/2026", "000000002290002", "PO-190002", "000000010390002", "R 700,00", "", "R 5 200,00"],
+    ["01/09/2026", "000000002290001", "PO-190001", "000000010390001", "R 300,00", "", "R 5 500,00"],
+  ]) { row(p1, top, line); top += 13; }
+  total(p1, top, ["Total:", "September 2026", "R 1 000,00", "-R 1 000,00", "R 0,00"]);
+  heading(p2, 31);
+  top = 44;
+  for (const line of [
+    ["20/08/2026", "000000002280002", "PO-180002", "000000010380002", "R 1 250,50", "", "R 6 750,50"],
+    ["10/08/2026", "000000002280001", "PO-180001", "000000010380001", "R 750,25", "", "R 7 500,75"],
+  ]) { row(p2, top, line); top += 13; }
+  total(p2, top, ["Total:", "August 2026", "R 2 000,75", "R 0,00", "R 2 000,75"]); top += 13;
+  ageing(p2, top);
+  t(p2, 177, top + 28, "We look forward to your timeous payment as per your agreed terms.");
+  return {
+    key: "remittance-structure",
+    format: "pdf",
+    layout: "positioned",
+    logo: { x: 22, top: 20, width: 150, height: 70 },
+    positionedPages: [p1, p2],
+  };
+}

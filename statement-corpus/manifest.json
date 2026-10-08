@@ -96,6 +96,12 @@
       "file": "documents/monthly-negative-credits.pdf",
       "format": "pdf",
       "sha256": "8c6fbd3b20ba7dca5387047c1a94ab0179d0344b24182acd0652d81e2ae6b34b"
+    },
+    {
+      "key": "remittance-structure",
+      "file": "documents/remittance-structure.pdf",
+      "format": "pdf",
+      "sha256": "92725a68b6bfdb789422cf2a9ad7a6125689ba0dac6fa6c3050ea5bb3c9936a2"
     }
   ]
 }

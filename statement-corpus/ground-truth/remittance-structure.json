@@ -1,0 +1,41 @@
+{
+  "key": "remittance-structure",
+  "file": "documents/remittance-structure.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "pageCount": 2,
+  "header": {
+    "supplierName": "Atlantic Gourmet Foods",
+    "accountNumber": null,
+    "supplierVatNumber": "4999888777",
+    "supplierRegistrationNumber": null,
+    "statementDate": "2026-10-06",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": 0,
+    "closingBalance": 5500.75,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": { "current": 3500, "days30": 0, "days60": 2000.75, "days90": 0, "days120Plus": null }
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-10-06", "reference": "000000002300002", "debit": 1500, "credit": null, "balance": 3500, "type": "unknown", "unresolved": [], "descriptionIncludes": ["PO-200002", "000000010400002"] },
+    { "page": 1, "date": "2026-10-02", "reference": "000000002300001", "debit": 2000, "credit": null, "balance": 5500, "type": "unknown", "unresolved": [] },
+    { "page": 1, "date": "2026-09-09", "reference": "000000002290003", "debit": null, "credit": 700, "balance": 4800, "type": "payment", "unresolved": [], "rawIncludes": ["-R 700,00"] },
+    { "page": 1, "date": "2026-09-09", "reference": "000000002290004", "debit": null, "credit": 300, "balance": 4500, "type": "payment", "unresolved": [] },
+    { "page": 1, "date": "2026-09-09", "reference": "_CR00002", "debit": 1000, "credit": null, "balance": 5500, "type": "payment", "unresolved": [], "rawIncludes": ["R 1 000,00"] },
+    { "page": 1, "date": "2026-09-08", "reference": "_CR00002", "debit": null, "credit": 0, "balance": 5500, "type": "payment", "unresolved": [], "descriptionIncludes": ["Unapplied cash"] },
+    { "page": 1, "date": "2026-09-08", "reference": "_CR00002", "debit": null, "credit": 1000, "balance": 4500, "type": "payment", "unresolved": [], "descriptionIncludes": ["IMMEDIATE TRF CR"] },
+    { "page": 1, "date": "2026-09-05", "reference": "000000002290002", "debit": 700, "credit": null, "balance": 5200, "type": "unknown", "unresolved": [] },
+    { "page": 1, "date": "2026-09-01", "reference": "000000002290001", "debit": 300, "credit": null, "balance": 5500, "type": "unknown", "unresolved": [] },
+    { "page": 2, "date": "2026-08-20", "reference": "000000002280002", "debit": 1250.5, "credit": null, "balance": 6750.5, "type": "unknown", "unresolved": [] },
+    { "page": 2, "date": "2026-08-10", "reference": "000000002280001", "debit": 750.25, "credit": null, "balance": 7500.75, "type": "unknown", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "period-total", "value": 3500 },
+    { "page": 1, "reason": "period-total", "value": 0 },
+    { "page": 2, "reason": "period-total", "value": 2000.75 }
+  ],
+  "validation": { "status": "Review", "codes": ["running-balance-break"] }
+}

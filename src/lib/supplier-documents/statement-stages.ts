@@ -104,6 +104,7 @@ export const EXCLUSION_LABEL: Record<string, string> = {
   "carried-forward": "Carried forward",
   "page-total": "Page total",
   subtotal: "Sub-total",
+  "period-total": "Period total",
   "statement-total": "Statement totals",
   "closing-balance": "Closing balance",
 };

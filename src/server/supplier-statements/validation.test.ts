@@ -254,3 +254,33 @@ describe("SD-3G — document scope: payments never block", () => {
     expect(finding.severity).toBe("incomplete"); // an invoice line: a document amount may be misread
   });
 });
+
+describe("SD-3G (real-PDF diagnosis) — period totals and the running balance's own order", () => {
+  const periodTotal = (net: number) => line({ isExcluded: true, exclusionReason: "period-total", runningBalance: net, debit: null, credit: null, transactionDate: null, referenceText: null });
+  it("every period total is checked against its own lines", () => {
+    const ok = validateStatement(input({ openingBalance: 0, closingBalance: 150, lines: [line({ debit: 100 }), line({ debit: 50 }), periodTotal(150)] }));
+    expect(ok.findings.map((f) => f.code)).not.toContain("period-total-mismatch");
+    const bad = validateStatement(input({ openingBalance: 0, closingBalance: 150, lines: [line({ debit: 100 }), line({ debit: 50 }), periodTotal(140)] }));
+    expect(bad.findings.find((f) => f.code === "period-total-mismatch")).toMatchObject({ severity: "review", expectedCents: 15000, actualCents: 14000 });
+  });
+  it("a running balance accumulated down the page (newest first) is followed in printed order", () => {
+    const report = validateStatement(input({ openingBalance: 0, closingBalance: 300, lines: [
+      line({ transactionDate: "2026-10-06", debit: 100, runningBalance: 100 }),
+      line({ transactionDate: "2026-10-01", debit: 200, runningBalance: 300 }),
+    ] }));
+    expect(report.findings.map((f) => f.code)).not.toContain("running-balance-break");
+  });
+  it("a running balance that follows NO order is a review note only when every period total and the statement total add up", () => {
+    const lines = [line({ debit: 100, runningBalance: 999 }), line({ debit: 50, runningBalance: 5 }), periodTotal(150)];
+    const proven = validateStatement(input({ openingBalance: 0, closingBalance: 150, lines }));
+    expect(proven.status).toBe("Review");
+    expect(proven.findings.filter((f) => f.code === "running-balance-break").every((f) => f.severity === "review")).toBe(true);
+    expect(proven.findings.map((f) => f.message).join(" ")).toMatch(/every period total and the statement's total add up exactly/);
+    // Without proof (no period totals), it still blocks.
+    const unproven = validateStatement(input({ openingBalance: 0, closingBalance: 150, lines: lines.slice(0, 2) }));
+    expect(unproven.status).toBe("Incomplete");
+    // A period that does NOT add up keeps it blocking.
+    const mismatch = validateStatement(input({ openingBalance: 0, closingBalance: 150, lines: [...lines.slice(0, 2), periodTotal(149)] }));
+    expect(mismatch.status).toBe("Incomplete");
+  });
+});

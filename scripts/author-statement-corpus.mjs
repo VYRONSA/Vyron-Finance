@@ -98,6 +98,33 @@ function buildHtml(doc) {
   </body></html>`;
 }
 
+/** SD-3G — a document laid out item by item at given positions (points from
+ * the top-left, `top` = text baseline), reproducing a real statement's
+ * geometry. The logo is an image (no text), as on the real statement. */
+function buildPositionedHtml(doc) {
+  const logo = doc.logo
+    ? `<svg class="logo" style="left:${doc.logo.x}pt;top:${doc.logo.top}pt;width:${doc.logo.width}pt;height:${doc.logo.height}pt" viewBox="0 0 150 70"><rect x="2" y="2" width="146" height="66" rx="10" fill="#1f3b57"/><circle cx="35" cy="35" r="20" fill="#f2b134"/><rect x="65" y="25" width="70" height="8" fill="#f2b134"/><rect x="65" y="40" width="50" height="6" fill="#ffffff"/></svg>`
+    : "";
+  const item = (it) => {
+    const font = `font-size:${it.size}pt;${it.bold ? "font-weight:bold;" : ""}`;
+    const y = it.top - it.size * 0.82;
+    return it.right !== undefined
+      ? `<span style="right:${(595 - it.right).toFixed(1)}pt;top:${y.toFixed(1)}pt;${font}">${escape(it.text)}</span>`
+      : `<span style="left:${it.x}pt;top:${y.toFixed(1)}pt;${font}">${escape(it.text)}</span>`;
+  };
+  return `<!doctype html><html><head><meta charset="utf-8"><title> </title><style>
+    @page { size: 595pt 842pt; margin: 0; }
+    html, body { margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111; }
+    .page { position: relative; width: 595pt; height: 842pt; overflow: hidden; break-after: page; }
+    .page:last-child { break-after: auto; }
+    .page span { position: absolute; white-space: pre; line-height: 1; }
+    .logo { position: absolute; }
+  </style></head><body>
+    ${doc.positionedPages.map((items, i) => `<section class="page">${i === 0 ? logo : ""}${items.map(item).join("")}</section>`).join("")}
+  </body></html>`;
+}
+
 function normalisePdf(buffer) {
   let text = Buffer.from(buffer).toString("latin1");
   text = text.replace(/\/CreationDate \(D:\d{14}[+\-Z]\d{2}'\d{2}'\)/g, "/CreationDate (D:20260101000000+00'00')");
@@ -177,11 +204,12 @@ async function render(browser, doc) {
   await page.setRequestInterception(true);
   page.on("request", (r) => (r.url().startsWith("data:") ? r.continue() : r.abort()));
   await page.setViewport({ width: 900, height: 1250, deviceScaleFactor: doc.format === "pdf" ? 1 : 1.6 });
-  await page.setContent(buildHtml(source), { waitUntil: "load" });
+  await page.setContent(source.layout === "positioned" ? buildPositionedHtml(source) : buildHtml(source), { waitUntil: "load" });
   await settle(page);
   try {
     if (doc.format === "pdf") {
-      return { filename: `${doc.key}.pdf`, output: normalisePdf(await page.pdf({ format: "A4", printBackground: true, margin: { top: "14mm", right: "14mm", bottom: "14mm", left: "14mm" } })) };
+      const margin = source.layout === "positioned" ? { top: "0", right: "0", bottom: "0", left: "0" } : { top: "14mm", right: "14mm", bottom: "14mm", left: "14mm" };
+      return { filename: `${doc.key}.pdf`, output: normalisePdf(await page.pdf({ format: "A4", printBackground: true, margin })) };
     }
     const image = await page.screenshot({ type: doc.format === "jpg" ? "jpeg" : "png", quality: doc.format === "jpg" ? 85 : undefined, fullPage: true });
     if (doc.format === "jpg") return { filename: `${doc.key}.jpg`, output: image };
