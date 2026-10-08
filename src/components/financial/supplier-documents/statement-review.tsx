@@ -150,6 +150,13 @@ export function StatementReviewWorkspace({
 
   // ------------------------------------------------------------ next step
   function nextStep(): { title: string; description: ReactNode; actions: ReactNode } {
+    // SD-3G: have the retained original read again by the current reader. The
+    // server refuses when a person has already worked on the statement.
+    const readAgain = can.edit && ["NeedsReview", "ManualEntry", "Failed"].includes(statement.status) && !statement.supplierConfirmed && (
+      <Button variant="subtle" size="sm" disabled={busy} onClick={() => void act({ action: "reprocess" }, "Being read again with the current reader. This page updates by itself.")}>
+        Read again
+      </Button>
+    );
     const reject = can.reject && !["Rejected", "Processing"].includes(statement.status) && (
       <Button variant="subtle" size="sm" disabled={busy} onClick={() => confirm.request("reject")}>
         Reject
@@ -189,6 +196,7 @@ export function StatementReviewWorkspace({
                   Enter by hand
                 </Button>
               )}
+              {readAgain}
               {reject}
             </>
           ),
@@ -204,6 +212,7 @@ export function StatementReviewWorkspace({
                   Submit for review
                 </Button>
               )}
+              {readAgain}
               {reject}
             </>
           ),
@@ -219,6 +228,7 @@ export function StatementReviewWorkspace({
                   Mark ready for reconciliation
                 </Button>
               )}
+              {readAgain}
               {reject}
             </>
           ),

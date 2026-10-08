@@ -11,6 +11,7 @@ import {
   processStatement,
   rejectStatement,
   reopenStatement,
+  reprocessStatement,
   requeueStatement,
   startStatementManualEntry,
   submitStatementForReview,
@@ -49,6 +50,8 @@ const ACTION_PERMISSION: Record<string, "Purchasing:Edit" | "Purchasing:Reject">
   "mark-ready": "Purchasing:Edit",
   reopen: "Purchasing:Edit",
   requeue: "Purchasing:Edit",
+  // SD-3G: read the retained original again with the current reader.
+  reprocess: "Purchasing:Edit",
   reject: "Purchasing:Reject",
 };
 
@@ -104,6 +107,18 @@ export async function PATCH(request: Request, { params }: Params) {
       case "reject":
         await rejectStatement(companyId, id, typeof body.reason === "string" ? body.reason : "");
         break;
+      case "reprocess": {
+        await reprocessStatement(companyId, id);
+        const performedBy = await getPerformedByLabel();
+        after(async () => {
+          try {
+            await processStatement(companyId, id, performedBy);
+          } catch (error) {
+            console.error("Supplier statement reprocessing did not complete.", { companyId, statementId: id, error: error instanceof Error ? error.name : "error" });
+          }
+        });
+        break;
+      }
       case "requeue": {
         await requeueStatement(companyId, id);
         const performedBy = await getPerformedByLabel();

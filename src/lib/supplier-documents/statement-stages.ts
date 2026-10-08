@@ -283,6 +283,7 @@ export const EVENT_LABEL: Record<string, string> = {
   AiExtractionRefused: "Automatic reading not attempted",
   AiExtracted: "Read by AI (check against the original)",
   AiExtractionFailed: "Automatic reading failed",
+  Reprocessed: "Read again with the current reader",
   ManualEntryRequired: "Needs entering by hand",
   ValidationEvaluated: "Checked",
   SupplierProposed: "Supplier proposed",

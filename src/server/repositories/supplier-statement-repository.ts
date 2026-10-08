@@ -121,7 +121,9 @@ export type StatementEventType =
   // SD-3D (0115)
   | "ReconciliationRun" | "ResolutionRecorded" | "ResolutionRevoked"
   // SD-3F (0116)
-  | "AiExtractionSkipped" | "AiExtractionRefused" | "AiExtracted" | "AiExtractionFailed";
+  | "AiExtractionSkipped" | "AiExtractionRefused" | "AiExtracted" | "AiExtractionFailed"
+  // SD-3G (0118)
+  | "Reprocessed";
 
 /** Header fields a reviewer may correct (the guard enforces the same list). */
 export type ReviewerStatementFields = Partial<{

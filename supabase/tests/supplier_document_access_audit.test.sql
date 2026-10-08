@@ -306,8 +306,8 @@ select pg_temp.ok(pg_temp.err(pg_temp.rec(pg_temp.co_a(), pg_temp.doc('a-plain.p
   'P7 an ordinary company document cannot be passed off as a capture original');
 select pg_temp.ok(pg_temp.err(pg_temp.rec(pg_temp.co_a(), pg_temp.doc('b-cap.pdf'), pg_temp.cap('b-cap.pdf'), null, 'view')) like '%is not the original of capture%',
   'P8 a company A viewer cannot record (and so cannot be served) company B''s original');
-select pg_temp.ok(pg_temp.err(pg_temp.rec(pg_temp.co_a(), pg_temp.doc('a-cap1.pdf'), pg_temp.cap('a-cap1.pdf'), null, 'print')) like '%view or download%',
-  'P9 the action must be view or download');
+select pg_temp.ok(pg_temp.err(pg_temp.rec(pg_temp.co_a(), pg_temp.doc('a-cap1.pdf'), pg_temp.cap('a-cap1.pdf'), null, 'print')) like '%view, download or reprocess%',
+  'P9 the action must be view or download (or, since 0118, a statement reprocess)');
 select pg_temp.ok(pg_temp.err(pg_temp.rec(pg_temp.co_a(), pg_temp.doc('a-cap1.pdf'), null, null, 'view')) like '%exactly one capture or one statement%',
   'P10 an access must name a capture or a statement');
 select pg_temp.ok(pg_temp.err(pg_temp.rec(pg_temp.co_a(), pg_temp.doc('a-cap1.pdf'), pg_temp.cap('a-cap1.pdf'), 1, 'view')) like '%exactly one capture or one statement%',

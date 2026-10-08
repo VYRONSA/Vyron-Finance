@@ -19,6 +19,7 @@ const m = vi.hoisted(() => ({
     rejectStatement: vi.fn(),
     reopenStatement: vi.fn(),
     requeueStatement: vi.fn(),
+    reprocessStatement: vi.fn(),
     startStatementManualEntry: vi.fn(),
     submitStatementForReview: vi.fn(),
     unconfirmStatementSupplier: vi.fn(),
@@ -56,6 +57,7 @@ describe("PATCH a supplier statement", () => {
     ["mark-ready", "Purchasing:Edit"],
     ["reopen", "Purchasing:Edit"],
     ["requeue", "Purchasing:Edit"],
+    ["reprocess", "Purchasing:Edit"],
     ["reject", "Purchasing:Reject"],
   ])("%s needs %s, checked before anything is looked up", async (action, permission) => {
     m.requirePermission.mockResolvedValue({ ok: false, response: new Response(null, { status: 403 }) });
@@ -84,6 +86,24 @@ describe("PATCH a supplier statement", () => {
     const { PATCH } = await import("./route");
     const res = await PATCH(patch({ action: "mark-ready" }), params);
     expect(res.status).toBe(409);
+  });
+
+  it("reprocess resets through the service, then reads again after the response — never inline", async () => {
+    const { PATCH } = await import("./route");
+    const res = await PATCH(patch({ action: "reprocess", performedBy: "someone-else" }), params);
+    expect(res.status).toBe(200);
+    expect(m.service.reprocessStatement).toHaveBeenCalledWith("co_1", 7);
+    expect(m.service.processStatement).not.toHaveBeenCalled();
+    expect(m.after).toHaveBeenCalledTimes(1);
+    await m.after.mock.calls[0][0]();
+    expect(m.service.processStatement).toHaveBeenCalledWith("co_1", 7, "editor@synthetic.test");
+  });
+
+  it("a refused reprocess schedules nothing", async () => {
+    m.service.reprocessStatement.mockRejectedValue(Object.assign(new Error("Purchasing:Edit is required to reprocess a statement"), { code: "42501" }));
+    const { PATCH } = await import("./route");
+    expect((await PATCH(patch({ action: "reprocess" }), params)).status).toBe(409);
+    expect(m.after).not.toHaveBeenCalled();
   });
 
   it("requeue schedules processing after the response, never inline", async () => {

@@ -23,7 +23,9 @@ const BUCKET = "documents";
  * until then the database refuses them, so nothing is served. */
 export type SupplierOriginalSubject = { kind: "capture"; captureId: number } | { kind: "statement"; statementId: number };
 
-export type OriginalAccessAction = "view" | "download";
+/** "reprocess" (0118): the server re-reads a statement original with the
+ * current reader at a reviewer's request — recorded like any other access. */
+export type OriginalAccessAction = "view" | "download" | "reprocess";
 
 /** Records one view or download. Throws when the database refuses or the
  * write fails — the caller must then NOT serve the file. */

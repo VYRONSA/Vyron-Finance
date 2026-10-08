@@ -34,10 +34,19 @@ const repo = vi.hoisted(() => ({
   statementAiGate: vi.fn(),
   recordStatementAiAttempt: vi.fn(),
 }));
-const { readSupplierOriginalBytes, setSupplierOurAccountNumber } = vi.hoisted(() => ({ readSupplierOriginalBytes: vi.fn(), setSupplierOurAccountNumber: vi.fn() }));
+const { readSupplierOriginalBytes, setSupplierOurAccountNumber, recordSupplierDocumentAccess, recon } = vi.hoisted(() => ({
+  readSupplierOriginalBytes: vi.fn(),
+  setSupplierOurAccountNumber: vi.fn(),
+  recordSupplierDocumentAccess: vi.fn(),
+  recon: { listRuns: vi.fn(), listResolutionsAsSystem: vi.fn() },
+}));
 
 vi.mock("@/server/repositories/supplier-statement-repository", () => repo);
-vi.mock("@/server/repositories/supplier-document-access-repository", () => ({ readSupplierOriginalBytes: (...a: unknown[]) => readSupplierOriginalBytes(...a) }));
+vi.mock("@/server/repositories/supplier-document-access-repository", () => ({
+  readSupplierOriginalBytes: (...a: unknown[]) => readSupplierOriginalBytes(...a),
+  recordSupplierDocumentAccess: (...a: unknown[]) => recordSupplierDocumentAccess(...a),
+}));
+vi.mock("@/server/repositories/supplier-statement-reconciliation-repository", () => recon);
 vi.mock("@/server/services/supplier-management-service", () => ({ setSupplierOurAccountNumber: (...a: unknown[]) => setSupplierOurAccountNumber(...a) }));
 vi.mock("@/server/auth/require-session", () => ({ getPerformedByLabel: async () => "reviewer@synthetic.test" }));
 
@@ -421,5 +430,110 @@ describe("SD-3F — AI reading of scanned statements", () => {
 
   it("no network call is made on any path in this suite", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------
+// SD-3G — reprocess: the retained original, read again by the current reader
+// ---------------------------------------------------------------------
+
+describe("SD-3G — reprocessing a statement", () => {
+  const systemEvents = ["Uploaded", "ProcessingStarted", "Extracted", "SupplierProposed", "ValidationEvaluated"].map((t, i) => ({ id: i + 1, event_type: t }));
+  const oldLines = [
+    { id: 1, line_order: 1, is_excluded: false, unresolved_fields: ["credit"], corrected: false, extracted_by: "reader" },
+    { id: 2, line_order: 2, is_excluded: false, unresolved_fields: [], corrected: false, extracted_by: "reader" },
+    { id: 3, line_order: 3, is_excluded: true, unresolved_fields: [], corrected: false, extracted_by: "reader" },
+  ];
+  function ready(over: Record<string, unknown> = {}) {
+    repo.getStatement.mockResolvedValue(statementRow({ status: "NeedsReview", extraction_method: "layout", validation_status: "Incomplete", document_id: 70, ...over }));
+    repo.listStatementEvents.mockResolvedValue(systemEvents);
+    repo.listStatementLinesAsSystem.mockResolvedValue(oldLines);
+    recon.listRuns.mockResolvedValue([]);
+    recon.listResolutionsAsSystem.mockResolvedValue([]);
+    recordSupplierDocumentAccess.mockResolvedValue(901);
+  }
+
+  it("records an audited 'reprocess' access FIRST, keeps a summary of what it replaces, clears only derived data and queues the statement", async () => {
+    ready();
+    const order: string[] = [];
+    recordSupplierDocumentAccess.mockImplementation(async () => { order.push("access"); return 901; });
+    repo.recordSystemStatementEvent.mockImplementation(async () => { order.push("event"); });
+    repo.replaceLinesAsSystem.mockImplementation(async () => { order.push("lines"); });
+    repo.updateStatementAsSystem.mockImplementation(async () => { order.push("statement"); });
+
+    expect(await service.reprocessStatement(CO, 7)).toBe("Queued");
+
+    expect(order).toEqual(["access", "event", "lines", "statement"]);
+    expect(recordSupplierDocumentAccess).toHaveBeenCalledWith({ companyId: CO, documentId: 70, subject: { kind: "statement", statementId: 7 }, action: "reprocess" });
+    expect(repo.recordSystemStatementEvent).toHaveBeenCalledWith(CO, 7, "Reprocessed",
+      { from: "NeedsReview", documentId: 70, previous: { method: "layout", transactions: 2, excludedRows: 1, unreadLines: 1, validationStatus: "Incomplete" } }, "reviewer@synthetic.test");
+    expect(repo.replaceLinesAsSystem).toHaveBeenCalledWith(CO, 7, []);
+    const reset = repo.updateStatementAsSystem.mock.calls[0][2];
+    expect(reset).toMatchObject({ status: "Queued", supplier_id: null, statement_date: null, closing_balance: null, extraction_snapshot: null, validation_status: "Pending" });
+    // Never the original document, never a new document, never confirmation fields.
+    expect(reset).not.toHaveProperty("document_id");
+    expect(reset).not.toHaveProperty("content_sha256");
+    expect(reset).not.toHaveProperty("supplier_confirmed_at");
+  });
+
+  it("fail-closed: if the access cannot be recorded, nothing changes", async () => {
+    ready();
+    recordSupplierDocumentAccess.mockRejectedValue(Object.assign(new Error("Purchasing:Edit is required to reprocess a statement"), { code: "42501" }));
+    await expect(service.reprocessStatement(CO, 7)).rejects.toThrow(/Purchasing:Edit/);
+    expect(repo.recordSystemStatementEvent).not.toHaveBeenCalled();
+    expect(repo.replaceLinesAsSystem).not.toHaveBeenCalled();
+    expect(repo.updateStatementAsSystem).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a reviewer's correction", { events: ["LineCorrected"] }, /worked on \(LineCorrected\)/],
+    ["a header correction", { events: ["FieldCorrected"] }, /FieldCorrected/],
+    ["manual entry by a person", { events: ["ManualEntryStarted"] }, /ManualEntryStarted/],
+    ["a line added by a reviewer", { lines: [{ id: 9, line_order: 9, is_excluded: false, unresolved_fields: [], corrected: true, extracted_by: "reviewer" }] }, /1 corrected or added line/],
+    ["a reconciliation run", { runs: [{ id: 1 }] }, /1 reconciliation run/],
+    ["a reconciliation decision", { resolutions: [{ id: 1 }] }, /1 reconciliation decision/],
+  ])("REFUSES (never overwrites) when there is %s", async (_label, over, message) => {
+    ready();
+    if ("events" in over) repo.listStatementEvents.mockResolvedValue([...systemEvents, ...over.events.map((t, i) => ({ id: 100 + i, event_type: t }))]);
+    if ("lines" in over) repo.listStatementLinesAsSystem.mockResolvedValue([...oldLines, ...over.lines]);
+    if ("runs" in over) recon.listRuns.mockResolvedValue(over.runs);
+    if ("resolutions" in over) recon.listResolutionsAsSystem.mockResolvedValue(over.resolutions);
+    await expect(service.reprocessStatement(CO, 7)).rejects.toThrow(message);
+    expect(recordSupplierDocumentAccess).not.toHaveBeenCalled();
+    expect(repo.replaceLinesAsSystem).not.toHaveBeenCalled();
+    expect(repo.updateStatementAsSystem).not.toHaveBeenCalled();
+  });
+
+  it.each([["Ready"], ["Reconciled"], ["Rejected"], ["Duplicate"], ["Queued"], ["Processing"]])("refuses a statement that is %s", async (status) => {
+    ready({ status });
+    await expect(service.reprocessStatement(CO, 7)).rejects.toThrow(/can be read again/);
+    expect(recordSupplierDocumentAccess).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the supplier is confirmed (unconfirm first)", async () => {
+    ready({ supplier_confirmed_at: "2026-10-08T10:00:00Z" });
+    await expect(service.reprocessStatement(CO, 7)).rejects.toThrow(/supplier has been confirmed/);
+    expect(recordSupplierDocumentAccess).not.toHaveBeenCalled();
+  });
+
+  it("an unknown (or another company's) statement is not found — nothing is read", async () => {
+    repo.getStatement.mockResolvedValue(null);
+    await expect(service.reprocessStatement(CO, 7)).rejects.toBeInstanceOf(service.NotFoundError);
+    expect(recordSupplierDocumentAccess).not.toHaveBeenCalled();
+  });
+
+  it("then the normal processing reads the SAME retained original with the current reader", async () => {
+    repo.claimQueuedStatement.mockResolvedValue(statementRow({ status: "Processing", document_id: 70 }));
+    repo.getDocumentForProcessing.mockResolvedValue({ storagePath: "co_1/Supplier/0/gourmet.pdf", filename: "monthly-negative-credits.pdf", mimeType: "application/pdf" });
+    readSupplierOriginalBytes.mockResolvedValue(file("monthly-negative-credits.pdf"));
+    repo.getStatementAsSystem.mockResolvedValue(statementRow({ status: "NeedsReview" }));
+    expect(await service.processStatement(CO, 7, "reviewer@synthetic.test")).toBe("NeedsReview");
+    expect(repo.getDocumentForProcessing).toHaveBeenCalledWith(CO, 70);
+    const header = repo.updateStatementAsSystem.mock.calls.find((c) => c[2].status === "NeedsReview")![2];
+    expect(header).toMatchObject({ statement_date: "2026-10-06", closing_balance: 23251.95, opening_balance: null, supplier_name_extracted: "Cape Harbour Fine Foods (Pty) Ltd" });
+    const lines = repo.replaceLinesAsSystem.mock.calls[0][2] as { transaction_type: string; unresolved_fields: string[]; is_excluded: boolean }[];
+    expect(lines.filter((l) => !l.is_excluded)).toHaveLength(12);
+    expect(lines.filter((l) => l.transaction_type === "payment")).toHaveLength(4);
+    expect(lines.every((l) => l.unresolved_fields.length === 0)).toBe(true);
   });
 });

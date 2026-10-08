@@ -5,7 +5,7 @@
  * classifications; explain / link / withdraw through the SD-3D API).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { StatementInbox, type StatementInboxRow } from "./statement-inbox";
 import { StatementReviewWorkspace } from "./statement-review";
@@ -341,5 +341,27 @@ describe("Statement review — SD-3G payments out of scope", () => {
     expect(screen.queryByText(/could not be read reliably/)).toBeNull();
     expect(screen.getByText(/1 payment line has an unread value; payments are not reconciled, so this does not block/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Mark ready for reconciliation" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe("Statement review — SD-3G read again (reprocess)", () => {
+  it("a reviewer can have the retained original read again; it goes to the reprocess action", async () => {
+    review({ status: "NeedsReview" });
+    fireEvent.click(screen.getByRole("button", { name: "Read again" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/companies/co_1/purchasing/supplier-statements/7");
+    expect(JSON.parse(init.body)).toEqual({ action: "reprocess" });
+  });
+
+  it("is not offered to view-only users, nor once the supplier is confirmed or the statement is ready", () => {
+    review({ status: "NeedsReview" }, VIEW_ONLY);
+    expect(screen.queryByRole("button", { name: "Read again" })).toBeNull();
+    cleanup();
+    review({ status: "NeedsReview", supplierConfirmed: true, supplierConfirmedBy: "r", supplierConfirmedAt: "2026-10-01T09:00:00Z" });
+    expect(screen.queryByRole("button", { name: "Read again" })).toBeNull();
+    cleanup();
+    review({ status: "Ready", supplierConfirmed: true, supplierConfirmedBy: "r", supplierConfirmedAt: "2026-10-01T09:00:00Z" });
+    expect(screen.queryByRole("button", { name: "Read again" })).toBeNull();
   });
 });

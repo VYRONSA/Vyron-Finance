@@ -25,7 +25,8 @@
  */
 import * as repo from "@/server/repositories/supplier-statement-repository";
 import { getPerformedByLabel } from "@/server/auth/require-session";
-import { readSupplierOriginalBytes } from "@/server/repositories/supplier-document-access-repository";
+import { readSupplierOriginalBytes, recordSupplierDocumentAccess } from "@/server/repositories/supplier-document-access-repository";
+import { listResolutionsAsSystem, listRuns } from "@/server/repositories/supplier-statement-reconciliation-repository";
 import { setSupplierOurAccountNumber } from "@/server/services/supplier-management-service";
 import { parseStatementDate } from "@/server/supplier-statements/amounts";
 import { detectStatementFileType, type StatementFileKind } from "@/server/supplier-statements/file-type";
@@ -694,6 +695,120 @@ export async function rejectStatement(companyId: string, statementId: number, re
   // The reason is the reviewer's own words about the decision, not
   // statement content.
   await repo.recordStatementEvent(companyId, statementId, "Rejected", { reason: why.slice(0, 300), from: statement.status });
+}
+
+// ---------------------------------------------------------------------
+// SD-3G — reprocess: read the RETAINED original again with the current reader
+// ---------------------------------------------------------------------
+
+/** Events the system writes while reading a statement. Any other event means a
+ * person has worked on it (corrections, manual entry, supplier confirmation,
+ * readiness, decisions, runs). */
+const SYSTEM_READ_EVENTS: ReadonlySet<string> = new Set([
+  "Uploaded", "DuplicateEvaluated", "ProcessingStarted", "Extracted", "ExtractionFailed", "ManualEntryRequired",
+  "ValidationEvaluated", "SupplierProposed", "ProcessingRequeued", "Reprocessed",
+  "AiExtractionSkipped", "AiExtractionRefused", "AiExtracted", "AiExtractionFailed",
+]);
+const REPROCESSABLE: ReadonlySet<string> = new Set(["NeedsReview", "ManualEntry", "Failed"]);
+
+/**
+ * Has the statement's retained original read again by the CURRENT reader —
+ * without a new upload. For diagnosing and correcting a statement read by an
+ * earlier version of the reader.
+ *
+ * Safe by construction:
+ *   - the original document is never replaced, deleted or copied; the read is
+ *     recorded as an audited 'reprocess' access in the reviewer's session,
+ *     BEFORE anything changes (fail-closed: no record, no reprocess);
+ *   - REFUSED, not overwritten, when a person has worked on the statement
+ *     (corrections, added/removed lines, manual entry, a confirmed supplier,
+ *     readiness, reconciliation decisions or runs);
+ *   - only derived data is rebuilt (lines, header facts, supplier PROPOSAL,
+ *     validation) by the same processing as an upload;
+ *   - no accounting record is read for writing, and no run is created.
+ * The 'Reprocessed' event keeps a summary of the extraction it replaced.
+ */
+export async function reprocessStatement(companyId: string, statementId: number): Promise<"Queued"> {
+  const statement = await requireStatement(companyId, statementId);
+  if (!REPROCESSABLE.has(statement.status)) {
+    throw new ValidationError(`Only a statement in review, waiting to be entered or that could not be read can be read again (this one is ${statement.status}).`);
+  }
+  if (statement.supplier_confirmed_at) {
+    throw new ValidationError("The supplier has been confirmed. Reading the statement again would replace the reviewed statement — unconfirm the supplier first.");
+  }
+  const [events, lines, runs, resolutions] = await Promise.all([
+    repo.listStatementEvents(companyId, statementId),
+    repo.listStatementLinesAsSystem(companyId, statementId),
+    listRuns(companyId, statementId),
+    listResolutionsAsSystem(companyId, statementId),
+  ]);
+  const work = [...new Set(events.map((e) => e.event_type).filter((t) => !SYSTEM_READ_EVENTS.has(t)))];
+  const reviewerLines = lines.filter((l) => l.corrected || l.extracted_by === "reviewer").length;
+  if (work.length > 0 || reviewerLines > 0 || runs.length > 0 || resolutions.length > 0) {
+    const what = [
+      ...work,
+      ...(reviewerLines > 0 ? [`${reviewerLines} corrected or added line(s)`] : []),
+      ...(runs.length > 0 ? [`${runs.length} reconciliation run(s)`] : []),
+      ...(resolutions.length > 0 ? [`${resolutions.length} reconciliation decision(s)`] : []),
+    ];
+    throw new ValidationError(`This statement has been worked on (${what.join(", ")}). Reading it again would overwrite that work, so it was not done.`);
+  }
+
+  // 1. The read of the original is an audited access, in the reviewer's session.
+  await recordSupplierDocumentAccess({ companyId, documentId: statement.document_id, subject: { kind: "statement", statementId }, action: "reprocess" });
+
+  // 2. History: that this is a reprocess, and what it replaces (counts only).
+  const performedBy = await getPerformedByLabel();
+  const transactions = lines.filter((l) => !l.is_excluded);
+  await repo.recordSystemStatementEvent(
+    companyId,
+    statementId,
+    "Reprocessed",
+    {
+      from: statement.status,
+      documentId: statement.document_id,
+      previous: {
+        method: statement.extraction_method,
+        transactions: transactions.length,
+        excludedRows: lines.length - transactions.length,
+        unreadLines: transactions.filter((l) => l.unresolved_fields.length > 0).length,
+        validationStatus: statement.validation_status,
+      },
+    },
+    performedBy,
+  );
+
+  // 3. Clear the derived extraction; the processing after the response rebuilds it.
+  await repo.replaceLinesAsSystem(companyId, statementId, []);
+  await repo.updateStatementAsSystem(companyId, statementId, {
+    status: "Queued",
+    status_reason: "Being read again with the current reader.",
+    extraction_method: null,
+    manual_entry: false,
+    page_count: null,
+    supplier_id: null,
+    supplier_match_tier: null,
+    supplier_candidates: [],
+    supplier_name_extracted: null,
+    supplier_vat_extracted: null,
+    supplier_registration_extracted: null,
+    account_number_extracted: null,
+    statement_date: null,
+    period_from: null,
+    period_to: null,
+    currency_code: null,
+    opening_balance: null,
+    closing_balance: null,
+    printed_total_debits: null,
+    printed_total_credits: null,
+    printed_ageing: null,
+    extraction_snapshot: null,
+    warnings: [],
+    validation_status: "Pending",
+    validation_findings: [],
+    validated_at: null,
+  });
+  return "Queued";
 }
 
 /** Ask for a Queued statement to be processed again (e.g. the processing
