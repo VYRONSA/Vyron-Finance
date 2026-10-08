@@ -90,6 +90,12 @@
       "file": "documents/xlsx-typed.xlsx",
       "format": "xlsx",
       "sha256": "7d240c33732bf2efeabe304e1f35ee02040dca6bc9e464f2346bb34eaf9ddff7"
+    },
+    {
+      "key": "monthly-negative-credits",
+      "file": "documents/monthly-negative-credits.pdf",
+      "format": "pdf",
+      "sha256": "8c6fbd3b20ba7dca5387047c1a94ab0179d0344b24182acd0652d81e2ae6b34b"
     }
   ]
 }

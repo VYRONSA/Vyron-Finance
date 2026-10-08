@@ -85,7 +85,9 @@ export function StatementLinesEditor({
   }
 
   const transactions = lines.filter((l) => !l.isExcluded);
-  const unread = transactions.filter((l) => l.unresolvedFields.length > 0).length;
+  // Payments are out of scope (SD-3G): their unread values are noted, never a correction to make.
+  const unread = transactions.filter((l) => l.transactionType !== "payment" && l.unresolvedFields.length > 0).length;
+  const unreadPayments = transactions.filter((l) => l.transactionType === "payment" && l.unresolvedFields.length > 0).length;
 
   function begin() {
     setDrafts(Object.fromEntries(lines.map((l) => [l.id, toDraft(l)])));
@@ -142,6 +144,7 @@ export function StatementLinesEditor({
           {transactions.length} transaction{transactions.length === 1 ? "" : "s"}
           {lines.length > transactions.length ? `, plus ${lines.length - transactions.length} total / balance row(s) kept for the record` : ""}.
           {unread > 0 && ` ${unread} line${unread === 1 ? " has" : "s have"} a value that could not be read reliably — correct it from the original.`}
+          {unreadPayments > 0 && ` ${unreadPayments} payment line${unreadPayments === 1 ? " has" : "s have"} an unread value; payments are not reconciled, so this does not block.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-3">
@@ -212,6 +215,7 @@ export function StatementLinesEditor({
                     <TableCell className="max-w-[18rem] text-sm">
                       <span className="block truncate" title={l.description ?? undefined}>{isExcluded ? EXCLUSION_LABEL[l.exclusionReason ?? ""] ?? "Excluded" : (l.description ?? "—")}</span>
                       {l.unresolvedFields.length > 0 && l.rawText && <span className="block text-xs text-vf-danger">As read: {l.rawText}</span>}
+                      {l.transactionType === "payment" && <Badge tone="muted" className="mt-1" title="Payments are out of scope for supplier document reconciliation">Payment — not reconciled</Badge>}
                       {l.extractedBy === "ai" && <Badge tone="warn" className="mt-1" title="Transcribed by AI from the scan — compare with the original">AI read</Badge>}
                       {l.corrected && <Badge tone="good" className="mt-1">Corrected</Badge>}
                     </TableCell>

@@ -12,13 +12,14 @@
  * is hidden in any document: no invisible text, no metadata answers.
  *
  *   node scripts/author-statement-corpus.mjs
+ *   node scripts/author-statement-corpus.mjs --only <key>   (one document)
  *
  * Same approach as `author-certification-corpus.mjs` (local Chrome/Edge via
  * puppeteer-core; fixed PDF dates and IDs for reproducibility).
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
@@ -54,6 +55,14 @@ function tableHtml(doc, page, index) {
 
 function buildHtml(doc) {
   const s = doc.supplier;
+  // SD-3G: an optional letterhead of explicitly sized lines (e.g. a large
+  // telephone line above a small business name), an ageing block on the
+  // first page as well, and a document-specific footer. Documents that do
+  // not use them render exactly as before.
+  const letterhead = doc.letterhead
+    ? `<div>${doc.letterhead.map((l) => `<div style="font-size:${l.px}px;${l.bold ? "font-weight:bold;" : ""}margin-bottom:2px">${escape(l.text)}</div>`).join("")}</div>`
+    : `<div><div class="name">${escape(s.name)}</div>${s.address.map((a) => `<div>${escape(a)}</div>`).join("")}
+      <div class="ids">${s.ids.map((i) => `<span>${escape(i)}</span>`).join("")}</div></div>`;
   const ageing = doc.ageing
     ? `<table class="ageing"><tr>${doc.ageing.map(([l]) => `<td>${escape(l)}</td>`).join("")}</tr>
        <tr>${doc.ageing.map(([, v]) => `<td>${escape(v)}</td>`).join("")}</tr></table>`
@@ -78,14 +87,14 @@ function buildHtml(doc) {
     .note { color: #555; margin: 0 0 6px; }
     .footer { margin-top: 18px; color: #444; }
   </style></head><body>
-    <div class="letterhead"><div><div class="name">${escape(s.name)}</div>${s.address.map((a) => `<div>${escape(a)}</div>`).join("")}
-      <div class="ids">${s.ids.map((i) => `<span>${escape(i)}</span>`).join("")}</div></div>
+    <div class="letterhead">${letterhead}
       <div class="title">STATEMENT</div></div>
     <div class="parties"><div>${doc.customer.map((c) => `<div>${escape(c)}</div>`).join("")}</div>
       <div class="labels">${doc.labels.map((l) => `<div>${escape(l)}</div>`).join("")}</div></div>
+    ${doc.ageingTop ? ageing : ""}
     ${doc.pages.map((p, i) => tableHtml(doc, p, i)).join("")}
     ${ageing}
-    <p class="footer">Please quote your account number with every payment.</p>
+    <p class="footer">${escape(doc.footer ?? "Please quote your account number with every payment.")}</p>
   </body></html>`;
 }
 
@@ -195,6 +204,30 @@ async function render(browser, doc) {
 
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
+  // `--only <key>`: render that document alone and update only its manifest
+  // entry — every other pinned file stays byte-for-byte as it is.
+  const onlyAt = process.argv.indexOf("--only");
+  const only = onlyAt >= 0 ? process.argv[onlyAt + 1] : null;
+  if (only) {
+    const doc = STATEMENTS.find((d) => d.key === only);
+    if (!doc) throw new Error(`No corpus document "${only}".`);
+    const browser = await launch();
+    try {
+      const { filename, output } = await render(browser, doc);
+      writeFileSync(join(OUT_DIR, filename), output);
+      const path = join(ROOT, "statement-corpus", "manifest.json");
+      const manifest = JSON.parse(readFileSync(path, "utf8"));
+      const entry = { key: doc.key, file: `documents/${filename}`, format: doc.format, sha256: createHash("sha256").update(output).digest("hex") };
+      const at = manifest.documents.findIndex((d) => d.key === doc.key);
+      if (at >= 0) manifest.documents[at] = entry;
+      else manifest.documents.push(entry);
+      writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+      console.log(`${doc.key} ${filename} ${(output.length / 1024).toFixed(1)} KB ${entry.sha256}`);
+    } finally {
+      await browser.close();
+    }
+    return;
+  }
   const browser = await launch();
   const manifest = [];
   try {

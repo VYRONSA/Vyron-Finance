@@ -446,6 +446,7 @@ export async function revalidateStatement(companyId: string, statementId: number
       unresolvedFields: l.unresolved_fields,
       isExcluded: l.is_excluded,
       exclusionReason: l.exclusion_reason,
+      transactionType: l.transaction_type,
     })),
   });
 

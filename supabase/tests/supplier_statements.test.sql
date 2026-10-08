@@ -495,6 +495,11 @@ select pg_temp.ok(pg_temp.err(format('update supplier_statements set status = ''
   'T13 a rejected statement can no longer be changed');
 
 -- Ready: everything in place.
+-- SD-3G (0117): an unread value on a PAYMENT line no longer blocks Ready
+-- (payments are out of scope for document reconciliation), so T14 needs the
+-- unread line to be a document again — the reviewer types it as an invoice.
+select pg_temp.as_user('editor');
+select pg_temp.run(format('update supplier_statement_lines set transaction_type = ''invoice'' where id = %s', pg_temp.line('s-review.pdf', 3)));
 select pg_temp.as_service();
 update supplier_statements set validation_status = 'Pass', validated_at = now() where id = pg_temp.st('s-review.pdf');
 select pg_temp.as_user('editor');

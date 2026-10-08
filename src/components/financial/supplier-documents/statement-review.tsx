@@ -132,7 +132,8 @@ export function StatementReviewWorkspace({
     }
   }
 
-  const unreadLines = lines.filter((l) => !l.isExcluded && l.unresolvedFields.length > 0).length;
+  // Payments are out of scope (SD-3G): an unread payment value never blocks.
+  const unreadLines = lines.filter((l) => !l.isExcluded && l.transactionType !== "payment" && l.unresolvedFields.length > 0).length;
   const blockers = readinessBlockers({
     status: statement.status,
     validationStatus: statement.validationStatus,

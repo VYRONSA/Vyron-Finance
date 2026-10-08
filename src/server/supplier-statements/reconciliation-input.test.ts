@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { balancesAt, buildSupplierLedger } from "@/server/report-centre/party-ledger";
 import type { SupplierSources } from "@/server/repositories/supplier-statement-reconciliation-repository";
-import { buildLedgerRecords, buildUnpostedRecords } from "./reconciliation-input";
+import { buildCaptureRecords, buildDocumentRecords, buildLedgerRecords, buildUnpostedRecords, LedgerMismatchError } from "./reconciliation-input";
 
 const SUP = 7;
 function bill(p: Record<string, unknown>) {
@@ -101,5 +101,62 @@ describe("buildUnpostedRecords", () => {
     expect(by("CANCELLED")).toBeUndefined();
     expect(by("REJECTED")).toBeUndefined();
     expect(out.filter((u) => u.number === "FROM-CAPTURE")).toHaveLength(1);
+  });
+});
+
+describe("SD-3G — buildDocumentRecords (documents only)", () => {
+  const payment = { id: 5, companyId: "c", supplierId: SUP, paymentNumber: "SP-1", paymentDate: "2026-09-10", amount: 40, status: "Posted", reference: "", notes: "", journalId: 3 };
+  const bank = { id: 6, companyId: "c", transactionDate: "2026-09-11", reference: "EFT", description: "x", debit: 0, credit: 40, postedFlag: true, allocationType: "S", matchedSupplierId: SUP, journalId: 4 };
+  const opening = { id: 8, companyId: "c", category: "Supplier", status: "posted", supplierId: SUP, balanceDate: "2026-08-31", amount: 10, reference: "OB", description: "", journalId: 5 };
+
+  it("reads bills, debit notes and credit notes — never payments, bank transactions or opening balances", () => {
+    const records = buildDocumentRecords(sources({
+      bills: [bill({ id: 1 }), bill({ id: 2, documentType: "Credit Note", invoiceNumber: "CN1", total: 20, journalId: 12 }), bill({ id: 3, documentType: "Debit Note", invoiceNumber: "DN1", total: 5, journalId: 13 })],
+      payments: [payment], bankTransactions: [bank], openingBalances: [opening],
+    }), new Set(), SUP);
+    expect(records.map((r) => [r.refType, r.refId, r.amount])).toEqual([["bill", 1, 100], ["credit-note", 2, -20], ["debit-note", 3, 5]]);
+  });
+
+  it("includes UNPOSTED bills, flagged, with where they came from; never cancelled or undated ones", () => {
+    const records = buildDocumentRecords(sources({
+      bills: [
+        bill({ id: 1 }),
+        bill({ id: 2, invoiceNumber: "D1", postingStatus: "Draft", journalId: null, origin: "Imported" }),
+        bill({ id: 3, invoiceNumber: "D2", postingStatus: "Draft", journalId: null }),
+        bill({ id: 4, invoiceNumber: "X", postingStatus: "Cancelled", journalId: null }),
+        bill({ id: 5, invoiceNumber: "Y", postingStatus: "Draft", journalId: null, invoiceDate: null }),
+      ],
+    }), new Set([3]), SUP);
+    expect(records.map((r) => [r.refId, r.posted])).toEqual([[1, true], [2, false], [3, false]]);
+    expect(records[1].source).toMatch(/Import Centre bill #2, not posted/);
+    expect(records[2].source).toMatch(/captured invoice/);
+  });
+
+  it("only this supplier's documents", () => {
+    expect(buildDocumentRecords(sources({ bills: [bill({ id: 1 }), bill({ id: 2, supplierId: 99 })] }), new Set(), SUP).map((r) => r.refId)).toEqual([1]);
+  });
+
+  it("the POSTED documents must be exactly the supplier ledger's document entries, or the run is refused", () => {
+    // A bill the ledger would not count as posted (journal but status not posted) is "unposted" here too,
+    // so the two agree; the check itself is exercised by tampering with the ledger's view.
+    const s = sources({ bills: [bill({ id: 1 })] });
+    expect(() => buildDocumentRecords(s, new Set(), SUP)).not.toThrow();
+    const ledger = buildSupplierLedger(s).filter((e) => e.source === "document");
+    expect(ledger).toHaveLength(1);
+    const broken = { ...s, bills: [{ ...s.bills[0], total: Number.NaN }] } as SupplierSources;
+    expect(() => buildDocumentRecords(broken, new Set(), SUP)).toThrow(LedgerMismatchError);
+  });
+});
+
+describe("SD-3G — buildCaptureRecords", () => {
+  it("captures still in the workflow, for this supplier, with a number", () => {
+    const captures = [
+      { id: 1, supplier_id: SUP, status: "NeedsReview", invoice_number: "I9", invoice_date: "2026-09-01", total: "10.00", document_type: "Invoice" },
+      { id: 2, supplier_id: SUP, status: "Converted", invoice_number: "I8", invoice_date: null, total: null, document_type: "Invoice" },
+      { id: 3, supplier_id: 99, status: "NeedsReview", invoice_number: "I7", invoice_date: null, total: null, document_type: "Invoice" },
+      { id: 4, supplier_id: SUP, status: "NeedsReview", invoice_number: "C1", invoice_date: null, total: "5", document_type: "Credit Note" },
+    ];
+    const out = buildCaptureRecords(captures as never, SUP);
+    expect(out.map((c) => [c.refId, c.amount, c.documentType])).toEqual([[1, 10, "Bill"], [4, -5, "Credit Note"]]);
   });
 });

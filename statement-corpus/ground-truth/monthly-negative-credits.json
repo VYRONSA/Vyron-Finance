@@ -1,0 +1,42 @@
+{
+  "key": "monthly-negative-credits",
+  "file": "documents/monthly-negative-credits.pdf",
+  "expect": "extract",
+  "method": "layout",
+  "pageCount": 2,
+  "header": {
+    "supplierName": "Cape Harbour Fine Foods (Pty) Ltd",
+    "accountNumber": "40-1234-5678",
+    "supplierVatNumber": "4555012345",
+    "supplierRegistrationNumber": "2014/555123/07",
+    "statementDate": "2026-10-06",
+    "periodFrom": null,
+    "periodTo": null,
+    "currencyCode": null,
+    "openingBalance": null,
+    "closingBalance": 23251.95,
+    "printedTotalDebits": null,
+    "printedTotalCredits": null,
+    "printedAgeing": { "current": 13480.6, "days30": 9771.35, "days60": 0, "days90": 0, "days120Plus": null }
+  },
+  "transactions": [
+    { "page": 1, "date": "2026-10-06", "reference": "000000002293957", "debit": 12669.26, "credit": null, "balance": 23251.95, "type": "unknown", "unresolved": [], "descriptionIncludes": ["PO-100107", "000000010200007"] },
+    { "page": 1, "date": "2026-10-03", "reference": "000000002251125", "debit": 811.34, "credit": null, "balance": 10582.69, "type": "unknown", "unresolved": [] },
+    { "page": 1, "date": "2026-10-01", "reference": "000000002252003", "debit": null, "credit": 2000, "balance": 9771.35, "type": "payment", "unresolved": [], "rawIncludes": ["-R 2 000,00"] },
+    { "page": 1, "date": "2026-10-01", "reference": "000000002252003", "debit": null, "credit": 2000, "balance": 11771.35, "type": "payment", "unresolved": [], "rawIncludes": ["-R 2 000,00"] },
+    { "page": 1, "date": "2026-09-28", "reference": "000000002248992", "debit": 10771.35, "credit": null, "balance": 13771.35, "type": "unknown", "unresolved": [] },
+    { "page": 1, "date": "2026-09-22", "reference": "000000002247200", "debit": null, "credit": 239.55, "balance": 3000, "type": "credit-note", "unresolved": [], "descriptionIncludes": ["Credit Note"] },
+    { "page": 1, "date": "2026-09-15", "reference": "000000002247107", "debit": 1239.55, "credit": null, "balance": 3239.55, "type": "unknown", "unresolved": [] },
+    { "page": 1, "date": "2026-09-09", "reference": "000000002252002", "debit": null, "credit": 1100.5, "balance": 2000, "type": "payment", "unresolved": [] },
+    { "page": 1, "date": "2026-09-02", "reference": "000000002252001", "debit": null, "credit": 4250, "balance": 3100.5, "type": "payment", "unresolved": [] },
+    { "page": 2, "date": "2026-08-20", "reference": "000000002201003", "debit": 2000, "credit": null, "balance": 7350.5, "type": "unknown", "unresolved": [] },
+    { "page": 2, "date": "2026-08-12", "reference": "000000002201002", "debit": 1100.5, "credit": null, "balance": 5350.5, "type": "unknown", "unresolved": [] },
+    { "page": 2, "date": "2026-08-05", "reference": "000000002201001", "debit": 4250, "credit": null, "balance": 4250, "type": "unknown", "unresolved": [] }
+  ],
+  "excluded": [
+    { "page": 1, "reason": "subtotal", "value": 9480.6 },
+    { "page": 1, "reason": "subtotal", "value": 6420.85 },
+    { "page": 2, "reason": "subtotal", "value": 7350.5 }
+  ],
+  "validation": { "status": "Review", "codes": ["missing-opening-balance"] }
+}

@@ -198,3 +198,59 @@ describe("SD-3F — V9 row count against an AI transcription", () => {
     expect(codes(input({ closingBalance: 150, lines: withExcluded, aiDeclaredTransactions: 2 }))).not.toContain("row-count-mismatch");
   });
 });
+
+describe("SD-3G — document scope: payments never block", () => {
+  const pay = (p: Partial<ValidationLine>) => line({ transactionType: "payment", ...p });
+  it("unread PAYMENT values are one review note, never Incomplete", () => {
+    const report = validateStatement(input({
+      openingBalance: null, closingBalance: null,
+      lines: [line({ debit: 100, transactionType: "invoice" }), pay({ unresolvedFields: ["credit"] }), pay({ unresolvedFields: ["credit"] })],
+    }));
+    expect(report.status).toBe("Review");
+    const codes = report.findings.map((f) => f.code);
+    expect(codes.filter((c) => c === "payment-unread")).toHaveLength(1);
+    expect(codes).not.toContain("unread-value");
+    expect(report.findings.every((f) => f.severity === "review")).toBe(true);
+  });
+
+  it("unread INVOICE, DEBIT NOTE, CREDIT NOTE and unknown-type values still make it Incomplete", () => {
+    for (const transactionType of ["invoice", "debit-note", "credit-note", "unknown"] as const) {
+      const report = validateStatement(input({ lines: [line({ transactionType, unresolvedFields: ["debit"] })] }));
+      expect(report.status, transactionType).toBe("Incomplete");
+      expect(report.findings.map((f) => f.code), transactionType).toContain("unread-value");
+    }
+  });
+
+  it("with payment amounts unread, the balance arithmetic is reported as not verifiable (not failed)", () => {
+    const report = validateStatement(input({ openingBalance: 0, closingBalance: 100, lines: [line({ debit: 100, transactionType: "invoice" }), pay({ unresolvedFields: ["credit"] })] }));
+    expect(report.findings.map((f) => f.code)).toEqual(expect.arrayContaining(["payment-unread", "balance-not-verifiable"]));
+    expect(report.findings.map((f) => f.code)).not.toContain("balance-mismatch");
+    expect(report.status).toBe("Review");
+  });
+
+  it("missing opening/closing balances are review notes — never invented, never blocking", () => {
+    const report = validateStatement(input({ openingBalance: null, closingBalance: null, lines: [line({ debit: 1, transactionType: "invoice" })] }));
+    expect(report.findings.filter((f) => f.code.startsWith("missing-")).map((f) => [f.code, f.severity])).toEqual([["missing-opening-balance", "review"], ["missing-closing-balance", "review"]]);
+    expect(report.status).toBe("Review");
+    expect(validateStatement(input({ statementDate: null, lines: [line({ debit: 1 })] })).status).toBe("Incomplete"); // the date still matters
+  });
+
+  it("repeated payment rows are not a repeated-line finding", () => {
+    const report = validateStatement(input({ openingBalance: null, closingBalance: null, lines: [pay({ credit: 2000, referenceText: "P1" }), pay({ credit: 2000, referenceText: "P1" })] }));
+    expect(report.findings.map((f) => f.code)).not.toContain("repeated-line");
+  });
+
+  it("a newest-first statement's running balance is checked in its own date order", () => {
+    const newestFirst = [
+      line({ transactionDate: "2026-10-06", debit: 300, runningBalance: 600, transactionType: "invoice" }),
+      line({ transactionDate: "2026-10-01", credit: 100, runningBalance: 300, transactionType: "payment" }),
+      line({ transactionDate: "2026-09-20", debit: 400, runningBalance: 400, transactionType: "invoice" }),
+    ];
+    expect(validateStatement(input({ openingBalance: null, closingBalance: 600, lines: newestFirst })).findings.map((f) => f.code)).not.toContain("running-balance-break");
+    const broken = newestFirst.map((l, i) => (i === 0 ? { ...l, runningBalance: 650 } : l));
+    const report = validateStatement(input({ openingBalance: null, closingBalance: 650, lines: broken }));
+    const finding = report.findings.find((f) => f.code === "running-balance-break")!;
+    expect(finding.lineOrder).toBe(broken[0].lineOrder);
+    expect(finding.severity).toBe("incomplete"); // an invoice line: a document amount may be misread
+  });
+});

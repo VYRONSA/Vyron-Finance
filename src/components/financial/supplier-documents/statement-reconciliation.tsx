@@ -3,8 +3,13 @@
 /**
  * SD-3E — the reconciliation workspace for one supplier statement.
  *
+ * SD-3G: this is a DOCUMENT reconciliation — the supplier invoices, debit
+ * notes and credit notes on the statement against PRECISIA's. Payments are
+ * out of scope: listed, never reconciled. Earlier (SD-3D) balance runs are
+ * still shown with their own figures.
+ *
  * READ-ONLY FOR THE BOOKS. Running a reconciliation compares the statement
- * with the supplier ledger and records the result (SD-3D); nothing here
+ * with PRECISIA and records the result; nothing here
  * posts, allocates, adjusts or "fixes" anything. A difference is explained
  * or linked by a person, with a reason, and takes effect when the statement
  * is reconciled again. Unexplained is shown as it is.
@@ -19,10 +24,13 @@ import { IconAlertTriangle, IconRefresh, IconShieldCheck } from "@/components/ui
 import { formatAmount, formatDate, formatDateTime } from "@/lib/format";
 import {
   canLinkItem,
+  CATEGORY_LABEL,
   CATEGORY_ORDER,
   CATEGORY_TONE,
+  DOCUMENT_BASIS,
   explanationTarget,
   LINKABLE_REF_TYPES,
+  RECON_TIER_LABEL,
   REF_TYPE_LABEL,
   SUB_STATUS_LABEL,
 } from "@/lib/supplier-documents/statement-stages";
@@ -44,7 +52,7 @@ function Figure({ label, value, hint, tone }: { label: string; value: string; hi
 }
 
 function refLabel(r: RefLinkView): string {
-  return `${REF_TYPE_LABEL[r.refType] ?? r.refType} ${r.number ?? `#${r.refId}`}${r.date ? ` · ${formatDate(r.date)}` : ""}${r.amount !== null ? ` · ${formatAmount(r.amount)}` : ""}`;
+  return `${REF_TYPE_LABEL[r.refType] ?? r.refType} ${r.number ?? `#${r.refId}`}${r.date ? ` · ${formatDate(r.date)}` : ""}${r.amount !== null ? ` · ${formatAmount(r.amount)}` : ""}${r.posted === false ? " · not posted" : ""}`;
 }
 
 export function StatementReconciliation({
@@ -163,8 +171,9 @@ export function StatementReconciliation({
                 {runs.length === 0 ? "Not reconciled yet" : `Run ${selected?.run.runNumber ?? runs[0].runNumber} of ${runs.length}`}
               </h2>
               <p className="mt-1 max-w-[70ch] text-sm text-vf-ink-soft">
-                Compares the statement with the supplier ledger as at the statement date. It never posts, allocates or adjusts anything —
-                differences are explained or linked by a person, and the statement is then reconciled again.
+                Document reconciliation: the supplier invoices, debit notes and credit notes on this statement against those in PRECISIA.
+                Payments are out of scope and are not reconciled — this is not a reconciliation of the supplier&apos;s balance.
+                It never posts, allocates or adjusts anything; differences are explained or linked by a person, and the statement is then reconciled again.
               </p>
             </div>
             {canEdit && reconcilable && (
@@ -192,34 +201,66 @@ export function StatementReconciliation({
 
       {selected && (
         <>
-          {/* Balances */}
-          <section aria-label="Balances" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-            <Figure label="S · Statement closing" value={money(selected.run.statementClosing)} hint={`as at ${formatDate(selected.run.asAt)}`} />
-            <Figure label="P · PRECISIA (supplier ledger)" value={money(selected.run.precisiaBalance)} hint="same date, posted records only" />
-            <Figure label="D · Difference (S − P)" value={money(selected.run.difference)} tone={selected.run.difference ? undefined : "good"} />
-            <Figure label="Explained" value={money(selected.run.explained)} hint={selected.run.explainedByReviewer ? `${formatAmount(selected.run.explainedByReviewer)} by reviewers` : undefined} />
-            <Figure label="Unexplained" value={money(selected.run.unexplained)} tone={selected.run.unexplained ? "danger" : "good"} hint="never adjusted away" />
-          </section>
-          <p className="-mt-3 text-xs text-vf-ink-faint">
-            D = Explained + Unexplained, to the cent. Period {formatDate(selected.run.windowFrom)} – {formatDate(selected.run.windowTo)}; the statement opens at{" "}
-            {money(selected.run.statementOpening)} and PRECISIA stood at {money(selected.run.precisiaBalanceBeforeWindow)} before it.
-            {selected.run.residual ? ` ${formatAmount(selected.run.residual)} of Unexplained is the statement's own arithmetic gap.` : ""}
-          </p>
+          {selected.run.basis === DOCUMENT_BASIS ? (
+            <>
+              {/* Documents (SD-3G) */}
+              <section aria-label="Documents" className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                <Figure label="Documents on Statement" value={money(selected.run.statementClosing)} hint={`invoices, debit notes, credit notes · as at ${formatDate(selected.run.asAt)}`} />
+                <Figure
+                  label="Documents in PRECISIA"
+                  value={money(selected.run.precisiaBalance)}
+                  hint={selected.run.notPosted && selected.run.notPosted.count > 0 ? `${selected.run.notPosted.count} not posted (${formatAmount(selected.run.notPosted.amount)})` : "same supplier and period"}
+                />
+                <Figure label="Document Difference" value={money(selected.run.difference)} tone={selected.run.difference ? undefined : "good"} />
+              </section>
+              <section aria-label="Document results" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                {(["Matched", "Amount Difference", "Missing in PRECISIA", "Missing on Statement", "Potential Duplicate"] as const).map((category) => (
+                  <Figure key={category} label={category === "Amount Difference" ? "Amount Differences" : category === "Potential Duplicate" ? "Potential Duplicates" : category} value={String(selected.items.filter((i) => i.category === category).length)} />
+                ))}
+                <Figure label="Unexplained" value={money(selected.run.unexplained)} tone={selected.run.unexplained ? "danger" : "good"} hint="never adjusted away" />
+              </section>
+              <p className="-mt-3 text-xs text-vf-ink-faint">
+                Document Difference = Explained ({money(selected.run.explained)}) + Unexplained, to the cent. Documents dated {formatDate(selected.run.windowFrom)} – {formatDate(selected.run.windowTo)}.
+                {` ${selected.items.filter((i) => i.category === "Out of Scope").length} payment line(s) are out of scope and not reconciled.`}
+              </p>
+            </>
+          ) : (
+            <>
+              {/* An earlier balance run (SD-3D) */}
+              <p className="rounded-vf-sm border border-vf-paper-border px-3 py-2 text-sm text-vf-ink-soft">
+                This is an earlier balance reconciliation (before document reconciliation replaced it). Reconcile again for a document reconciliation.
+              </p>
+              <section aria-label="Balances" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                <Figure label="S · Statement closing" value={money(selected.run.statementClosing)} hint={`as at ${formatDate(selected.run.asAt)}`} />
+                <Figure label="P · PRECISIA (supplier ledger)" value={money(selected.run.precisiaBalance)} hint="same date, posted records only" />
+                <Figure label="D · Difference (S − P)" value={money(selected.run.difference)} tone={selected.run.difference ? undefined : "good"} />
+                <Figure label="Explained" value={money(selected.run.explained)} hint={selected.run.explainedByReviewer ? `${formatAmount(selected.run.explainedByReviewer)} by reviewers` : undefined} />
+                <Figure label="Unexplained" value={money(selected.run.unexplained)} tone={selected.run.unexplained ? "danger" : "good"} hint="never adjusted away" />
+              </section>
+              <p className="-mt-3 text-xs text-vf-ink-faint">
+                D = Explained + Unexplained, to the cent. Period {formatDate(selected.run.windowFrom)} – {formatDate(selected.run.windowTo)}; the statement opens at{" "}
+                {money(selected.run.statementOpening)} and PRECISIA stood at {money(selected.run.precisiaBalanceBeforeWindow)} before it.
+                {selected.run.residual ? ` ${formatAmount(selected.run.residual)} of Unexplained is the statement's own arithmetic gap.` : ""}
+              </p>
+            </>
+          )}
 
           {/* Items by category */}
           {CATEGORY_ORDER.map((category) => {
             const items = selected.items.filter((i) => i.category === category);
             if (items.length === 0) return null;
             const total = items.reduce((s, i) => s + Math.round(i.effect * 100), 0) / 100;
-            const open = category !== "Matched";
+            const open = category !== "Matched" && category !== "Out of Scope";
             return (
               <details key={category} open={open} className="min-w-0 rounded-vf-lg border border-vf-paper-border bg-vf-paper shadow-vf-paper-sm">
                 <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-5 py-3">
                   <span className="flex items-center gap-2">
-                    <Badge tone={CATEGORY_TONE[category]}>{category}</Badge>
+                    <Badge tone={CATEGORY_TONE[category]}>{CATEGORY_LABEL[category] ?? category}</Badge>
                     <span className="text-sm text-vf-ink-soft">{items.length}</span>
                   </span>
-                  <span className="font-mono text-sm tabular-nums text-vf-ink-soft">effect {formatAmount(total)}</span>
+                  <span className="font-mono text-sm tabular-nums text-vf-ink-soft">
+                    {category === "Out of Scope" ? "not reconciled" : `effect ${formatAmount(total)}`}
+                  </span>
                 </summary>
                 <ul className="flex flex-col divide-y divide-vf-paper-border border-t border-vf-paper-border">
                   {items.map((item) => {
@@ -234,8 +275,9 @@ export function StatementReconciliation({
                             <p className="text-sm text-vf-ink">{item.message}</p>
                             <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-vf-ink-faint">
                               <span>{SUB_STATUS_LABEL[item.subStatus] ?? item.subStatus}</span>
+                              {item.matchTier && <span>· {RECON_TIER_LABEL[item.matchTier] ?? item.matchTier}</span>}
                               {item.statementLineOrder !== null && <span>· statement line {item.statementLineOrder}</span>}
-                              {item.explained ? (
+                              {item.category === "Out of Scope" ? null : item.explained ? (
                                 <Badge tone="good">{item.explainedByResolutionId ? "Explained by a reviewer" : "Explained"}</Badge>
                               ) : (
                                 <Badge tone="danger">Unexplained</Badge>
@@ -247,7 +289,7 @@ export function StatementReconciliation({
                             <dd>{money(item.statementAmount)}</dd>
                             <dt className="font-sans text-vf-ink-faint">PRECISIA</dt>
                             <dd>{money(item.precisiaAmount)}</dd>
-                            <dt className="font-sans text-vf-ink-faint">Effect on D</dt>
+                            <dt className="font-sans text-vf-ink-faint">Effect on difference</dt>
                             <dd className="font-semibold text-vf-ink">{formatAmount(item.effect)}</dd>
                           </dl>
                         </div>

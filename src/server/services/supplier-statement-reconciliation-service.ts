@@ -1,5 +1,12 @@
 /**
- * SD-3D — supplier-statement reconciliation: runs, decisions, history.
+ * SD-3D / SD-3G — supplier-statement reconciliation: runs, decisions, history.
+ *
+ * SD-3G: a run is a DOCUMENT reconciliation (invoices, debit notes, credit
+ * notes). Payments are out of scope; PRECISIA payments, bank transactions and
+ * opening balances are not read. Stored run columns keep their names; for the
+ * document basis they hold: statement_closing = Documents on Statement,
+ * precisia_balance_at = Documents in PRECISIA, statement_opening and
+ * precisia_balance_before_window = 0 (not applicable).
  *
  * READ-ONLY FROM AN ACCOUNTING PERSPECTIVE. A run reads the statement and
  * the supplier's records, asks the pure engine to classify the differences,
@@ -18,13 +25,17 @@ import { getPerformedByLabel } from "@/server/auth/require-session";
 import {
   canonicalJson,
   ENGINE_VERSION,
+  RECONCILIATION_BASIS,
   reconcileStatement,
   type EngineInput,
-  type EngineResult,
-  type LedgerRefType,
   type ResolutionInput,
 } from "@/server/supplier-statements/reconciliation-engine";
-import { buildLedgerRecords, buildUnpostedRecords } from "@/server/supplier-statements/reconciliation-input";
+import {
+  ENGINE_VERSION as SD3D_ENGINE_VERSION,
+  reconcileStatement as reconcileBalanceSd3d,
+  type EngineInput as Sd3dEngineInput,
+} from "@/server/supplier-statements/reconciliation-engine-sd3d";
+import { buildCaptureRecords, buildDocumentRecords } from "@/server/supplier-statements/reconciliation-input";
 
 export class ReconciliationError extends Error {}
 export class NotFoundError extends Error {}
@@ -35,7 +46,7 @@ function num(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function fingerprint(input: EngineInput): string {
+export function fingerprint(input: EngineInput | Sd3dEngineInput): string {
   return createHash("sha256").update(canonicalJson(input)).digest("hex");
 }
 
@@ -48,8 +59,7 @@ async function buildInput(companyId: string, statement: statements.StatementRow)
     repo.loadSupplierSources(companyId, supplierId),
     repo.loadSupplierCaptures(companyId, supplierId),
   ]);
-  const unpostedBillIds = sources.bills.map((b) => b.id);
-  const captureBillIds = await repo.loadCaptureBillIds(companyId, unpostedBillIds);
+  const captureBillIds = await repo.loadCaptureBillIds(companyId, sources.bills.map((b) => b.id));
 
   return {
     engineVersion: ENGINE_VERSION,
@@ -57,8 +67,6 @@ async function buildInput(companyId: string, statement: statements.StatementRow)
       id: statement.id,
       statementDate: statement.statement_date!,
       periodFrom: statement.period_from,
-      openingBalance: num(statement.opening_balance)!,
-      closingBalance: num(statement.closing_balance)!,
       signConvention: statement.sign_convention,
     },
     lines: lines
@@ -74,8 +82,8 @@ async function buildInput(companyId: string, statement: statements.StatementRow)
         debit: num(l.debit),
         credit: num(l.credit),
       })),
-    ledger: buildLedgerRecords(sources, supplierId, statement.statement_date!),
-    unposted: buildUnpostedRecords(sources, captures, captureBillIds, supplierId),
+    documents: buildDocumentRecords(sources, captureBillIds, supplierId),
+    captures: buildCaptureRecords(captures, supplierId),
     resolutions: resolutions.map(
       (r): ResolutionInput => ({
         id: r.id,
@@ -94,8 +102,8 @@ export type RunSummary = {
   id: number;
   runNumber: number;
   fingerprint: string;
-  statementClosing: number;
-  precisiaBalance: number;
+  documentsOnStatement: number;
+  documentsInPrecisia: number;
   difference: number;
   explained: number;
   unexplained: number;
@@ -111,9 +119,9 @@ export async function runStatementReconciliation(companyId: string, statementId:
     throw new ReconciliationError(`Only a statement marked ready can be reconciled (this one is ${visible.status}).`);
   }
   if (!visible.supplier_id || !visible.supplier_confirmed_at) throw new ReconciliationError("Confirm the supplier before reconciling.");
-  if (!visible.statement_date || num(visible.opening_balance) === null || num(visible.closing_balance) === null) {
-    throw new ReconciliationError("The statement needs its date, opening and closing balance before it can be reconciled.");
-  }
+  // A document reconciliation needs the statement date (its as-at); the
+  // opening and closing balances are not used.
+  if (!visible.statement_date) throw new ReconciliationError("The statement needs its date before it can be reconciled.");
   const base = await statements.getCompanyBaseCurrency(companyId);
   if (visible.currency_code && visible.currency_code !== base) {
     throw new ReconciliationError(`Unsupported currency (${visible.currency_code}): manual review required. No exchange rate is applied.`);
@@ -131,20 +139,25 @@ export async function runStatementReconciliation(companyId: string, statementId:
       statement_id: statementId,
       run_number: runNumber,
       engine_version: ENGINE_VERSION,
-      basis: "supplier-ledger-document-date",
+      basis: RECONCILIATION_BASIS,
       supplier_id: visible.supplier_id,
       as_at_date: result.windowTo,
       window_from: result.windowFrom,
       window_to: result.windowTo,
-      statement_opening: result.statementOpening,
-      statement_closing: result.statementClosing,
-      precisia_balance_before_window: result.balanceBeforeWindow,
-      precisia_balance_at: result.balanceAt,
+      statement_opening: 0,
+      statement_closing: result.documentsOnStatement,
+      precisia_balance_before_window: 0,
+      precisia_balance_at: result.documentsInPrecisia,
       difference: result.difference,
       explained_amount: result.explained,
       explained_by_reviewer_amount: result.explainedByReviewer,
       unexplained_amount: result.unexplained,
-      category_summary: { ...result.summary, __residual: { count: 0, amount: result.residual } },
+      category_summary: {
+        ...result.summary,
+        __residual: { count: 0, amount: result.residual },
+        __notPosted: result.documentsNotPosted,
+        __byKind: result.byKind,
+      },
       input_snapshot: input,
       input_fingerprint: print,
       created_by: performedBy,
@@ -175,24 +188,23 @@ export async function runStatementReconciliation(companyId: string, statementId:
     companyId,
     statementId,
     "ReconciliationRun",
-    { runId, runNumber, engineVersion: ENGINE_VERSION, fingerprint: print, difference: result.difference, unexplained: result.unexplained, items: result.items.length },
+    { runId, runNumber, engineVersion: ENGINE_VERSION, basis: RECONCILIATION_BASIS, fingerprint: print, difference: result.difference, unexplained: result.unexplained, items: result.items.length, outOfScopePayments: result.outOfScopePayments },
     performedBy,
   );
   return {
     id: runId,
     runNumber,
     fingerprint: print,
-    statementClosing: result.statementClosing,
-    precisiaBalance: result.balanceAt,
+    documentsOnStatement: result.documentsOnStatement,
+    documentsInPrecisia: result.documentsInPrecisia,
     difference: result.difference,
     explained: result.explained,
     unexplained: result.unexplained,
   };
 }
 
-const REF_TYPES: ReadonlySet<string> = new Set<LedgerRefType | "opening-difference">([
-  "bill", "credit-note", "debit-note", "supplier-payment", "bank-transaction", "opening-balance", "opening-difference",
-]);
+/** SD-3G: decisions refer to supplier DOCUMENTS only. */
+const REF_TYPES: ReadonlySet<string> = new Set(["bill", "credit-note", "debit-note"]);
 
 export type ResolutionRequest = {
   action: "manual-link" | "explained" | "revoke";
@@ -235,6 +247,7 @@ export async function listStatementReconciliations(companyId: string, statementI
       id: r.id,
       runNumber: r.run_number,
       engineVersion: r.engine_version,
+      basis: r.basis,
       asAt: r.as_at_date,
       statementClosing: num(r.statement_closing),
       precisiaBalance: num(r.precisia_balance_at),
@@ -319,8 +332,11 @@ export async function getStatementReconciliation(companyId: string, statementId:
 export async function verifyStatementReconciliation(companyId: string, statementId: number, runId: number): Promise<{ fingerprintMatches: boolean; resultMatches: boolean }> {
   const found = await repo.getRun(companyId, statementId, runId);
   if (!found) throw new NotFoundError(`No reconciliation run ${runId}.`);
-  const input = found.run.input_snapshot as EngineInput;
-  const replay: EngineResult = reconcileStatement(input);
+  // Each run is replayed by the engine that produced it.
+  const sd3d = found.run.engine_version === SD3D_ENGINE_VERSION;
+  const input = found.run.input_snapshot as EngineInput | Sd3dEngineInput;
+  const replay = sd3d ? reconcileBalanceSd3d(input as Sd3dEngineInput) : reconcileStatement(input as EngineInput);
+  const replayedP = "balanceAt" in replay ? replay.balanceAt : replay.documentsInPrecisia;
   const fingerprintMatches = fingerprint(input) === found.run.input_fingerprint;
   const stored = found.items.map((i) => [i.item_order, i.category, i.sub_status, i.match_tier, i.precisia_ref_type, i.precisia_ref_id, num(i.effect_on_difference), i.explained, i.statement_line_id]);
   const replayed = replay.items.map((i) => [i.order, i.category, i.subStatus, i.matchTier, i.refType, i.refId, i.effect, i.explained, i.lineId]);
@@ -329,6 +345,6 @@ export async function verifyStatementReconciliation(companyId: string, statement
     num(found.run.difference) === replay.difference &&
     num(found.run.explained_amount) === replay.explained &&
     num(found.run.unexplained_amount) === replay.unexplained &&
-    num(found.run.precisia_balance_at) === replay.balanceAt;
+    num(found.run.precisia_balance_at) === replayedP;
   return { fingerprintMatches, resultMatches };
 }

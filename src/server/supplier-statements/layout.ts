@@ -17,6 +17,14 @@
  *      read from labelled cells; the supplier's name from the letterhead —
  *      always as a PROPOSAL.
  *
+ * SD-3G (production UAT, a real supplier's statement) also handles: credits
+ * printed with a minus sign in the Credit column when the whole statement
+ * does so; an ageing block with "90+ Days", "Overdue" and "Total Due" whose
+ * values sit beneath the headings (on any page; never read as transactions);
+ * monthly subtotal rows ("Total: October 2026 …"), which are not the
+ * statement's totals; a bare "Date" label in the header; and a letterhead
+ * whose largest line is a telephone number.
+ *
  * What it never does: guess. An amount or date it cannot read reliably is
  * left empty, its raw text kept, and the field marked unresolved for a
  * reviewer. A line's type is never decided from the sign of its amount.
@@ -211,8 +219,13 @@ const CARRIED_FORWARD = /\b(c\/f|carried\s*forward|balance\s*c\/f)\b/i;
 const PAGE_TOTAL = /\bpage\s*totals?\b/i;
 const SUBTOTAL = /\bsub-?\s*totals?\b/i;
 const STATEMENT_TOTAL = /^\s*(totals?|statement\s*totals?)\b/i;
+/** "Total: October 2026", "Totals for Sep 2026", "Total 01/09/2026 - 30/09/2026": a
+ * PERIOD subtotal within the statement, not the statement's own totals. */
+const PERIOD_SUBTOTAL =
+  /^\s*totals?\s*:?\s*(for\s+)?((jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{4}|\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}[/.-]\d{1,2}([/.-]\d{1,2})?)\b/i;
 const CLOSING = /\b(closing\s*balance|balance\s*due|amount\s*due|total\s*due|balance\s*owing|amount\s*owing|total\s*outstanding|account\s*balance|amount\s*payable)\b/i;
-const AGEING_LABEL = /^(current|30\s*days?|60\s*days?|90\s*days?|120\s*\+?\s*days?|120\s*days?\s*\+|over\s*120\s*days?|120\+|150\+?\s*days?|total|totals?\s*due)$/i;
+const AGEING_LABEL =
+  /^(current|30\s*days?|60\s*days?|90\s*days?|90\s*\+\s*days?|90\s*days?\s*\+|over\s*90\s*days?|90\+|120\s*\+?\s*days?|120\s*days?\s*\+|over\s*120\s*days?|120\+|150\+?\s*days?|overdue|total\s*overdue|total|totals?\s*due|amount\s*due|balance\s*due)$/i;
 
 function lastMoney(row: Row): string | null {
   const money = row.cells.filter((c) => looksLikeMoney(c.text));
@@ -290,7 +303,22 @@ const LABELS: LabelRule[] = [
 
 type LabelHits = Partial<Record<LabelRule["field"], string>>;
 
-function readLabels(rows: Row[]): LabelHits {
+/** A value taken from the NEXT cell must look like what the label names —
+ * otherwise "Total Due" sitting beside the "Current" heading would read the
+ * heading as its value. */
+function plausible(field: LabelRule["field"], value: string): boolean {
+  if (field === "opening" || field === "closing") return looksLikeMoney(value) || /^\(?-?\s*(R\s*)?[0-9][0-9 .,']*\)?$/i.test(value);
+  if (field === "statementDate") return looksLikeDate(value);
+  return true;
+}
+
+/** A bare "Date" label, read only in the statement's header (above the
+ * table), and only when its value is a date. */
+const BARE_DATE = /^date\s*:?\s*(.*)$/i;
+/** "… Statement Date: 06/10/2026" inside a longer cell. */
+const INLINE_STATEMENT_DATE = /\b(?:statement\s*date|date\s*of\s*statement)\s*:?\s*(\d{1,2}[/.\- ](?:\d{1,2}|[A-Za-z]{3,9})[/.\- ]\d{2,4}|\d{4}[/.-]\d{1,2}[/.-]\d{1,2})/i;
+
+function readLabels(rows: Row[], headerRows: ReadonlySet<Row> = new Set()): LabelHits {
   const hits: LabelHits = {};
   for (const row of rows) {
     row.cells.forEach((cell, i) => {
@@ -299,8 +327,22 @@ function readLabels(rows: Row[]): LabelHits {
         const m = rule.pattern.exec(cell.text);
         if (!m) continue;
         let value = (m[1] ?? "").trim();
-        if (value === "" && row.cells[i + 1]) value = row.cells[i + 1].text.trim();
+        if (value === "" && row.cells[i + 1]) {
+          const next = row.cells[i + 1].text.trim();
+          if (plausible(rule.field, next)) value = next;
+        }
         if (value !== "") hits[rule.field] = value;
+      }
+      if (hits.statementDate === undefined) {
+        const inline = INLINE_STATEMENT_DATE.exec(cell.text);
+        if (inline) hits.statementDate = inline[1].trim();
+      }
+      if (hits.statementDate === undefined && headerRows.has(row)) {
+        const bare = BARE_DATE.exec(cell.text);
+        if (bare) {
+          const value = (bare[1] ?? "").trim() || (row.cells[i + 1]?.text.trim() ?? "");
+          if (value && looksLikeDate(value)) hits.statementDate = value;
+        }
       }
     });
   }
@@ -308,14 +350,37 @@ function readLabels(rows: Row[]): LabelHits {
 }
 
 const TITLE_ONLY = /^(customer\s+|supplier\s+|account\s+)?statement(\s+of\s+account)?$|^tax\s+invoice$|^page\s+\d+/i;
+/** The same titles printed letter-spaced ("S T A T E M E N T"). */
+const TITLE_ONLY_COMPACT = /^(customer|supplier|account)?statement(ofaccount)?$|^taxinvoice$/i;
+
+function isTitle(text: string): boolean {
+  const t = text.trim();
+  return TITLE_ONLY.test(t) || TITLE_ONLY_COMPACT.test(t.replace(/\s+/g, ""));
+}
+
+/** Contact details, never a name: "T 021 555 0199", "Tel: …", "+27 …",
+ * e-mail and web addresses, and anything that is mostly digits. */
+const CONTACT_LINE = /^(t|tel|telephone|phone|ph|f|fax|c|cell|m|mobile|e|email|e-mail|w|web)\b\s*[.:]?\s*[+(]?\d|^\+?\d[\d\s()-]{6,}$|@|www\.|https?:\/\//i;
+
+function isContact(text: string): boolean {
+  const t = text.trim();
+  if (CONTACT_LINE.test(t)) return true;
+  const digitCount = (t.match(/\d/g) ?? []).length;
+  const letters = (t.match(/[A-Za-z]/g) ?? []).length;
+  return digitCount >= 6 && digitCount > letters * 2;
+}
 
 function letterheadName(page: LayoutPage | undefined, rows: Row[]): string | null {
   if (!page) return null;
-  const top = rows.filter((r) => r.y <= page.height * 0.3 && !TITLE_ONLY.test(r.text.trim()));
+  const top = rows
+    .filter((r) => r.y <= page.height * 0.3 && !isTitle(r.text))
+    .map((r) => ({ row: r, text: r.cells[0]?.text.trim() ?? "" }))
+    .filter((c) => c.text.length >= 2 && !isContact(c.text));
   if (top.length === 0) return null;
-  const largest = top.reduce((a, b) => (b.height > a.height ? b : a));
-  const name = largest.cells[0]?.text.trim() ?? "";
-  return name.length >= 2 ? name : null;
+  // The largest remaining line. (A company suffix is no signal: the
+  // customer's own name, in the address block, carries one too.)
+  const largest = top.reduce((a, b) => (b.row.height > a.row.height ? b : a));
+  return largest.text;
 }
 
 // ---------------------------------------------------------------------
@@ -342,7 +407,10 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
   // The statement's decimal style, from its unambiguous amounts.
   const style: DecimalStyle | null = inferDecimalStyle(allRows.flatMap((r) => r.cells.map((c) => c.text)).filter((t) => looksLikeMoney(t)));
 
-  const labels = readLabels(allRows);
+  // The header: rows above the first table heading (on its page and before).
+  const firstHeading = allRows.findIndex((r) => detectHeading(r) !== null);
+  const headerRows = new Set(firstHeading > 0 ? allRows.slice(0, firstHeading) : []);
+  const labels = readLabels(allRows, headerRows);
   const dateFrom = (text: string | undefined, context: { statementDate?: string | null } = {}) => {
     if (!text) return null;
     const r = parseStatementDate(text, context);
@@ -375,13 +443,22 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
     return r.ok ? { value: r.value, unresolved: false } : { value: null, unresolved: true };
   };
 
-  // Ageing block: a row of ageing labels, values on the next row beneath.
+  // Ageing blocks: a row of ageing labels, values on the next row beneath.
+  // EVERY block is consumed (a statement may print one on the first and the
+  // last page), so neither row is ever read as a transaction. The first block
+  // gives the ageing; "Total Due" beneath its heading is the closing balance
+  // unless the table itself prints one; "Overdue" is a summary, not a bucket.
+  let ageingTotal: number | null = null;
   for (let i = 0; i < allRows.length - 1; i++) {
     const row = allRows[i];
     const labelCells = row.cells.filter((c) => AGEING_LABEL.test(c.text.trim()));
     if (labelCells.length < 3 || labelCells.length < row.cells.length - 1) continue;
     const next = allRows[i + 1];
     if (next.pageNumber !== row.pageNumber) continue;
+    if (!next.cells.some((c) => looksLikeMoney(c.text))) continue;
+    (row as Row & { consumed?: boolean }).consumed = true;
+    (next as Row & { consumed?: boolean }).consumed = true;
+    if (header.printedAgeing) continue;
     const ageing: PrintedAgeing = { current: null, days30: null, days60: null, days90: null, days120Plus: null };
     for (const label of labelCells) {
       const centre = (label.x0 + label.x1) / 2;
@@ -397,13 +474,13 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
       if (key.startsWith("current")) ageing.current = parsed;
       else if (key.startsWith("30")) ageing.days30 = parsed;
       else if (key.startsWith("60")) ageing.days60 = parsed;
-      else if (key.startsWith("90")) ageing.days90 = parsed;
+      // "90 Days" and "90+ Days" (90 and over) are the same bucket.
+      else if (key.startsWith("90") || key === "over90days") ageing.days90 = parsed;
       else if (key.includes("120") || key.includes("150")) ageing.days120Plus = parsed;
+      else if (/^(total|totaldue|totalsdue|amountdue|balancedue)$/.test(key)) ageingTotal = parsed;
+      // "Overdue" / "Total overdue": a summary of the buckets, not stored.
     }
     if (Object.values(ageing).some((v) => v !== null)) header.printedAgeing = ageing;
-    (row as Row & { consumed?: boolean }).consumed = true;
-    (next as Row & { consumed?: boolean }).consumed = true;
-    break;
   }
 
   let columns: Column[] | null = null;
@@ -411,6 +488,10 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
   let tableEnded = false;
   let lineOrder = 0;
   let lastTransaction: { line: ExtractedStatementLine; row: Row } | null = null;
+  // Credits printed with a minus sign IN the Credit column. Whether that is
+  // the statement's convention is decided once, for the whole statement.
+  const negativeCredits: { line: ExtractedStatementLine; value: number }[] = [];
+  let positiveCredits = 0;
 
   const push = (line: Omit<ExtractedStatementLine, "lineOrder">) => {
     lineOrder += 1;
@@ -492,6 +573,11 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
         lastTransaction = null;
         continue;
       }
+      if (PERIOD_SUBTOTAL.test(text) && hasMoney) {
+        excluded("subtotal", lastMoney(row));
+        lastTransaction = null;
+        continue;
+      }
       if (CLOSING.test(text) && hasMoney) {
         const valueText = m.balance ?? m.amount ?? lastMoney(row);
         const line = excluded("closing-balance", valueText);
@@ -539,6 +625,7 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
 
       let debit: number | null = null;
       let credit: number | null = null;
+      let pendingNegativeCredit: number | null = null;
       if (m.debit !== undefined || m.credit !== undefined) {
         const d = money(m.debit);
         const c = money(m.credit);
@@ -546,6 +633,8 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
         else debit = d.value;
         if (c.unresolved || (c.value !== null && c.value < 0)) unresolved.push("credit");
         else credit = c.value;
+        if (!c.unresolved && c.value !== null && c.value < 0) pendingNegativeCredit = c.value;
+        if (!c.unresolved && c.value !== null && c.value > 0) positiveCredits += 1;
       } else if (m.amount !== undefined) {
         const a = money(m.amount);
         if (a.unresolved) unresolved.push("debit");
@@ -582,12 +671,28 @@ export function readStatementLayout(pages: LayoutPage[], options: LayoutOptions 
         isExcluded: false,
         exclusionReason: null,
       });
+      if (pendingNegativeCredit !== null) negativeCredits.push({ line, value: pendingNegativeCredit });
       lastTransaction = { line, row };
     }
   }
 
+  // The Credit column carries a minus on EVERY credit (at least two, and no
+  // credit printed without one): that is this supplier's way of printing
+  // credits, so the minus marks the column, not a reversal. Anything less
+  // consistent stays unread for a person to check.
+  if (negativeCredits.length >= 2 && positiveCredits === 0) {
+    for (const { line, value } of negativeCredits) {
+      line.credit = Math.abs(value);
+      const at = line.unresolvedFields.indexOf("credit");
+      if (at >= 0) line.unresolvedFields.splice(at, 1);
+    }
+    if (header.printedTotalCredits !== null && header.printedTotalCredits < 0) header.printedTotalCredits = Math.abs(header.printedTotalCredits);
+    warnings.push(`This statement prints its credits with a minus sign in the Credit column; ${negativeCredits.length} credit${negativeCredits.length === 1 ? " was" : "s were"} read as credits on that basis.`);
+  }
+
   // Summary boxes outside the table.
   if (header.openingBalance === null && labels.opening) header.openingBalance = money(labels.opening).value;
+  if (header.closingBalance === null && ageingTotal !== null) header.closingBalance = ageingTotal;
   if (header.closingBalance === null && labels.closing) header.closingBalance = money(labels.closing).value;
 
   if (!tableFound) {

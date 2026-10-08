@@ -20,6 +20,8 @@
  * minus; ambiguous and unreadable values; running, opening and closing
  * balances; a repeated line; arithmetic errors; a reversed debit/credit
  * convention; an encrypted PDF; a scanned PDF, JPEG and PNG; CSV and XLSX.
+ * SD-3G adds a monthly, newest-first layout with negative credits (see the
+ * "monthly-negative-credits" entry).
  */
 
 const KAROO = {
@@ -291,6 +293,67 @@ export const STATEMENTS = [
       },
     ],
     ageing: [["Current", "R 2 770.00"], ["30 Days", "R 100.00"], ["60 Days", "R 0.00"], ["90 Days", "R 0.00"]],
+  },
+  // SD-3G — the layout of a real supplier statement met in production UAT,
+  // rebuilt with INVENTED data: a large telephone line above a small business
+  // name; a bare "Date:" label; rows printed NEWEST FIRST and grouped by month
+  // with "Total: <Month YYYY>" subtotals; credits printed with a minus sign in
+  // the Credit column ("-R 2 000,00"); two identical payment rows; references
+  // zero-padded to 15 digits; no type column; no opening balance; an ageing
+  // block (90+ Days … Total Due, Overdue) with its values BENEATH the headings,
+  // on the first page and again on the last.
+  {
+    key: "monthly-negative-credits",
+    format: "pdf",
+    letterhead: [
+      { text: "T 021 555 0199", px: 22, bold: true },
+      { text: "Cape Harbour Fine Foods (Pty) Ltd", px: 11, bold: true },
+      { text: "Unit 4, Harbour Park, Paarden Eiland, 7405", px: 9 },
+      { text: "VAT No: 4555012345", px: 9 },
+      { text: "Reg No: 2014/555123/07", px: 9 },
+    ],
+    supplier: { name: "", address: [], ids: [] },
+    customer: ["Riverbend Trading (Pty) Ltd", "PO Box 2210", "Oudtshoorn 6620"],
+    labels: ["Account No: 40-1234-5678", "Date: 06/10/2026"],
+    ageingTop: true,
+    columns: [
+      { label: "Date", align: "left" },
+      { label: "Invoice", align: "left" },
+      { label: "Our Reference", align: "left" },
+      { label: "Delivery Note", align: "left" },
+      { label: "Debit", align: "right" },
+      { label: "Credit", align: "right" },
+      { label: "Balance", align: "right" },
+    ],
+    pages: [
+      {
+        heading: true,
+        rows: [
+          ["06/10/2026", "000000002293957", "PO-100107", "000000010200007", "R 12 669,26", "", "R 23 251,95"],
+          ["03/10/2026", "000000002251125", "PO-100106", "000000010200006", "R 811,34", "", "R 10 582,69"],
+          ["01/10/2026", "000000002252003", "Payment", "", "", "-R 2 000,00", "R 9 771,35"],
+          ["01/10/2026", "000000002252003", "Payment", "", "", "-R 2 000,00", "R 11 771,35"],
+          ["Total:", "October 2026", "", "", "R 13 480,60", "-R 4 000,00", "R 9 480,60"],
+          ["28/09/2026", "000000002248992", "PO-100105", "000000010200005", "R 10 771,35", "", "R 13 771,35"],
+          ["22/09/2026", "000000002247200", "Credit Note - short delivery", "000000010200010", "", "-R 239,55", "R 3 000,00"],
+          ["15/09/2026", "000000002247107", "PO-100104", "000000010200004", "R 1 239,55", "", "R 3 239,55"],
+          ["09/09/2026", "000000002252002", "Payment", "", "", "-R 1 100,50", "R 2 000,00"],
+          ["02/09/2026", "000000002252001", "Payment", "", "", "-R 4 250,00", "R 3 100,50"],
+          ["Total:", "September 2026", "", "", "R 12 010,90", "-R 5 590,05", "R 6 420,85"],
+        ],
+      },
+      {
+        heading: true,
+        rows: [
+          ["20/08/2026", "000000002201003", "PO-100103", "000000010200003", "R 2 000,00", "", "R 7 350,50"],
+          ["12/08/2026", "000000002201002", "PO-100102", "000000010200002", "R 1 100,50", "", "R 5 350,50"],
+          ["05/08/2026", "000000002201001", "PO-100101", "000000010200001", "R 4 250,00", "", "R 4 250,00"],
+          ["Total:", "August 2026", "", "", "R 7 350,50", "R 0,00", "R 7 350,50"],
+        ],
+      },
+    ],
+    ageing: [["90+ Days", "R 0,00"], ["60 Days", "R 0,00"], ["30 Days", "R 9 771,35"], ["Current", "R 13 480,60"], ["Total Due", "23 251,95"], ["Overdue", "R 9 771,35"]],
+    footer: "We look forward to your timeous payment as per your agreed terms.",
   },
   // Scans: the karoo-point statement, flattened to an image (no text layer).
   { key: "scanned", format: "scanned-pdf", from: "karoo-point" },

@@ -63,3 +63,15 @@ describe("proposeStatementSupplier", () => {
     expect(proposeStatementSupplier(none, suppliers, accounts)).toMatchObject({ supplierId: null, outcome: "unmatched" });
   });
 });
+
+describe("SD-3G — the Gourmet-style supplier (production UAT)", () => {
+  const withGourmet = [...suppliers, supplier(9, "Gourmet Cape Distributors (PTY)LTD")];
+  it("the letterhead name is PROPOSED against the supplier record (never confirmed)", () => {
+    const proposal = proposeStatementSupplier({ ...none, supplierName: "Gourmet Cape Distributors (Pty) Ltd" }, withGourmet, accounts);
+    expect(proposal.supplierId === 9 || proposal.candidates.some((c) => c.supplierId === 9)).toBe(true);
+    expect(proposal).not.toHaveProperty("confirmed");
+  });
+  it("a telephone number proposes nobody", () => {
+    expect(proposeStatementSupplier({ ...none, supplierName: "T 021 552 4346" }, withGourmet, accounts).supplierId).toBeNull();
+  });
+});

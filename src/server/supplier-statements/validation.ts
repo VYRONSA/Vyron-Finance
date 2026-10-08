@@ -14,11 +14,21 @@
  *                period, an unsupported currency, a possible duplicate).
  *   Pass       — nothing to report.
  *
+ * SD-3G — DOCUMENT reconciliation (owner decision after production UAT):
+ * payments are out of scope, so a payment line can never make a statement
+ * Incomplete. Its unreadable values are reported once, for review; the
+ * statement's balance arithmetic, which needs every payment, becomes a check
+ * that is either verified or reported as not verifiable. The opening and
+ * closing balances are not needed to reconcile documents: their absence is a
+ * review note, not a blocker. Unread values on invoice, debit-note and
+ * credit-note lines still block. The running balance is followed in the
+ * statement's own date order (some statements print newest first).
+ *
  * Pure; no I/O.
  */
 
 import { toCents } from "./amounts";
-import type { ExclusionReason, PrintedAgeing, SignConvention, StatementValidationStatus, UnresolvedField } from "./types";
+import type { ExclusionReason, PrintedAgeing, SignConvention, StatementTransactionType, StatementValidationStatus, UnresolvedField } from "./types";
 
 export type FindingSeverity = "incomplete" | "review";
 
@@ -41,7 +51,9 @@ export type StatementFinding = {
     | "sign-convention-suspected"
     | "unsupported-currency"
     | "possible-duplicate-statement"
-    | "row-count-mismatch";
+    | "row-count-mismatch"
+    | "payment-unread"
+    | "balance-not-verifiable";
   severity: FindingSeverity;
   message: string;
   lineOrder?: number;
@@ -63,6 +75,8 @@ export type ValidationLine = {
   unresolvedFields: UnresolvedField[];
   isExcluded: boolean;
   exclusionReason: ExclusionReason | null;
+  /** SD-3G — a payment line is out of scope: it never blocks. */
+  transactionType?: StatementTransactionType | null;
 };
 
 export type ValidationInput = {
@@ -108,6 +122,24 @@ function balances(opening: number, lines: ValidationLine[], convention: SignConv
   return lines.reduce((sum, l) => sum + movement(l, convention), opening);
 }
 
+/** The lines in the statement's own date order: as printed when it runs
+ * oldest first, reversed when it is printed newest first (more date steps
+ * backwards than forwards). Never re-sorted line by line. */
+function inDateOrder(lines: ValidationLine[]): ValidationLine[] {
+  let forward = 0;
+  let backward = 0;
+  let last: string | null = null;
+  for (const line of lines) {
+    if (!line.transactionDate) continue;
+    if (last !== null) {
+      if (line.transactionDate > last) forward += 1;
+      else if (line.transactionDate < last) backward += 1;
+    }
+    last = line.transactionDate;
+  }
+  return backward > forward ? [...lines].reverse() : lines;
+}
+
 export function validateStatement(input: ValidationInput): ValidationReport {
   const findings: StatementFinding[] = [];
   const transactions = input.lines.filter((l) => !l.isExcluded).sort((a, b) => a.lineOrder - b.lineOrder);
@@ -116,16 +148,29 @@ export function validateStatement(input: ValidationInput): ValidationReport {
   if (!input.statementDate) {
     findings.push({ code: "missing-statement-date", severity: "incomplete", message: "The statement date is missing. Enter it from the original." });
   }
+  // Not needed to reconcile documents; without them the balance cannot be
+  // checked, which is worth a look but never invented (no 0.00 is assumed).
   if (input.openingBalance === null) {
-    findings.push({ code: "missing-opening-balance", severity: "incomplete", message: "The opening (brought-forward) balance is missing. Enter it from the original — 0.00 if the statement starts from nothing." });
+    findings.push({ code: "missing-opening-balance", severity: "review", message: "The statement shows no opening (brought-forward) balance, so its balance arithmetic cannot be checked. Not needed for document reconciliation; enter it from the original only if it is printed." });
   }
   if (input.closingBalance === null) {
-    findings.push({ code: "missing-closing-balance", severity: "incomplete", message: "The closing balance is missing. Enter it from the original." });
+    findings.push({ code: "missing-closing-balance", severity: "review", message: "The closing balance (total due) was not read, so the balance arithmetic cannot be checked. Not needed for document reconciliation; enter it from the original if it is printed." });
   }
 
   // Unread values and lines without exactly one amount.
   let arithmeticReady = true;
+  let paymentUnread = 0;
+  let paymentAmountsUnread = false;
+  const isPayment = (l: ValidationLine) => l.transactionType === "payment";
   for (const line of transactions) {
+    if (isPayment(line) && line.unresolvedFields.length > 0) {
+      paymentUnread += 1;
+      if (line.unresolvedFields.some((f) => f === "debit" || f === "credit")) {
+        arithmeticReady = false;
+        paymentAmountsUnread = true;
+      }
+      continue;
+    }
     if (line.unresolvedFields.length > 0) {
       findings.push({
         code: "unread-value",
@@ -138,11 +183,26 @@ export function validateStatement(input: ValidationInput): ValidationReport {
       continue;
     }
     if (line.debit === null && line.credit === null) {
-      findings.push({ code: "line-without-amount", severity: "incomplete", message: `${where(line)} has no amount.`, lineOrder: line.lineOrder, pageNumber: line.pageNumber });
+      findings.push({ code: "line-without-amount", severity: isPayment(line) ? "review" : "incomplete", message: `${where(line)} has no amount.`, lineOrder: line.lineOrder, pageNumber: line.pageNumber });
       arithmeticReady = false;
     } else if (line.debit !== null && line.credit !== null && line.debit !== 0 && line.credit !== 0) {
       findings.push({ code: "line-with-two-amounts", severity: "review", message: `${where(line)} has both a debit and a credit. Check it is one transaction.`, lineOrder: line.lineOrder, pageNumber: line.pageNumber });
     }
+  }
+
+  if (paymentUnread > 0) {
+    findings.push({
+      code: "payment-unread",
+      severity: "review",
+      message: `${paymentUnread} payment line${paymentUnread === 1 ? " has a value" : "s have values"} that could not be read reliably. Payments are out of scope for document reconciliation, so this does not block; the raw text is kept.`,
+    });
+  }
+  if (paymentAmountsUnread && input.openingBalance !== null && input.closingBalance !== null) {
+    findings.push({
+      code: "balance-not-verifiable",
+      severity: "review",
+      message: "The statement's balance arithmetic could not be checked because some payment amounts could not be read. Document lines are reconciled individually.",
+    });
   }
 
   // V2 — opening + debits − credits = closing.
@@ -180,7 +240,7 @@ export function validateStatement(input: ValidationInput): ValidationReport {
   if (arithmeticReady) {
     let previous: number | null = input.openingBalance === null ? null : toCents(input.openingBalance);
     let breaks = 0;
-    for (const line of transactions) {
+    for (const line of inDateOrder(transactions)) {
       const expected = previous === null ? null : previous + movement(line, convention);
       if (line.runningBalance !== null) {
         const printed = toCents(line.runningBalance);
@@ -189,7 +249,7 @@ export function validateStatement(input: ValidationInput): ValidationReport {
           if (breaks === 1) {
             findings.push({
               code: "running-balance-break",
-              severity: "incomplete",
+              severity: isPayment(line) ? "review" : "incomplete",
               message: `The running balance first stops adding up at ${where(line)}: expected ${rands(expected)}, printed ${rands(printed)}.`,
               lineOrder: line.lineOrder,
               pageNumber: line.pageNumber,
@@ -286,6 +346,7 @@ export function validateStatement(input: ValidationInput): ValidationReport {
   const seen = new Map<string, ValidationLine>();
   for (const line of transactions) {
     if (line.debit === null && line.credit === null) continue;
+    if (isPayment(line)) continue; // out of scope (SD-3G)
     const key = [line.transactionDate ?? "", (line.referenceText ?? "").trim(), toCents(line.debit ?? 0), toCents(line.credit ?? 0)].join("|");
     const first = seen.get(key);
     if (first) {

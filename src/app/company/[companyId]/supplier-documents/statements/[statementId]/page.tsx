@@ -42,6 +42,13 @@ const refs = (v: unknown): RefLinkView[] =>
     reason: str(r.reason) ?? undefined,
   }));
 
+/** SD-3G runs record how much of PRECISIA's side is not posted. */
+function notPostedOf(summary: unknown): { count: number; amount: number } | null {
+  const value = (summary as { __notPosted?: { count?: unknown; amount?: unknown } } | null)?.__notPosted;
+  if (!value || typeof value.count !== "number" || typeof value.amount !== "number") return null;
+  return { count: value.count, amount: value.amount };
+}
+
 export default async function SupplierStatementPage({
   params,
   searchParams,
@@ -138,6 +145,8 @@ export default async function SupplierStatementPage({
     id: r.id,
     runNumber: r.runNumber,
     asAt: r.asAt,
+    basis: r.basis,
+    notPosted: notPostedOf(r.summary),
     statementClosing: r.statementClosing,
     precisiaBalance: r.precisiaBalance,
     difference: r.difference,
@@ -154,6 +163,8 @@ export default async function SupplierStatementPage({
           id: runDetail.run.id,
           runNumber: runDetail.run.runNumber,
           asAt: runDetail.run.asAt,
+          basis: runDetail.run.basis,
+          notPosted: notPostedOf(runDetail.run.summary),
           statementClosing: runDetail.run.statementClosing,
           precisiaBalance: runDetail.run.precisiaBalance,
           difference: runDetail.run.difference,

@@ -175,7 +175,8 @@ export type RunRow = {
   explained_amount: number | string;
   explained_by_reviewer_amount: number | string;
   unexplained_amount: number | string;
-  category_summary: Record<string, { count: number; amount: number }>;
+  /** Per category {count, amount}; plus `__residual`, and for SD-3G runs `__notPosted` and `__byKind`. */
+  category_summary: Record<string, unknown>;
   input_snapshot: unknown;
   input_fingerprint: string;
   created_by: string;

@@ -142,9 +142,27 @@ describe("Statement review", () => {
   });
 });
 
-const RUN_SUMMARY: ReconRunSummaryView = { id: 1, runNumber: 1, asAt: "2026-09-30", statementClosing: 4260.06, precisiaBalance: 2945.5, difference: 1314.56, explained: 714.56, explainedByReviewer: 0, unexplained: 600, fingerprint: "a".repeat(64), createdBy: "reviewer@x.test", createdAt: "2026-10-01T09:00:00Z" };
+// SD-3G — a DOCUMENT run: S = documents on the statement, P = documents in PRECISIA.
+const RUN_SUMMARY: ReconRunSummaryView = {
+  id: 1, runNumber: 1, asAt: "2026-09-30", basis: "supplier-statement-documents", notPosted: { count: 1, amount: 120 },
+  statementClosing: 3534.56, precisiaBalance: 3600, difference: -65.44, explained: 534.56, explainedByReviewer: 0, unexplained: -600,
+  fingerprint: "a".repeat(64), createdBy: "reviewer@x.test", createdAt: "2026-10-01T09:00:00Z",
+};
 const RUN: ReconRunDetailView = {
-  run: { ...RUN_SUMMARY, windowFrom: "2026-09-01", windowTo: "2026-09-30", statementOpening: 1500, precisiaBalanceBeforeWindow: 1500, residual: 0 },
+  run: { ...RUN_SUMMARY, windowFrom: "2026-09-01", windowTo: "2026-09-30", statementOpening: 0, precisiaBalanceBeforeWindow: 0, residual: 0 },
+  items: [
+    { order: 1, statementLineId: 40, statementLineOrder: 1, category: "Matched", subStatus: "posted", matchTier: "zero-padded", refType: "bill", refId: 9, relatedRefs: [{ refType: "bill", refId: 9, amount: 2300, date: "2026-09-03", number: "02251125", posted: true }], suggestions: [], statementAmount: 2300, precisiaAmount: 2300, amountDifference: 0, effect: 0, explained: true, explainedByResolutionId: null, message: "Line 1 matched Bill 02251125 by zero-padded reference." },
+    { order: 2, statementLineId: 44, statementLineOrder: 5, category: "Missing in PRECISIA", subStatus: "not-captured", matchTier: null, refType: null, refId: null, relatedRefs: [], suggestions: [], statementAmount: 1234.56, precisiaAmount: null, amountDifference: null, effect: 1234.56, explained: true, explainedByResolutionId: null, message: "The invoice on line 5 (0001093) is not in PRECISIA." },
+    { order: 3, statementLineId: null, statementLineOrder: null, category: "Potential Duplicate", subStatus: "precisia-duplicate-number", matchTier: null, refType: "bill", refId: 15, relatedRefs: [{ refType: "bill", refId: 15, amount: 300, date: "2026-09-20", number: "0001200", posted: true }, { refType: "bill", refId: 16, amount: 300, date: "2026-09-21", number: "0001200", posted: false }], suggestions: [], statementAmount: null, precisiaAmount: 600, amountDifference: null, effect: -600, explained: false, explainedByResolutionId: null, message: "Document number 0001200 appears 2 times in PRECISIA for this supplier." },
+    { order: 4, statementLineId: null, statementLineOrder: null, category: "Missing on Statement", subStatus: "timing", matchTier: null, refType: "bill", refId: 13, relatedRefs: [{ refType: "bill", refId: 13, amount: 500, date: "2026-09-29", number: "0001100", posted: true }], suggestions: [], statementAmount: null, precisiaAmount: 500, amountDifference: null, effect: -500, explained: true, explainedByResolutionId: null, message: "Bill 0001100 is in PRECISIA but not on the statement." },
+    { order: 5, statementLineId: 46, statementLineOrder: 3, category: "Out of Scope", subStatus: "payment", matchTier: null, refType: null, refId: null, relatedRefs: [], suggestions: [], statementAmount: null, precisiaAmount: null, amountDifference: null, effect: 0, explained: true, explainedByResolutionId: null, message: "Line 3 is a payment. Payments are out of scope for supplier document reconciliation." },
+  ],
+};
+
+// An earlier SD-3D BALANCE run, still shown with its own figures.
+const LEGACY_SUMMARY: ReconRunSummaryView = { id: 2, runNumber: 1, asAt: "2026-09-30", basis: "supplier-ledger-document-date", statementClosing: 4260.06, precisiaBalance: 2945.5, difference: 1314.56, explained: 714.56, explainedByReviewer: 0, unexplained: 600, fingerprint: "b".repeat(64), createdBy: "reviewer@x.test", createdAt: "2026-10-01T09:00:00Z" };
+const LEGACY: ReconRunDetailView = {
+  run: { ...LEGACY_SUMMARY, windowFrom: "2026-09-01", windowTo: "2026-09-30", statementOpening: 1500, precisiaBalanceBeforeWindow: 1500, residual: 0 },
   items: [
     { order: 1, statementLineId: 40, statementLineOrder: 1, category: "Matched", subStatus: "exact", matchTier: "exact", refType: "bill", refId: 9, relatedRefs: [], suggestions: [], statementAmount: 2300, precisiaAmount: 2300, amountDifference: 0, effect: 0, explained: true, explainedByResolutionId: null, message: "Line 1 matched Bill 0001042." },
     { order: 2, statementLineId: 44, statementLineOrder: 5, category: "Missing in PRECISIA", subStatus: "imported-not-posted", matchTier: null, refType: "unposted-bill", refId: 12, relatedRefs: [], suggestions: [], statementAmount: 1234.56, precisiaAmount: null, amountDifference: null, effect: 1234.56, explained: true, explainedByResolutionId: null, message: "The document on line 5 (0001093) is in PRECISIA but was never posted." },
@@ -159,20 +177,48 @@ function recon(over: Partial<Parameters<typeof StatementReconciliation>[0]> = {}
   return render(<StatementReconciliation companyId="co_1" statementId={7} status="Reconciled" canEdit runs={[RUN_SUMMARY]} selected={RUN} latestRunId={1} resolutions={[]} stale={false} {...over} />);
 }
 
-describe("Reconciliation workspace", () => {
-  it("shows S, P, D, Explained and Unexplained exactly as the run recorded them", () => {
+function legacy() {
+  return render(<StatementReconciliation companyId="co_1" statementId={7} status="Reconciled" canEdit runs={[LEGACY_SUMMARY]} selected={LEGACY} latestRunId={2} resolutions={[]} stale={false} />);
+}
+
+const has = (region: HTMLElement, text: string) =>
+  within(region).getAllByText((t) => t.replace(/\s/g, " ").includes(text.replace(/\s/g, " ")) || t.replace(/[\s,]/g, "") === text.replace(/\s/g, "")).length > 0;
+
+describe("Reconciliation workspace — SD-3G document reconciliation", () => {
+  it("says plainly that it reconciles documents, not payments or the supplier's balance", () => {
     recon();
-    const balances = screen.getByRole("region", { name: "Balances" });
-    for (const text of ["4 260.06", "2 945.50", "1 314.56", "714.56", "600.00"]) {
-      expect(within(balances).getAllByText((t) => t.replace(/\s/g, " ").includes(text.replace(/\s/g, " ")) || t.replace(/[\s,]/g, "") === text.replace(/\s/g, "")).length).toBeGreaterThan(0);
-    }
-    expect(screen.getByText(/D = Explained \+ Unexplained, to the cent/)).toBeTruthy();
+    expect(screen.getByText(/Document reconciliation: the supplier invoices, debit notes and credit notes/)).toBeTruthy();
+    expect(screen.getByText(/Payments are out of scope and are not reconciled/)).toBeTruthy();
   });
 
-  it("groups items by classification, and flags what is unexplained", () => {
+  it("shows Documents on Statement, Documents in PRECISIA (with what is not posted) and the Document Difference", () => {
+    recon();
+    const figures = screen.getByRole("region", { name: "Documents" });
+    for (const label of ["Documents on Statement", "Documents in PRECISIA", "Document Difference"]) expect(within(figures).getByText(label)).toBeTruthy();
+    for (const text of ["3 534.56", "3 600.00", "-65.44"]) expect(has(figures, text), text).toBe(true);
+    expect(within(figures).getByText(/1 not posted/)).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Balances" })).toBeNull();
+    expect(screen.queryByText(/Statement closing/)).toBeNull();
+  });
+
+  it("counts Matched, Amount Differences, Missing in PRECISIA, Missing on Statement, Potential Duplicates and Unexplained", () => {
+    recon();
+    const results = screen.getByRole("region", { name: "Document results" });
+    for (const label of ["Matched", "Amount Differences", "Missing in PRECISIA", "Missing on Statement", "Potential Duplicates", "Unexplained"]) {
+      expect(within(results).getByText(label), label).toBeTruthy();
+    }
+    expect(screen.getByText(/1 payment line\(s\) are out of scope and not reconciled/)).toBeTruthy();
+  });
+
+  it("groups items, shows the zero-padded tier and not-posted documents, and lists payments as Out of Scope — Payment with no actions", () => {
     recon();
     for (const c of ["Matched", "Missing in PRECISIA", "Potential Duplicate", "Missing on Statement"]) expect(screen.getAllByText(c).length).toBeGreaterThan(0);
-    expect(screen.getByText("Imported — not posted")).toBeTruthy();
+    expect(screen.getByText("Out of Scope — Payment")).toBeTruthy();
+    expect(screen.getByText(/same number, zero-padded on the statement/)).toBeTruthy();
+    expect(screen.getAllByText(/· not posted/).length).toBeGreaterThan(0);
+    const paymentItem = screen.getByText(/Line 3 is a payment/).closest("li")!;
+    expect(within(paymentItem).queryByRole("button")).toBeNull();
+    expect(within(paymentItem).queryByText("Unexplained")).toBeNull();
     expect(screen.getAllByText("Unexplained").length).toBeGreaterThan(0);
   });
 
@@ -192,7 +238,15 @@ describe("Reconciliation workspace", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/companies/co_1/purchasing/supplier-statements/7/resolutions");
-    expect(JSON.parse(init.body)).toEqual({ action: "explained", refType: "supplier-payment", refId: 5, reason: "Captured twice; accounting will correct it" });
+    expect(JSON.parse(init.body)).toEqual({ action: "explained", refType: "bill", refId: 15, reason: "Captured twice; accounting will correct it" });
+  });
+
+  it("an earlier SD-3D balance run is still shown, with its own figures, marked as superseded", () => {
+    legacy();
+    expect(screen.getByText(/earlier balance reconciliation/)).toBeTruthy();
+    const balances = screen.getByRole("region", { name: "Balances" });
+    for (const text of ["4 260.06", "2 945.50", "1 314.56", "714.56", "600.00"]) expect(has(balances, text), text).toBe(true);
+    expect(screen.getByText(/D = Explained \+ Unexplained, to the cent/)).toBeTruthy();
   });
 
   it("a stale run is called out, and reconciling again posts a new run", async () => {
@@ -203,7 +257,7 @@ describe("Reconciliation workspace", () => {
   });
 
   it("a decision can be withdrawn (with a reason), never edited", async () => {
-    const decision: ResolutionView = { id: 9, action: "explained", statementLineId: null, refType: "supplier-payment", refId: 5, revokes: null, reason: "Captured twice", performedBy: "reviewer@x.test", createdAt: "2026-10-01T09:10:00Z", revoked: false };
+    const decision: ResolutionView = { id: 9, action: "explained", statementLineId: null, refType: "bill", refId: 15, revokes: null, reason: "Captured twice", performedBy: "reviewer@x.test", createdAt: "2026-10-01T09:10:00Z", revoked: false };
     recon({ resolutions: [decision] });
     fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
     fireEvent.change(screen.getByLabelText("Reason for withdrawing"), { target: { value: "Explanation was wrong" } });
@@ -268,5 +322,24 @@ describe("Statement review — SD-3F AI provenance", () => {
     review();
     expect(screen.queryByText("AI read")).toBeNull();
     expect(screen.queryByText(/read by AI from the scan/)).toBeNull();
+  });
+});
+
+describe("Statement review — SD-3G payments out of scope", () => {
+  const PAYMENT_LINES: StatementLineView[] = [
+    LINES[0],
+    { id: 47, lineOrder: 2, pageNumber: 1, rowOnPage: 5, transactionDate: "2026-09-09", referenceText: "000000002252489", description: "Payment", transactionType: "payment", typeSource: "inferred", debit: null, credit: null, runningBalance: 75563, rawText: "09/09/2026 000000002252489 Payment -R 26 766,18 R 75 563,00", unresolvedFields: ["credit"], isExcluded: false, exclusionReason: null, corrected: false },
+  ];
+  it("payment lines stay visible with their raw text, are marked as not reconciled, and an unread payment never blocks", () => {
+    render(
+      <StatementReviewWorkspace companyId="co_1" statement={statement({ supplierConfirmed: true, supplierConfirmedBy: "r", supplierConfirmedAt: "2026-10-01T09:00:00Z", validationStatus: "Review" })} lines={PAYMENT_LINES} events={[]}
+        document={{ id: 70, filename: "gourmet.pdf", mimeType: "application/pdf", sizeBytes: 70000 }} suppliers={SUPPLIERS} can={ALL} runs={[]} selectedRun={null}
+        latestRunId={null} resolutions={[]} stale={false} />,
+    );
+    expect(screen.getByText("Payment — not reconciled")).toBeTruthy();
+    expect(screen.getByText(/As read: 09\/09\/2026 000000002252489 Payment -R 26 766,18/)).toBeTruthy();
+    expect(screen.queryByText(/could not be read reliably/)).toBeNull();
+    expect(screen.getByText(/1 payment line has an unread value; payments are not reconciled, so this does not block/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Mark ready for reconciliation" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

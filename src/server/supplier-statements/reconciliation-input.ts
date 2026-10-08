@@ -20,11 +20,16 @@
  * Bank postings without the posted flag are not ledger entries and are not
  * read (they remain unexplained, owner decision).
  *
+ * SD-3G — the DOCUMENT reconciliation reads only supplier documents
+ * (`buildDocumentRecords`, `buildCaptureRecords`); the two builders above
+ * remain for replaying SD-3D balance runs.
+ *
  * Pure.
  */
 import { balancesAt, buildSupplierLedger, isPostedBill } from "@/server/report-centre/party-ledger";
 import type { SupplierSources, CaptureRef } from "@/server/repositories/supplier-statement-reconciliation-repository";
-import type { LedgerRecord, UnpostedRecord } from "./reconciliation-engine";
+import type { LedgerRecord, UnpostedRecord } from "./reconciliation-engine-sd3d";
+import type { CaptureRecord, DocumentRecord } from "./reconciliation-engine";
 
 export class LedgerMismatchError extends Error {}
 
@@ -119,6 +124,81 @@ export function buildUnpostedRecords(
       amount: total === null || !Number.isFinite(total) ? null : (credit ? -1 : 1) * total,
       documentType: credit ? "Credit Note" : c.document_type === "Debit Note" ? "Debit Note" : c.document_type === "Invoice" ? "Bill" : null,
       kind: "captured-draft",
+      source: `Supplier Documents capture #${c.id} (${c.status})`,
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------
+// SD-3G — supplier DOCUMENTS (bills, debit notes, credit notes) only.
+// Payments, bank transactions and opening balances are never read.
+// ---------------------------------------------------------------------
+
+/**
+ * Every bill, debit note and credit note of the supplier that has a date and
+ * is not cancelled — posted or not (owner decision: an unposted bill is "in
+ * PRECISIA", always flagged `posted: false`).
+ *
+ * The POSTED ones are checked against the supplier ledger itself: they must
+ * be exactly the ledger's document entries for this supplier (same documents,
+ * same signed amounts, to the cent), or the run is refused.
+ */
+export function buildDocumentRecords(
+  sources: SupplierSources,
+  captureBillIds: ReadonlySet<number>,
+  supplierId: number,
+): DocumentRecord[] {
+  const records: DocumentRecord[] = [];
+  for (const bill of sources.bills) {
+    if (bill.supplierId !== supplierId || !bill.invoiceDate || bill.postingStatus === "Cancelled") continue;
+    const posted = isPostedBill(bill);
+    const refType = bill.documentType === "Credit Note" ? "credit-note" : bill.documentType === "Debit Note" ? "debit-note" : "bill";
+    const sign = bill.documentType === "Credit Note" ? -1 : 1;
+    records.push({
+      refType,
+      refId: bill.id,
+      date: bill.invoiceDate,
+      number: bill.invoiceNumber ?? "",
+      amount: sign * bill.total,
+      posted,
+      source: posted
+        ? `posted ${bill.documentType.toLowerCase()} #${bill.id}`
+        : captureBillIds.has(bill.id)
+          ? `draft bill #${bill.id} created from a captured invoice, not posted`
+          : bill.origin === "Imported"
+            ? `Import Centre bill #${bill.id}, not posted`
+            : `Purchasing ${bill.postingStatus ?? "draft"} bill #${bill.id}, not posted`,
+    });
+  }
+  records.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.refType < b.refType ? -1 : a.refType > b.refType ? 1 : a.refId - b.refId));
+
+  // The authority for what is posted: the supplier ledger's document entries.
+  const ledgerDocs = buildSupplierLedger(sources).filter((e) => e.source === "document" && e.partyId === supplierId);
+  const fromLedger = new Map(ledgerDocs.map((e) => [e.docId, cents(e.amount)]));
+  const posted = records.filter((r) => r.posted);
+  const agrees = posted.length === fromLedger.size && posted.every((r) => fromLedger.get(r.refId) === cents(r.amount));
+  if (!agrees) {
+    throw new LedgerMismatchError("The supplier's posted documents do not agree with the supplier ledger's document entries; the run was refused.");
+  }
+  return records;
+}
+
+/** Supplier Documents captures still in the workflow (not yet a bill). They
+ * are not "in PRECISIA" as documents; they only explain a missing one. */
+export function buildCaptureRecords(captures: CaptureRef[], supplierId: number): CaptureRecord[] {
+  const out: CaptureRecord[] = [];
+  for (const c of captures) {
+    if (c.supplier_id !== supplierId || !CAPTURE_IN_WORKFLOW.has(c.status) || !c.invoice_number) continue;
+    const credit = c.document_type === "Credit Note";
+    const total = c.total === null ? null : Number(c.total);
+    out.push({
+      refType: "capture",
+      refId: c.id,
+      number: c.invoice_number,
+      date: c.invoice_date,
+      amount: total === null || !Number.isFinite(total) ? null : (credit ? -1 : 1) * total,
+      documentType: credit ? "Credit Note" : c.document_type === "Debit Note" ? "Debit Note" : c.document_type === "Invoice" ? "Bill" : null,
       source: `Supplier Documents capture #${c.id} (${c.status})`,
     });
   }

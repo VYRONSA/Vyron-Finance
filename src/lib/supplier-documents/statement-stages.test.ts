@@ -36,7 +36,10 @@ describe("reconciliation actions", () => {
     expect(explanationTarget(item({ statementLineId: 4 }))).toEqual({ statementLineId: 4 });
     expect(explanationTarget(item({ category: "Opening Balance Difference" }))).toEqual({ refType: "opening-difference" });
     expect(explanationTarget(item({ category: "Missing on Statement", refType: "bill", refId: 9 }))).toEqual({ refType: "bill", refId: 9 });
-    expect(explanationTarget(item({ category: "Potential Duplicate", relatedRefs: [{ refType: "supplier-payment", refId: 3 }, { refType: "bank-transaction", refId: 4 }] }))).toEqual({ refType: "supplier-payment", refId: 3 });
+    // SD-3G: decisions name supplier DOCUMENTS only; payments are never explained (they are not reconciled).
+    expect(explanationTarget(item({ category: "Potential Duplicate", relatedRefs: [{ refType: "bill", refId: 3 }, { refType: "bill", refId: 4 }] }))).toEqual({ refType: "bill", refId: 3 });
+    expect(explanationTarget(item({ category: "Potential Duplicate", relatedRefs: [{ refType: "supplier-payment", refId: 3 }, { refType: "bank-transaction", refId: 4 }] }))).toBeNull();
+    expect(explanationTarget(item({ category: "Out of Scope", statementLineId: 8 }))).toBeNull();
     expect(explanationTarget(item({ category: "Missing in PRECISIA", refType: "capture", refId: 2 }))).toBeNull();
   });
   it("only unmatched statement lines can be linked by hand", () => {
@@ -45,5 +48,6 @@ describe("reconciliation actions", () => {
     expect(canLinkItem(item({ statementLineId: 1, category: "Payment", subStatus: "matched" }))).toBe(false);
     expect(canLinkItem(item({ statementLineId: 1, category: "Payment", subStatus: "suggested" }))).toBe(true);
     expect(canLinkItem(item({ statementLineId: null, category: "Missing on Statement" }))).toBe(false);
+    expect(canLinkItem(item({ statementLineId: 8, category: "Out of Scope", subStatus: "payment" }))).toBe(false);
   });
 });

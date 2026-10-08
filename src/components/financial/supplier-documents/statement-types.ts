@@ -84,8 +84,15 @@ export type ReconRunSummaryView = {
   id: number;
   runNumber: number;
   asAt: string;
+  /** "supplier-statement-documents" (SD-3G document reconciliation) or the
+   * SD-3D balance basis of earlier runs. */
+  basis?: string;
+  /** Document basis: Documents on Statement. Balance basis: the closing balance. */
   statementClosing: number | null;
+  /** Document basis: Documents in PRECISIA. Balance basis: the ledger balance. */
   precisiaBalance: number | null;
+  /** Document basis: the part of PRECISIA's documents that is not posted. */
+  notPosted?: { count: number; amount: number } | null;
   difference: number | null;
   explained: number | null;
   explainedByReviewer: number | null;
@@ -95,7 +102,7 @@ export type ReconRunSummaryView = {
   createdAt: string;
 };
 
-export type RefLinkView = { refType: string; refId: number; amount: number | null; date: string | null; number: string | null; note?: string; reason?: string };
+export type RefLinkView = { refType: string; refId: number; amount: number | null; date: string | null; number: string | null; posted?: boolean; note?: string; reason?: string };
 
 export type ReconItemDetailView = {
   order: number;

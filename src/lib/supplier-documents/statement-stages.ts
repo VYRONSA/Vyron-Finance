@@ -123,6 +123,8 @@ export type StatementReadiness = {
   supplierId: number | null;
   supplierConfirmed: boolean;
   currencySupported: boolean;
+  /** Unread values on invoice, debit-note, credit-note or unknown-type lines
+   * (payments are out of scope and never block). */
   unreadLines: number;
   statementDate: string | null;
 };
@@ -145,6 +147,8 @@ export function readinessBlockers(s: StatementReadiness): string[] {
 // Reconciliation
 // ---------------------------------------------------------------------
 
+/** Display order. "Credit Note", "Payment" and "Opening Balance Difference"
+ * appear only in SD-3D balance runs (before SD-3G). */
 export const CATEGORY_ORDER = [
   "Opening Balance Difference",
   "Potential Duplicate",
@@ -155,7 +159,15 @@ export const CATEGORY_ORDER = [
   "Credit Note",
   "Payment",
   "Matched",
+  "Out of Scope",
 ] as const;
+
+export const CATEGORY_LABEL: Record<string, string> = {
+  "Out of Scope": "Out of Scope — Payment",
+};
+
+/** SD-3G: the basis of a document reconciliation run. */
+export const DOCUMENT_BASIS = "supplier-statement-documents";
 
 export const CATEGORY_TONE: Record<string, "good" | "warn" | "info" | "danger" | "muted"> = {
   Matched: "good",
@@ -167,9 +179,15 @@ export const CATEGORY_TONE: Record<string, "good" | "warn" | "info" | "danger" |
   Payment: "info",
   Unclassified: "danger",
   "Opening Balance Difference": "danger",
+  "Out of Scope": "muted",
 };
 
 export const SUB_STATUS_LABEL: Record<string, string> = {
+  posted: "Posted in PRECISIA",
+  "not-posted": "In PRECISIA — not posted",
+  "captured-not-converted": "Captured — not yet a bill",
+  "same-number-different-amount": "Same document number, different amount",
+  "precisia-duplicate-number": "Same document number twice in PRECISIA",
   exact: "Exact reference",
   normalised: "Same reference, different punctuation",
   manual: "Linked by a reviewer",
@@ -211,8 +229,16 @@ export const REF_TYPE_LABEL: Record<string, string> = {
   "unposted-bill": "Unposted bill",
 };
 
-/** The ledger record types a manual link or an explanation may name. */
-export const LINKABLE_REF_TYPES = new Set(["bill", "credit-note", "debit-note", "supplier-payment", "bank-transaction", "opening-balance"]);
+/** SD-3G: a manual link or an explanation names a supplier DOCUMENT only. */
+export const LINKABLE_REF_TYPES = new Set(["bill", "credit-note", "debit-note"]);
+
+export const RECON_TIER_LABEL: Record<string, string> = {
+  manual: "linked by a reviewer",
+  exact: "exact reference",
+  normalised: "same reference, different punctuation",
+  "zero-padded": "same number, zero-padded on the statement",
+  "payment-evidence": "amount, date and reference",
+};
 
 export type ReconItemView = {
   order: number;
@@ -229,6 +255,7 @@ export type ReconItemView = {
 /** What an "Explain" decision should name for an item: its statement line,
  * the opening difference, or the PRECISIA record it is about. */
 export function explanationTarget(item: ReconItemView): { statementLineId?: number; refType?: string; refId?: number } | null {
+  if (item.category === "Out of Scope") return null; // payments are not reconciled
   if (item.statementLineId !== null) return { statementLineId: item.statementLineId };
   if (item.category === "Opening Balance Difference") return { refType: "opening-difference" };
   if (item.refType && item.refId !== null && LINKABLE_REF_TYPES.has(item.refType)) return { refType: item.refType, refId: item.refId };
@@ -239,6 +266,7 @@ export function explanationTarget(item: ReconItemView): { statementLineId?: numb
 /** A statement line that is not matched can be linked by hand. */
 export function canLinkItem(item: ReconItemView): boolean {
   if (item.statementLineId === null) return false;
+  if (item.category === "Out of Scope") return false;
   if (item.category === "Matched") return false;
   if (["Credit Note", "Payment"].includes(item.category) && ["matched", "amount-difference", "timing"].includes(item.subStatus)) return false;
   if (item.category === "Amount Difference") return false;

@@ -78,7 +78,7 @@ async function read(truth: GroundTruth) {
 
 describe("statement corpus — integrity", () => {
   it("every document is in the manifest, unchanged, and has a hand-typed answer key", () => {
-    expect(manifest.documents.length).toBe(15);
+    expect(manifest.documents.length).toBe(16);
     for (const doc of manifest.documents) {
       const bytes = readFileSync(`${ROOT}/${doc.file}`);
       expect(createHash("sha256").update(bytes).digest("hex"), doc.key).toBe(doc.sha256);
@@ -92,7 +92,7 @@ describe("statement corpus — integrity", () => {
     for (const required of [
       "karoo-point", "highveld-comma-crdr", "multipage-repeated", "multipage-continuation", "ambiguous-unreadable",
       "repeated-line", "arithmetic-errors", "reverse-convention", "layout-variation", "scanned", "scan-jpg", "scan-png",
-      "encrypted", "csv-semicolon", "xlsx-typed",
+      "encrypted", "csv-semicolon", "xlsx-typed", "monthly-negative-credits",
     ]) {
       expect(keys.has(required), required).toBe(true);
     }

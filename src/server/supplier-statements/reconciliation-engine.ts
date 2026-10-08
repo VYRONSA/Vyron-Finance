@@ -1,70 +1,82 @@
 /**
- * SD-3D — the supplier-statement reconciliation engine.
+ * SD-3G — the supplier-statement DOCUMENT reconciliation engine.
  *
- * PURE and READ-ONLY. It is handed a statement (its validated lines) and the
- * supplier's records as they stand, and returns a classification of every
- * difference. It writes nothing, posts nothing, allocates nothing and never
- * creates a balancing adjustment. The supplier ledger is authoritative:
- * the PRECISIA balance P is the ledger's balance at the statement date.
+ * The question it answers (owner, after production UAT): "Which supplier
+ * documents appearing on this statement do we have in PRECISIA, and do the
+ * amounts and references agree?" — NOT "can the supplier's balance be
+ * reconciled including payments?".
  *
- *   S  statement closing balance
- *   P  supplier ledger balance at the statement date (document dates)
- *   D  S − P
- *   Explained    differences with an identified cause (or a reviewer's
- *                recorded explanation)
- *   Unexplained  D − Explained — shown as it is, never forced to zero
+ * THE POPULATION is supplier invoices, debit notes and credit notes:
+ *   statement side   every non-payment transaction line;
+ *   PRECISIA side    the supplier's bills, debit notes and credit notes in the
+ *                    statement window — posted AND unposted (an unposted bill
+ *                    is "in PRECISIA" but always flagged "not posted").
+ * PAYMENTS ARE OUT OF SCOPE. A payment line gets exactly one item, "Out of
+ * Scope — payment": never matched, never a suggestion, never Missing,
+ * Amount Difference, Potential Duplicate or Unclassified, and no effect on any
+ * figure. It stays on the statement, unchanged. PRECISIA supplier payments,
+ * bank transactions and opening balances are not read at all.
  *
- * MATCHING, strongest first (SD-3A §6.1). Each PRECISIA record matches at
- * most one line; a tier with more than one candidate is AMBIGUOUS (a
- * potential duplicate), never a choice.
- *   T0 manual link        a reviewer's recorded link (with reason)
- *   T1 exact reference    reference text equal AND a compatible document type
- *   T2 normalised ref.    same key (case/punctuation only — leading zeros
- *                         kept), exactly one candidate, compatible type
- *   P1 payment evidence   exact amount + date within ±7 days + a shared
- *                         reference token
- *   S1/S2                 reference containment / amount + date: SUGGESTIONS
- *                         ONLY — never a match. Amount alone never matches.
+ * FIGURES (integer cents internally):
+ *   Documents on Statement   S  sum of the in-scope lines (credit notes negative)
+ *   Documents in PRECISIA    P  sum of the in-window documents (credit notes negative)
+ *   Document Difference      D  S − P
+ *   Explained / Unexplained  D = Explained + Unexplained, to the cent; every
+ *                            item carries its effect on D, and the residual
+ *                            D − Σ effects is always reported (it is 0).
  *
- * Every figure is in integer cents.
+ * MATCHING, strongest first. Each PRECISIA document matches at most one line;
+ * more than one candidate is AMBIGUOUS (a potential duplicate), never a choice.
+ * Amount alone never matches.
+ *   T0 manual link     a reviewer's recorded link (with reason)
+ *   T1 exact           reference text equal, compatible document type
+ *   T2 normalised      equal ignoring case and punctuation (leading zeros KEPT)
+ *   T3 zero-padded     both digits-only and equal once leading zeros are
+ *                      removed — ONLY for references printed at the
+ *                      statement's own consistent zero-padding width
+ *                      (owner decision: e.g. statement 000000002251125 ↔
+ *                      PRECISIA 02251125). Stored text is never changed.
+ *   Suggestions        reference containment / amount + date: suggestions only.
+ *
+ * Pure and read-only: it writes, posts and allocates nothing.
  */
 import { normaliseInvoiceNumber } from "@/server/supplier-invoice-capture/validation";
 import type { SignConvention, StatementTransactionType } from "./types";
 
-export const ENGINE_VERSION = "sd3d-1";
+export const ENGINE_VERSION = "sd3g-1";
+export const RECONCILIATION_BASIS = "supplier-statement-documents";
 
-const PAYMENT_WINDOW_DAYS = 7;
 const SUGGESTION_WINDOW_DAYS = 3;
 const TIMING_DAYS = 7;
+/** Shortest reference treated as zero-padded (a padding scheme, not a short number). */
+const MIN_PADDED_LENGTH = 6;
 
-export type LedgerRefType = "bill" | "credit-note" | "debit-note" | "supplier-payment" | "bank-transaction" | "opening-balance";
+export type DocumentRefType = "bill" | "credit-note" | "debit-note";
+export type DocumentKind = "invoice" | "debit-note" | "credit-note" | "unknown";
 
-/** A record that is IN the supplier ledger (posted). `amount` is signed the
- * ledger's way: + increases what we owe the supplier. */
-export type LedgerRecord = {
-  refType: LedgerRefType;
+/** A supplier document PRECISIA holds. `amount` is signed the ledger's way:
+ * + increases what we owe (bills, debit notes), − for credit notes. */
+export type DocumentRecord = {
+  refType: DocumentRefType;
   refId: number;
   date: string;
-  /** Document number, or a payment's number/reference. */
   number: string;
-  /** Free text that may carry a reference (payment reference, bank narrative). */
-  evidence: string;
   amount: number;
+  /** false: imported or drafted but never posted (no journal). Counted as
+   * "in PRECISIA", always flagged. */
+  posted: boolean;
+  source: string;
 };
 
-/** A record PRECISIA knows about that is NOT in the ledger. */
-export type UnpostedRecord = {
-  refType: "unposted-bill" | "capture";
+/** A supplier document still in Supplier Documents capture (not yet a bill).
+ * Not part of P; only used to say WHY a statement document is missing. */
+export type CaptureRecord = {
+  refType: "capture";
   refId: number;
   number: string | null;
   date: string | null;
   amount: number | null;
   documentType: "Bill" | "Credit Note" | "Debit Note" | null;
-  /** captured-draft: went through Supplier Document Capture (a capture in
-   * the workflow, or the draft a capture was converted to).
-   * imported-not-posted: any other unposted bill (Import Centre, or a
-   * Purchasing draft — Xero-migrated or entered by hand). */
-  kind: "captured-draft" | "imported-not-posted";
   source: string;
 };
 
@@ -84,7 +96,7 @@ export type ResolutionInput = {
   id: number;
   action: "manual-link" | "explained" | "revoke";
   lineId: number | null;
-  refType: LedgerRefType | "opening-difference" | null;
+  refType: string | null;
   refId: number | null;
   revokesId: number | null;
   reason: string;
@@ -96,13 +108,11 @@ export type EngineInput = {
     id: number;
     statementDate: string;
     periodFrom: string | null;
-    openingBalance: number;
-    closingBalance: number;
     signConvention: SignConvention;
   };
   lines: ReconciliationLine[];
-  ledger: LedgerRecord[];
-  unposted: UnpostedRecord[];
+  documents: DocumentRecord[];
+  captures: CaptureRecord[];
   resolutions: ResolutionInput[];
 };
 
@@ -112,12 +122,20 @@ export type ItemCategory =
   | "Missing in PRECISIA"
   | "Missing on Statement"
   | "Potential Duplicate"
-  | "Credit Note"
-  | "Payment"
   | "Unclassified"
-  | "Opening Balance Difference";
+  | "Out of Scope";
 
-export type RefLink = { refType: string; refId: number; amount: number | null; date: string | null; number: string | null; note?: string };
+export type MatchTier = "manual" | "exact" | "normalised" | "zero-padded";
+
+export type RefLink = {
+  refType: string;
+  refId: number;
+  amount: number | null;
+  date: string | null;
+  number: string | null;
+  posted?: boolean;
+  note?: string;
+};
 
 export type ReconciliationItem = {
   order: number;
@@ -125,7 +143,9 @@ export type ReconciliationItem = {
   lineOrder: number | null;
   category: ItemCategory;
   subStatus: string;
-  matchTier: "manual" | "exact" | "normalised" | "payment-evidence" | null;
+  /** What the document is (from the statement line, or the PRECISIA record). */
+  documentKind: DocumentKind | null;
+  matchTier: MatchTier | null;
   refType: string | null;
   refId: number | null;
   relatedRefs: RefLink[];
@@ -133,7 +153,7 @@ export type ReconciliationItem = {
   statementAmount: number | null;
   precisiaAmount: number | null;
   amountDifference: number | null;
-  /** This item's signed contribution to D. */
+  /** This item's signed contribution to the Document Difference. */
   effect: number;
   explained: boolean;
   explainedByResolutionId: number | null;
@@ -142,21 +162,27 @@ export type ReconciliationItem = {
 
 export type EngineResult = {
   engineVersion: string;
+  basis: typeof RECONCILIATION_BASIS;
   windowFrom: string;
   windowTo: string;
-  statementOpening: number;
-  statementClosing: number;
-  balanceBeforeWindow: number;
-  balanceAt: number;
+  /** S — Documents on Statement. */
+  documentsOnStatement: number;
+  /** P — Documents in PRECISIA (posted and not posted) in the window. */
+  documentsInPrecisia: number;
+  /** The part of P that is not posted. */
+  documentsNotPosted: { count: number; amount: number };
+  /** D = S − P. */
   difference: number;
   explained: number;
   explainedByReviewer: number;
   unexplained: number;
-  /** D minus the sum of every item's effect: 0 when every difference is
-   * itemised. Anything else is part of Unexplained and is reported. */
+  /** D minus the sum of every item's effect (0 when everything is itemised). */
   residual: number;
+  outOfScopePayments: number;
   items: ReconciliationItem[];
   summary: Record<string, { count: number; amount: number }>;
+  /** Counts per document kind and category (matched invoices, missing credit notes, …). */
+  byKind: Record<string, Record<string, number>>;
 };
 
 // ---------------------------------------------------------------------
@@ -176,52 +202,52 @@ function owed(line: ReconciliationLine, convention: SignConvention): number {
   return convention === "debit-increases-owed" ? debit - credit : credit - debit;
 }
 
-/** Tokens that can evidence a payment reference: alphanumeric runs and digit
- * runs of four or more characters. */
-function tokens(text: string): Set<string> {
-  const out = new Set<string>();
-  const upper = text.toUpperCase();
-  for (const t of upper.match(/[A-Z0-9]{4,}/g) ?? []) out.add(t);
-  for (const t of upper.match(/[0-9]{4,}/g) ?? []) out.add(t);
-  return out;
-}
-
-function shareToken(a: string, b: string): boolean {
-  const left = tokens(a);
-  for (const t of tokens(b)) if (left.has(t)) return true;
-  return false;
-}
-
 function digits(text: string | null): string {
   return (text ?? "").replace(/\D/g, "");
 }
 
-function link(r: LedgerRecord, note?: string): RefLink {
-  return { refType: r.refType, refId: r.refId, amount: rands(cents(r.amount)), date: r.date, number: r.number || null, ...(note ? { note } : {}) };
+function stripZeros(text: string): string {
+  return text.replace(/^0+(?=\d)/, "");
 }
 
-type LineKind = "document" | "credit-note" | "payment" | "unclassified" | "unknown-credit";
+function link(r: DocumentRecord, note?: string): RefLink {
+  return { refType: r.refType, refId: r.refId, amount: rands(cents(r.amount)), date: r.date, number: r.number || null, posted: r.posted, ...(note ? { note } : {}) };
+}
+
+function recordKind(r: DocumentRecord): DocumentKind {
+  return r.refType === "credit-note" ? "credit-note" : r.refType === "debit-note" ? "debit-note" : "invoice";
+}
+
+type LineKind = "payment" | "charge" | "credit-note" | "unknown-credit" | "unclassified";
 
 function lineKind(line: ReconciliationLine, owedCents: number): LineKind {
   switch (line.type) {
-    case "invoice":
-    case "debit-note":
-      return "document";
-    case "credit-note":
-      return "credit-note";
     case "payment":
       return "payment";
+    case "invoice":
+    case "debit-note":
+      return "charge";
+    case "credit-note":
+      return "credit-note";
     case "unknown":
-      // The type is not printed and was not decided by a reviewer. A charge
-      // can only be a document; a credit could be a credit note OR a
-      // payment, so both are tried — the sign never decides which.
-      return owedCents >= 0 ? "document" : "unknown-credit";
+      // The type is not printed and no reviewer has set it. A charge can only
+      // be a document; a credit could be a credit note OR a payment — it is
+      // tried as a credit note, and otherwise left for a reviewer to type.
+      return owedCents >= 0 ? "charge" : "unknown-credit";
     default:
       return "unclassified";
   }
 }
 
-function documentRefTypes(kind: "document" | "credit-note"): LedgerRefType[] {
+function documentKindOf(line: ReconciliationLine, kind: LineKind): DocumentKind | null {
+  if (line.type === "invoice") return "invoice";
+  if (line.type === "debit-note") return "debit-note";
+  if (line.type === "credit-note") return "credit-note";
+  if (kind === "charge" || kind === "unknown-credit") return "unknown";
+  return null;
+}
+
+function refTypesFor(kind: "charge" | "credit-note"): DocumentRefType[] {
   return kind === "credit-note" ? ["credit-note"] : ["bill", "debit-note"];
 }
 
@@ -234,6 +260,31 @@ function vatHint(statementCents: number, precisiaCents: number): string | null {
   return null;
 }
 
+/** The statement's own zero-padding width: the length shared by most of its
+ * digits-only references that start with 0 (at least two of them). Null when
+ * the statement does not pad its references consistently. */
+export function paddingWidth(references: (string | null)[]): number | null {
+  const counts = new Map<number, number>();
+  for (const raw of references) {
+    const ref = (raw ?? "").trim();
+    if (ref.length < MIN_PADDED_LENGTH || !/^0\d+$/.test(ref)) continue;
+    counts.set(ref.length, (counts.get(ref.length) ?? 0) + 1);
+  }
+  let best: number | null = null;
+  let bestCount = 0;
+  let tie = false;
+  for (const [length, count] of counts) {
+    if (count > bestCount) {
+      best = length;
+      bestCount = count;
+      tie = false;
+    } else if (count === bestCount) {
+      tie = true;
+    }
+  }
+  return best !== null && bestCount >= 2 && !tie ? best : null;
+}
+
 // ---------------------------------------------------------------------
 // The engine
 // ---------------------------------------------------------------------
@@ -243,19 +294,18 @@ export function reconcileStatement(input: EngineInput): EngineResult {
   const convention = statement.signConvention;
   const asAt = statement.statementDate;
   const lines = [...input.lines].sort((a, b) => a.lineOrder - b.lineOrder);
+  const inScope = lines.filter((l) => l.type !== "payment");
 
-  const lineDates = lines.map((l) => l.date).filter((d): d is string => !!d).sort();
+  const lineDates = inScope.map((l) => l.date).filter((d): d is string => !!d).sort();
   const windowFrom = statement.periodFrom ?? lineDates[0] ?? asAt;
+  const inWindow = (r: DocumentRecord) => r.date >= windowFrom && r.date <= asAt;
+  const population = input.documents.filter(inWindow);
 
-  // The supplier ledger as at the statement date (later records are not part
-  // of P; they are only consulted for payment timing).
-  const ledgerAtDate = input.ledger.filter((r) => r.date <= asAt);
-  const inWindow = (r: LedgerRecord) => r.date >= windowFrom && r.date <= asAt;
-  const balanceAt = ledgerAtDate.reduce((s, r) => s + cents(r.amount), 0);
-  const balanceBeforeWindow = ledgerAtDate.filter((r) => r.date < windowFrom).reduce((s, r) => s + cents(r.amount), 0);
-  const opening = cents(statement.openingBalance);
-  const closing = cents(statement.closingBalance);
-  const difference = closing - balanceAt;
+  const S = inScope.reduce((s, l) => s + owed(l, convention), 0);
+  const P = population.reduce((s, r) => s + cents(r.amount), 0);
+  const notPosted = population.filter((r) => !r.posted);
+  const difference = S - P;
+  const width = paddingWidth(inScope.map((l) => l.reference));
 
   // Reviewer decisions in force.
   const revoked = new Set(input.resolutions.filter((r) => r.action === "revoke" && r.revokesId !== null).map((r) => r.revokesId!));
@@ -264,213 +314,165 @@ export function reconcileStatement(input: EngineInput): EngineResult {
   const key = (r: { refType: string; refId: number }) => `${r.refType}:${r.refId}`;
   const consumed = new Set<string>();
   const items: ReconciliationItem[] = [];
+  const push = (item: Omit<ReconciliationItem, "order" | "explainedByResolutionId">) => items.push({ ...item, order: 0, explainedByResolutionId: null });
 
-  const push = (item: Omit<ReconciliationItem, "order" | "explainedByResolutionId">) =>
-    items.push({ ...item, order: 0, explainedByResolutionId: null });
-
-  // Effect of a line matched to a record: the record leaves D only if it is
-  // inside the window (before it, it is already in the opening balance).
-  const pairEffect = (lineCents: number, r: LedgerRecord) => lineCents - (inWindow(r) ? cents(r.amount) : 0);
-  const timingNote = (r: LedgerRecord) =>
-    inWindow(r) ? "" : " PRECISIA dates it before the statement period, so it is already in the opening balance.";
+  // A matched document leaves D only if it is in the window (before it, it
+  // was never counted in P).
+  const pairEffect = (lineCents: number, r: DocumentRecord) => lineCents - (inWindow(r) ? cents(r.amount) : 0);
+  const notPostedNote = (r: DocumentRecord) => (r.posted ? "" : " It is in PRECISIA but NOT POSTED.");
+  const outsideNote = (r: DocumentRecord) => (inWindow(r) ? "" : ` PRECISIA dates it ${r.date}, outside the statement window.`);
 
   // ---- T0 manual links ------------------------------------------------
-  const manualByLine = new Map<number, { record: LedgerRecord | null; resolution: ResolutionInput }>();
+  const manualByLine = new Map<number, { record: DocumentRecord | null; resolution: ResolutionInput }>();
   for (const r of active.filter((x) => x.action === "manual-link")) {
-    if (r.lineId === null || r.refType === null || r.refType === "opening-difference" || r.refId === null) continue;
-    const record = ledgerAtDate.find((x) => x.refType === r.refType && x.refId === r.refId && !consumed.has(key(x))) ?? null;
+    if (r.lineId === null || r.refId === null) continue;
+    const record = input.documents.find((x) => x.refType === r.refType && x.refId === r.refId && !consumed.has(key(x))) ?? null;
     if (record) consumed.add(key(record));
     manualByLine.set(r.lineId, { record, resolution: r });
   }
 
   // ---- statement lines -------------------------------------------------
-  const seenLine = new Map<string, ReconciliationLine>();
+  const seenRepeat = new Map<string, ReconciliationLine>();
+  const seenNumber = new Map<string, { line: ReconciliationLine; amount: number }>();
   for (const line of lines) {
     const amount = owed(line, convention);
     const statementAmount = rands(amount);
     const kind = lineKind(line, amount);
+    const documentKind = documentKindOf(line, kind);
     const ref = (line.reference ?? "").trim();
 
-    // A line printed twice on the statement.
+    if (kind === "payment") {
+      push({
+        lineId: line.id, lineOrder: line.lineOrder, category: "Out of Scope", subStatus: "payment", documentKind: null, matchTier: null,
+        refType: null, refId: null, relatedRefs: [], suggestions: [], statementAmount: null, precisiaAmount: null, amountDifference: null,
+        effect: 0, explained: true,
+        message: `Line ${line.lineOrder} is a payment. Payments are out of scope for supplier document reconciliation: it is kept on the statement and not reconciled.`,
+      });
+      continue;
+    }
+
+    // The same line printed twice on the statement.
     const repeatKey = [line.date ?? "", ref, amount].join("|");
-    const first = seenLine.get(repeatKey);
+    const first = seenRepeat.get(repeatKey);
     if (first && ref) {
       push({
-        lineId: line.id, lineOrder: line.lineOrder, category: "Potential Duplicate", subStatus: "statement-repeat", matchTier: null,
+        lineId: line.id, lineOrder: line.lineOrder, category: "Potential Duplicate", subStatus: "statement-repeat", documentKind, matchTier: null,
         refType: null, refId: null, relatedRefs: [], suggestions: [], statementAmount, precisiaAmount: null, amountDifference: null,
         effect: amount, explained: false,
         message: `Line ${line.lineOrder} repeats line ${first.lineOrder} on the statement (same date, reference and amount). Not matched; check whether the supplier charged it twice.`,
       });
       continue;
     }
-    seenLine.set(repeatKey, line);
+    seenRepeat.set(repeatKey, line);
+
+    // The same document number with a different amount.
+    const numberKey = ref && kind !== "unclassified" ? `${kind === "charge" ? "charge" : "credit"}|${normaliseInvoiceNumber(ref)}` : "";
+    const sameNumber = numberKey ? seenNumber.get(numberKey) : undefined;
+    if (sameNumber && sameNumber.amount !== amount) {
+      push({
+        lineId: line.id, lineOrder: line.lineOrder, category: "Potential Duplicate", subStatus: "same-number-different-amount", documentKind, matchTier: null,
+        refType: null, refId: null, relatedRefs: [], suggestions: [], statementAmount, precisiaAmount: null, amountDifference: null,
+        effect: amount, explained: false,
+        message: `Line ${line.lineOrder} uses document number ${ref}, already used on line ${sameNumber.line.lineOrder} with a different amount. Not matched; check the original.`,
+      });
+      continue;
+    }
+    if (numberKey && !sameNumber) seenNumber.set(numberKey, { line, amount });
 
     // T0
     const manual = manualByLine.get(line.id);
     if (manual) {
       if (!manual.record) {
         push({
-          lineId: line.id, lineOrder: line.lineOrder, category: "Unclassified", subStatus: "manual-link-unavailable", matchTier: null,
+          lineId: line.id, lineOrder: line.lineOrder, category: "Unclassified", subStatus: "manual-link-unavailable", documentKind, matchTier: null,
           refType: null, refId: null, relatedRefs: [], suggestions: [], statementAmount, precisiaAmount: null, amountDifference: null,
           effect: amount, explained: false,
-          message: `A reviewer linked line ${line.lineOrder} to a record that is not in the supplier ledger at the statement date (or is already matched).`,
+          message: `A reviewer linked line ${line.lineOrder} to a supplier document that is not available (not this supplier's, or already matched).`,
         });
         continue;
       }
-      pushPair(line, amount, manual.record, "manual", kind);
+      pushPair(line, amount, manual.record, "manual", documentKind);
       continue;
     }
 
     if (kind === "unclassified") {
       push({
-        lineId: line.id, lineOrder: line.lineOrder, category: "Unclassified", subStatus: line.type, matchTier: null,
-        refType: null, refId: null, relatedRefs: [], suggestions: suggestionsFor(line, amount, ["bill", "debit-note", "credit-note", "supplier-payment", "bank-transaction"]),
+        lineId: line.id, lineOrder: line.lineOrder, category: "Unclassified", subStatus: line.type, documentKind: null, matchTier: null,
+        refType: null, refId: null, relatedRefs: [], suggestions: suggestionsFor(line, amount, ["bill", "debit-note", "credit-note"]),
         statementAmount, precisiaAmount: null, amountDifference: null, effect: amount, explained: false,
-        message: `Line ${line.lineOrder} is ${line.type === "other" ? "not an invoice, credit note or payment" : `${line.type}`}; it is not matched automatically.`,
+        message: `Line ${line.lineOrder} is ${line.type === "other" ? "not an invoice, debit note or credit note" : `a ${line.type} line`}; it is not matched automatically. Set its type, or link it.`,
       });
       continue;
     }
 
-    // Document matching (T1, T2).
-    if (kind === "document" || kind === "credit-note" || kind === "unknown-credit") {
-      const docKind = kind === "unknown-credit" ? "credit-note" : kind;
-      const result = matchDocument(line, ref, documentRefTypes(docKind));
-      if (result.kind === "match") {
-        pushPair(line, amount, result.record, result.tier, docKind);
-        continue;
-      }
-      if (result.kind === "ambiguous") {
-        for (const r of result.candidates) consumed.add(key(r));
-        const candidateEffect = result.candidates.filter(inWindow).reduce((s, r) => s + cents(r.amount), 0);
-        push({
-          lineId: line.id, lineOrder: line.lineOrder, category: "Potential Duplicate", subStatus: "multiple-precisia", matchTier: null,
-          refType: null, refId: null, relatedRefs: result.candidates.map((r) => link(r)), suggestions: [], statementAmount,
-          precisiaAmount: null, amountDifference: null, effect: amount - candidateEffect, explained: false,
-          message: `Line ${line.lineOrder} (${ref}) matches ${result.candidates.length} PRECISIA records ${result.tier === "exact" ? "exactly" : "by normalised reference"}. None is chosen automatically.`,
-        });
-        continue;
-      }
-      if (kind !== "unknown-credit") {
-        pushMissing(line, amount, docKind);
-        continue;
-      }
-    }
-
-    // Payment matching (P1) — payment lines, and unknown credits with no
-    // matching credit note.
-    const pay = matchPayment(line, amount);
-    if (pay.kind === "match") {
-      pushPair(line, amount, pay.record, "payment-evidence", "payment");
+    const matchKind = kind === "charge" ? "charge" : "credit-note";
+    const result = matchDocument(ref, refTypesFor(matchKind));
+    if (result.kind === "match") {
+      pushPair(line, amount, result.record, result.tier, documentKind);
       continue;
     }
-    if (pay.kind === "double") {
-      for (const r of pay.candidates) consumed.add(key(r));
-      const candidateEffect = pay.candidates.filter(inWindow).reduce((s, r) => s + cents(r.amount), 0);
+    if (result.kind === "ambiguous") {
+      for (const r of result.candidates) consumed.add(key(r));
+      const candidateEffect = result.candidates.filter(inWindow).reduce((s, r) => s + cents(r.amount), 0);
       push({
-        lineId: line.id, lineOrder: line.lineOrder, category: "Potential Duplicate", subStatus: "double-recorded-payment", matchTier: null,
-        refType: null, refId: null, relatedRefs: pay.candidates.map((r) => link(r)), suggestions: [], statementAmount, precisiaAmount: null,
-        amountDifference: null, effect: amount - candidateEffect, explained: false,
-        message: `The payment on line ${line.lineOrder} is in PRECISIA twice — as a supplier payment AND as a bank transaction. Flagged only: nothing is netted, allocated or changed.`,
+        lineId: line.id, lineOrder: line.lineOrder, category: "Potential Duplicate", subStatus: "multiple-precisia", documentKind, matchTier: result.tier,
+        refType: null, refId: null, relatedRefs: result.candidates.map((r) => link(r)), suggestions: [], statementAmount,
+        precisiaAmount: null, amountDifference: null, effect: amount - candidateEffect, explained: false,
+        message: `Line ${line.lineOrder} (${ref}) matches ${result.candidates.length} PRECISIA documents (${result.tier} reference). None is chosen automatically.`,
       });
       continue;
     }
-    if (pay.kind === "ambiguous") {
-      for (const r of pay.candidates) consumed.add(key(r));
-      const candidateEffect = pay.candidates.filter(inWindow).reduce((s, r) => s + cents(r.amount), 0);
-      push({
-        lineId: line.id, lineOrder: line.lineOrder, category: "Potential Duplicate", subStatus: "multiple-precisia", matchTier: null,
-        refType: null, refId: null, relatedRefs: pay.candidates.map((r) => link(r)), suggestions: [], statementAmount, precisiaAmount: null,
-        amountDifference: null, effect: amount - candidateEffect, explained: false,
-        message: `The payment on line ${line.lineOrder} could be any of ${pay.candidates.length} PRECISIA payments. None is chosen automatically.`,
-      });
-      continue;
-    }
-    if (pay.kind === "timing") {
-      push({
-        lineId: line.id, lineOrder: line.lineOrder, category: "Payment", subStatus: "timing", matchTier: null,
-        refType: pay.record.refType, refId: pay.record.refId, relatedRefs: [link(pay.record)], suggestions: [], statementAmount,
-        precisiaAmount: rands(cents(pay.record.amount)), amountDifference: null, effect: amount, explained: true,
-        message: `The payment on line ${line.lineOrder} is recorded in PRECISIA on ${pay.record.date}, after the statement date — a timing difference.`,
-      });
-      continue;
-    }
-    const suggestions = suggestionsFor(line, amount, ["supplier-payment", "bank-transaction"]);
     if (kind === "unknown-credit") {
       push({
-        lineId: line.id, lineOrder: line.lineOrder, category: "Unclassified", subStatus: "unknown-credit", matchTier: null,
-        refType: null, refId: null, relatedRefs: [], suggestions: [...suggestions, ...suggestionsFor(line, amount, ["credit-note"])],
+        lineId: line.id, lineOrder: line.lineOrder, category: "Unclassified", subStatus: "unknown-credit", documentKind, matchTier: null,
+        refType: null, refId: null, relatedRefs: [], suggestions: suggestionsFor(line, amount, ["credit-note"]),
         statementAmount, precisiaAmount: null, amountDifference: null, effect: amount, explained: false,
-        message: `Line ${line.lineOrder} is a credit of unknown type (credit note or payment) with no match in PRECISIA. Set its type, or link it.`,
+        message: `Line ${line.lineOrder} is a credit of unknown type with no matching credit note in PRECISIA. If it is a payment, set its type to Payment (out of scope); if it is a credit note, link it.`,
       });
-    } else {
-      push({
-        lineId: line.id, lineOrder: line.lineOrder, category: "Payment", subStatus: suggestions.length > 0 ? "suggested" : "unmatched", matchTier: null,
-        refType: null, refId: null, relatedRefs: [], suggestions, statementAmount, precisiaAmount: null, amountDifference: null,
-        effect: amount, explained: true,
-        message: suggestions.length > 0
-          ? `The payment on line ${line.lineOrder} is not recorded in PRECISIA with matching reference evidence. ${suggestions.length} possible payment(s) by amount and date are SUGGESTED for review — not matched.`
-          : `The payment on line ${line.lineOrder} is not recorded in PRECISIA.`,
-      });
+      continue;
     }
+    pushMissing(line, amount, matchKind, documentKind);
   }
 
-  // ---- PRECISIA records with no statement line ---------------------------
-  const unmatched = ledgerAtDate.filter((r) => inWindow(r) && !consumed.has(key(r)));
-  // A payment recorded twice (supplier payment AND bank transaction): flag.
-  const payments = unmatched.filter((r) => r.refType === "supplier-payment");
-  const bank = unmatched.filter((r) => r.refType === "bank-transaction");
-  for (const p of payments) {
-    const twin = bank.find((b) => !consumed.has(key(b)) && cents(b.amount) === cents(p.amount) && Math.abs(days(b.date, p.date)) <= SUGGESTION_WINDOW_DAYS);
-    if (!twin) continue;
-    consumed.add(key(p));
-    consumed.add(key(twin));
-    push({
-      lineId: null, lineOrder: null, category: "Potential Duplicate", subStatus: "double-recorded-payment", matchTier: null,
-      refType: null, refId: null, relatedRefs: [link(p), link(twin)], suggestions: [], statementAmount: null,
-      precisiaAmount: rands(cents(p.amount) + cents(twin.amount)), amountDifference: null, effect: -(cents(p.amount) + cents(twin.amount)), explained: false,
-      message: `A payment of ${rands(Math.abs(cents(p.amount)))} appears in PRECISIA both as a supplier payment and as a bank transaction, and on neither side of the statement. Flagged only: nothing is netted or changed.`,
-    });
-  }
+  // ---- PRECISIA documents with no statement line ------------------------
+  const unmatched = population.filter((r) => !consumed.has(key(r)));
+  const matchedRecords = input.documents.filter((r) => consumed.has(key(r)));
   for (const r of unmatched) {
     if (consumed.has(key(r))) continue;
-    const timing = days(asAt, r.date) <= TIMING_DAYS;
-    let category: ItemCategory = "Missing on Statement";
-    let subStatus: string;
-    if (r.refType === "credit-note") {
-      category = "Credit Note";
-      subStatus = "missing-on-statement";
-    } else if (r.refType === "supplier-payment" || r.refType === "bank-transaction") {
-      subStatus = timing ? "payment-timing" : "payment";
-    } else if (r.refType === "opening-balance") {
-      subStatus = "opening-balance-entry";
-    } else {
-      subStatus = timing ? "timing" : "in-period";
+    const norm = normaliseInvoiceNumber(r.number);
+    // The same document number twice in PRECISIA (one matched, or both unmatched).
+    const twins = norm
+      ? [...matchedRecords, ...unmatched].filter((x) => x !== r && recordKind(x) === recordKind(r) && normaliseInvoiceNumber(x.number) === norm)
+      : [];
+    if (twins.length > 0) {
+      const group = [r, ...twins.filter((x) => !consumed.has(key(x)) && inWindow(x))];
+      for (const g of group) consumed.add(key(g));
+      push({
+        lineId: null, lineOrder: null, category: "Potential Duplicate", subStatus: "precisia-duplicate-number", documentKind: recordKind(r), matchTier: null,
+        refType: r.refType, refId: r.refId, relatedRefs: [...group, ...twins.filter((x) => !group.includes(x))].map((x) => link(x)), suggestions: [],
+        statementAmount: null, precisiaAmount: rands(group.reduce((s, g) => s + cents(g.amount), 0)), amountDifference: null,
+        effect: -group.reduce((s, g) => s + cents(g.amount), 0), explained: false,
+        message: `Document number ${r.number} appears ${twins.length + 1} times in PRECISIA for this supplier. Flagged only: nothing is changed.`,
+      });
+      continue;
     }
+    consumed.add(key(r));
+    const timing = days(asAt, r.date) <= TIMING_DAYS;
     push({
-      lineId: null, lineOrder: null, category, subStatus, matchTier: null, refType: r.refType, refId: r.refId, relatedRefs: [link(r)],
-      suggestions: [], statementAmount: null, precisiaAmount: rands(cents(r.amount)), amountDifference: null, effect: -cents(r.amount), explained: true,
-      message: `${describeRecord(r)} is in PRECISIA but not on the statement${timing ? " (dated within a week of the statement date — possibly timing)" : ""}.`,
-    });
-  }
-
-  // ---- opening balance -----------------------------------------------------
-  const openingDifference = opening - balanceBeforeWindow;
-  if (openingDifference !== 0) {
-    items.unshift({
-      order: 0, lineId: null, lineOrder: null, category: "Opening Balance Difference", subStatus: "opening", matchTier: null,
-      refType: null, refId: null, relatedRefs: [], suggestions: [], statementAmount: rands(opening), precisiaAmount: rands(balanceBeforeWindow),
-      amountDifference: rands(openingDifference), effect: openingDifference, explained: false, explainedByResolutionId: null,
-      message: `The statement opens at ${rands(opening).toFixed(2)}; PRECISIA's balance before ${windowFrom} is ${rands(balanceBeforeWindow).toFixed(2)}.`,
+      lineId: null, lineOrder: null, category: "Missing on Statement", subStatus: timing ? "timing" : "in-period", documentKind: recordKind(r), matchTier: null,
+      refType: r.refType, refId: r.refId, relatedRefs: [link(r)], suggestions: [], statementAmount: null, precisiaAmount: rands(cents(r.amount)),
+      amountDifference: null, effect: -cents(r.amount), explained: true,
+      message: `${describe(r)} is in PRECISIA but not on the statement${timing ? " (dated within a week of the statement date — possibly timing)" : ""}.${notPostedNote(r)}`,
     });
   }
 
   // ---- reviewer explanations ----------------------------------------------
   for (const r of active.filter((x) => x.action === "explained")) {
     for (const item of items) {
+      if (item.category === "Out of Scope") continue;
       const hit =
         (r.lineId !== null && item.lineId === r.lineId) ||
-        (r.refType === "opening-difference" && item.category === "Opening Balance Difference") ||
-        (r.refType !== null && r.refType !== "opening-difference" && r.refId !== null &&
+        (r.refType !== null && r.refId !== null &&
           ((item.refType === r.refType && item.refId === r.refId) || item.relatedRefs.some((x) => x.refType === r.refType && x.refId === r.refId)));
       if (hit && item.explainedByResolutionId === null) {
         item.explained = true;
@@ -484,95 +486,79 @@ export function reconcileStatement(input: EngineInput): EngineResult {
   const sumEffects = items.reduce((s, i) => s + i.effect, 0);
   const explained = items.filter((i) => i.explained).reduce((s, i) => s + i.effect, 0);
   const explainedByReviewer = items.filter((i) => i.explainedByResolutionId !== null).reduce((s, i) => s + i.effect, 0);
-  const unexplained = difference - explained;
   const summary: EngineResult["summary"] = {};
+  const byKind: EngineResult["byKind"] = {};
   for (const item of items) {
     const s = (summary[item.category] ??= { count: 0, amount: 0 });
     s.count += 1;
     s.amount = rands(cents(s.amount) + item.effect);
+    if (item.documentKind) {
+      const k = (byKind[item.documentKind] ??= {});
+      k[item.category] = (k[item.category] ?? 0) + 1;
+    }
   }
 
   return {
     engineVersion: input.engineVersion,
+    basis: RECONCILIATION_BASIS,
     windowFrom,
     windowTo: asAt,
-    statementOpening: rands(opening),
-    statementClosing: rands(closing),
-    balanceBeforeWindow: rands(balanceBeforeWindow),
-    balanceAt: rands(balanceAt),
+    documentsOnStatement: rands(S),
+    documentsInPrecisia: rands(P),
+    documentsNotPosted: { count: notPosted.length, amount: rands(notPosted.reduce((s, r) => s + cents(r.amount), 0)) },
     difference: rands(difference),
     explained: rands(explained),
     explainedByReviewer: rands(explainedByReviewer),
-    unexplained: rands(unexplained),
+    unexplained: rands(difference - explained),
     residual: rands(difference - sumEffects),
+    outOfScopePayments: items.filter((i) => i.category === "Out of Scope").length,
     items: items.map((i) => ({ ...i, effect: rands(i.effect) })),
     summary,
+    byKind,
   };
 
   // -----------------------------------------------------------------------
   // (function declarations, hoisted)
   // -----------------------------------------------------------------------
 
-  function describeRecord(r: LedgerRecord): string {
-    const label: Record<LedgerRefType, string> = {
-      bill: "Bill", "credit-note": "Credit note", "debit-note": "Debit note", "supplier-payment": "Supplier payment",
-      "bank-transaction": "Bank payment", "opening-balance": "Opening balance entry",
-    };
-    return `${label[r.refType]} ${r.number || `#${r.refId}`} (${r.date}, ${rands(cents(r.amount)).toFixed(2)})`;
+  function describe(r: DocumentRecord): string {
+    const label = r.refType === "credit-note" ? "Credit note" : r.refType === "debit-note" ? "Debit note" : "Bill";
+    return `${label} ${r.number || `#${r.refId}`} (${r.date}, ${rands(cents(r.amount)).toFixed(2)})`;
   }
 
   function matchDocument(
-    line: ReconciliationLine,
     ref: string,
-    types: LedgerRefType[],
-  ): { kind: "match"; record: LedgerRecord; tier: "exact" | "normalised" } | { kind: "ambiguous"; candidates: LedgerRecord[]; tier: "exact" | "normalised" } | { kind: "none" } {
+    types: DocumentRefType[],
+  ): { kind: "match"; record: DocumentRecord; tier: Exclude<MatchTier, "manual"> } | { kind: "ambiguous"; candidates: DocumentRecord[]; tier: Exclude<MatchTier, "manual"> } | { kind: "none" } {
     if (!ref) return { kind: "none" };
-    const pool = ledgerAtDate.filter((r) => types.includes(r.refType) && !consumed.has(key(r)));
-    const exact = pool.filter((r) => r.number.trim() === ref);
-    if (exact.length === 1) return { kind: "match", record: exact[0], tier: "exact" };
-    if (exact.length > 1) return { kind: "ambiguous", candidates: exact, tier: "exact" };
+    const pool = input.documents.filter((r) => types.includes(r.refType) && r.date <= asAt && !consumed.has(key(r)));
+    const decide = (found: DocumentRecord[], tier: Exclude<MatchTier, "manual">) =>
+      found.length === 1 ? ({ kind: "match", record: found[0], tier } as const) : found.length > 1 ? ({ kind: "ambiguous", candidates: found, tier } as const) : null;
+
+    const exact = decide(pool.filter((r) => r.number.trim() === ref), "exact");
+    if (exact) return exact;
     const norm = normaliseInvoiceNumber(ref);
     if (!norm) return { kind: "none" };
-    const normalised = pool.filter((r) => normaliseInvoiceNumber(r.number) === norm);
-    if (normalised.length === 1) return { kind: "match", record: normalised[0], tier: "normalised" };
-    if (normalised.length > 1) return { kind: "ambiguous", candidates: normalised, tier: "normalised" };
-    void line;
-    return { kind: "none" };
-  }
-
-  function matchPayment(
-    line: ReconciliationLine,
-    amount: number,
-  ):
-    | { kind: "match"; record: LedgerRecord }
-    | { kind: "double" | "ambiguous"; candidates: LedgerRecord[] }
-    | { kind: "timing"; record: LedgerRecord }
-    | { kind: "none" } {
-    if (!line.date || amount === 0) return { kind: "none" };
-    const text = `${line.reference ?? ""} ${line.description ?? ""}`;
-    const qualifies = (r: LedgerRecord) =>
-      (r.refType === "supplier-payment" || r.refType === "bank-transaction") &&
-      !consumed.has(key(r)) &&
-      cents(r.amount) === amount &&
-      Math.abs(days(r.date, line.date!)) <= PAYMENT_WINDOW_DAYS &&
-      shareToken(text, `${r.number} ${r.evidence}`);
-    const candidates = ledgerAtDate.filter(qualifies);
-    if (candidates.length === 1) return { kind: "match", record: candidates[0] };
-    if (candidates.length === 2 && candidates.some((c) => c.refType === "supplier-payment") && candidates.some((c) => c.refType === "bank-transaction")) {
-      return { kind: "double", candidates };
+    const normalised = decide(pool.filter((r) => normaliseInvoiceNumber(r.number) === norm), "normalised");
+    if (normalised) return normalised;
+    // T3 — only for references printed at the statement's padding width.
+    if (width !== null && ref.length === width && /^0\d+$/.test(ref)) {
+      const target = stripZeros(ref);
+      const padded = decide(pool.filter((r) => {
+        const n = normaliseInvoiceNumber(r.number);
+        return /^\d+$/.test(n) && stripZeros(n) === target;
+      }), "zero-padded");
+      if (padded) return padded;
     }
-    if (candidates.length > 1) return { kind: "ambiguous", candidates };
-    const later = input.ledger.filter((r) => r.date > asAt && qualifies(r));
-    if (later.length === 1) return { kind: "timing", record: later[0] };
     return { kind: "none" };
   }
 
-  function suggestionsFor(line: ReconciliationLine, amount: number, types: LedgerRefType[]): (RefLink & { reason: string })[] {
+  function suggestionsFor(line: ReconciliationLine, amount: number, types: DocumentRefType[]): (RefLink & { reason: string })[] {
     const out: (RefLink & { reason: string })[] = [];
-    const pool = ledgerAtDate.filter((r) => types.includes(r.refType) && !consumed.has(key(r)));
-    const lineDigits = digits(line.reference);
+    const pool = input.documents.filter((r) => types.includes(r.refType) && r.date <= asAt && !consumed.has(key(r)));
+    const lineDigits = stripZeros(digits(line.reference));
     for (const r of pool) {
-      const recordDigits = digits(r.number);
+      const recordDigits = stripZeros(digits(r.number));
       if (lineDigits.length >= 4 && recordDigits.length >= 4 && lineDigits !== recordDigits &&
           (lineDigits.endsWith(recordDigits) || recordDigits.endsWith(lineDigits) || lineDigits.includes(recordDigits) || recordDigits.includes(lineDigits))) {
         out.push({ ...link(r), reason: "Reference digits contained in one another (suggestion only)." });
@@ -585,56 +571,44 @@ export function reconcileStatement(input: EngineInput): EngineResult {
     return out.slice(0, 5);
   }
 
-  function pushPair(line: ReconciliationLine, amount: number, record: LedgerRecord, tier: "manual" | "exact" | "normalised" | "payment-evidence", kind: string) {
+  function pushPair(line: ReconciliationLine, amount: number, record: DocumentRecord, tier: MatchTier, documentKind: DocumentKind | null) {
     consumed.add(key(record));
     const precisia = cents(record.amount);
     const equal = precisia === amount;
     const statementAmount = rands(amount);
+    const how = tier === "manual" ? "by a reviewer's link" : tier === "exact" ? "by exact reference" : tier === "normalised" ? "by normalised reference" : "by zero-padded reference";
     const base = {
-      lineId: line.id, lineOrder: line.lineOrder, matchTier: tier, refType: record.refType, refId: record.refId,
+      lineId: line.id, lineOrder: line.lineOrder, documentKind: documentKind ?? recordKind(record), matchTier: tier, refType: record.refType, refId: record.refId,
       relatedRefs: [link(record)], suggestions: [], statementAmount, precisiaAmount: rands(precisia),
       amountDifference: equal ? 0 : rands(amount - precisia), effect: pairEffect(amount, record), explained: true,
     };
-    const how = tier === "manual" ? "by a reviewer's link" : tier === "payment-evidence" ? "by amount, date and reference evidence" : tier === "exact" ? "by exact reference" : "by normalised reference";
-    if (record.refType === "credit-note" || kind === "credit-note") {
-      push({ ...base, category: "Credit Note", subStatus: equal ? "matched" : "amount-difference",
-        message: `Credit note on line ${line.lineOrder} matched ${how}${equal ? "" : `, but the amounts differ by ${rands(Math.abs(amount - precisia)).toFixed(2)}`}.${timingNote(record)}` });
-    } else if (record.refType === "supplier-payment" || record.refType === "bank-transaction") {
-      push({ ...base, category: "Payment", subStatus: equal ? "matched" : "amount-difference",
-        message: `Payment on line ${line.lineOrder} matched ${how}.${timingNote(record)}` });
-    } else if (equal) {
-      push({ ...base, category: "Matched", subStatus: tier, message: `Line ${line.lineOrder} matched ${describeRecord(record)} ${how}.${timingNote(record)}` });
-    } else {
-      const hint = vatHint(amount, precisia);
-      push({ ...base, category: "Amount Difference", subStatus: hint ? "vat-hint" : "difference",
-        message: `Line ${line.lineOrder} matched ${describeRecord(record)} ${how}, but the statement shows ${statementAmount.toFixed(2)}.${hint ? ` ${hint}` : ""}${timingNote(record)}` });
+    if (equal) {
+      push({ ...base, category: "Matched", subStatus: record.posted ? "posted" : "not-posted",
+        message: `Line ${line.lineOrder} matched ${describe(record)} ${how}.${notPostedNote(record)}${outsideNote(record)}` });
+      return;
     }
+    const hint = vatHint(amount, precisia);
+    push({ ...base, category: "Amount Difference", subStatus: hint ? "vat-hint" : "difference",
+      message: `Line ${line.lineOrder} matched ${describe(record)} ${how}, but the statement shows ${statementAmount.toFixed(2)} (difference ${rands(amount - precisia).toFixed(2)}).${hint ? ` ${hint}` : ""}${notPostedNote(record)}${outsideNote(record)}` });
   }
 
-  function pushMissing(line: ReconciliationLine, amount: number, docKind: "document" | "credit-note") {
+  function pushMissing(line: ReconciliationLine, amount: number, matchKind: "charge" | "credit-note", documentKind: DocumentKind | null) {
     const ref = (line.reference ?? "").trim();
     const norm = normaliseInvoiceNumber(ref);
-    const wantCredit = docKind === "credit-note";
-    const known = norm
-      ? input.unposted.filter((u) => u.number && normaliseInvoiceNumber(u.number) === norm &&
-          (u.documentType === null || (u.documentType === "Credit Note") === wantCredit))
+    const wantCredit = matchKind === "credit-note";
+    const captured = norm
+      ? input.captures.filter((c) => c.number && normaliseInvoiceNumber(c.number) === norm && (c.documentType === null || (c.documentType === "Credit Note") === wantCredit))
       : [];
-    const captured = known.filter((u) => u.kind === "captured-draft");
-    const chosen = captured.length > 0 ? captured : known;
-    const subStatus = chosen.length === 0 ? "not-captured" : captured.length > 0 ? "captured-draft" : "imported-not-posted";
-    const relatedRefs: RefLink[] = chosen.map((u) => ({ refType: u.refType, refId: u.refId, amount: u.amount, date: u.date, number: u.number, note: u.source }));
-    const what = wantCredit ? "credit note" : "document";
-    const message =
-      subStatus === "not-captured"
-        ? `The ${what} on line ${line.lineOrder}${ref ? ` (${ref})` : ""} is not in PRECISIA at all.`
-        : subStatus === "captured-draft"
-          ? `The ${what} on line ${line.lineOrder} (${ref}) has been captured but is not posted (${chosen.map((u) => u.source).join("; ")}).`
-          : `The ${what} on line ${line.lineOrder} (${ref}) is in PRECISIA but was never posted (${chosen.map((u) => u.source).join("; ")}).`;
+    const what = wantCredit ? "credit note" : documentKind === "debit-note" ? "debit note" : documentKind === "invoice" ? "invoice" : "document";
     push({
-      lineId: line.id, lineOrder: line.lineOrder, category: wantCredit ? "Credit Note" : "Missing in PRECISIA", subStatus, matchTier: null,
-      refType: chosen.length === 1 ? chosen[0].refType : null, refId: chosen.length === 1 ? chosen[0].refId : null, relatedRefs,
-      suggestions: suggestionsFor(line, amount, documentRefTypes(docKind)), statementAmount: rands(amount), precisiaAmount: null,
-      amountDifference: null, effect: amount, explained: true, message,
+      lineId: line.id, lineOrder: line.lineOrder, category: "Missing in PRECISIA", subStatus: captured.length > 0 ? "captured-not-converted" : "not-captured",
+      documentKind, matchTier: null, refType: captured.length === 1 ? "capture" : null, refId: captured.length === 1 ? captured[0].refId : null,
+      relatedRefs: captured.map((c) => ({ refType: c.refType, refId: c.refId, amount: c.amount, date: c.date, number: c.number, note: c.source })),
+      suggestions: suggestionsFor(line, amount, refTypesFor(matchKind)), statementAmount: rands(amount), precisiaAmount: null,
+      amountDifference: null, effect: amount, explained: true,
+      message: captured.length > 0
+        ? `The ${what} on line ${line.lineOrder} (${ref}) has been captured in Supplier Documents but is not yet a bill (${captured.map((c) => c.source).join("; ")}).`
+        : `The ${what} on line ${line.lineOrder}${ref ? ` (${ref})` : ""} is not in PRECISIA.`,
     });
   }
 }
