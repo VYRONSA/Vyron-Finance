@@ -237,6 +237,9 @@ export type BankTransactionRow = {
   override_supplier_invoice_matching_at: string | null;
   // Bulk Unallocate — migration 0119. Absent on rows read before it.
   retained_gl_account?: string | null;
+  // Bulk Unpost — migration 0120. Absent on rows read before it.
+  retained_customer_id?: number | null;
+  retained_supplier_id?: number | null;
   // Present only when the query embeds the FK-related supplier (see
   // transaction-explorer-repository.ts) — undefined otherwise.
   matched_supplier?: { name: string } | null;
@@ -302,6 +305,8 @@ export function bankTransactionFromRow(row: BankTransactionRow): BankTransaction
     overrideSupplierInvoiceMatchingBy: row.override_supplier_invoice_matching_by ?? null,
     overrideSupplierInvoiceMatchingAt: row.override_supplier_invoice_matching_at ?? null,
     retainedGlAccount: row.retained_gl_account ?? null,
+    retainedCustomerId: row.retained_customer_id ?? null,
+    retainedSupplierId: row.retained_supplier_id ?? null,
   };
 }
 

@@ -224,6 +224,12 @@ export type BankTransactionRecord = {
   // database's `is_allocated` ignore it). Optional so the many hand-built
   // fixtures need not spell it out; the mapper always sets it.
   retainedGlAccount?: string | null;
+  // Bulk Unpost (migration 0120). The customer / supplier a posted
+  // transaction was allocated to when it was bulk-unposted — references
+  // for the next review, never an allocation, exactly like
+  // `retainedGlAccount`.
+  retainedCustomerId?: number | null;
+  retainedSupplierId?: number | null;
 
   // See `import-source-occurrence.ts` — this row's ordinal among
   // identical rows in the source it was imported from. Surfaced on the

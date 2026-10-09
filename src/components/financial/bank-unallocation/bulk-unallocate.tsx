@@ -13,7 +13,10 @@ import {
   type UnallocationCandidate,
   type UnallocationPreview,
   type UnallocationResult,
+  type UnpostingPreview,
+  type UnpostingResult,
 } from "@/server/banking/bulk-unallocation";
+import { BulkUnpostResult, BulkUnpostReview } from "@/components/financial/bank-unallocation/bulk-unpost-review";
 
 type BankAccountOption = { id: number; accountName: string };
 
@@ -22,8 +25,15 @@ export interface BulkUnallocateProps {
   bankAccounts: BankAccountOption[];
   /** The page's own Banking:Edit answer; the API and database enforce it regardless. */
   canEdit: boolean;
+  /** GeneralLedger:Reverse — needed (with Banking:Edit) for posted transactions. */
+  canReverse?: boolean;
   previewMode: boolean;
 }
+
+/** Which transactions the preview is for: allocated but not yet posted
+ * (0119 — unallocate only), or posted (0120 — reverse the posting, then
+ * unallocate). */
+type Scope = "allocated" | "posted";
 
 function newRequestKey(): string {
   return crypto.randomUUID();
@@ -44,7 +54,8 @@ function plural(n: number, word: string): string {
  * the bank account discards the preview rather than executing a selection
  * against criteria it was not built from.
  */
-export function BulkUnallocate({ companyId, bankAccounts, canEdit, previewMode }: BulkUnallocateProps) {
+export function BulkUnallocate({ companyId, bankAccounts, canEdit, canReverse = false, previewMode }: BulkUnallocateProps) {
+  const [scope, setScope] = useState<Scope>("allocated");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
@@ -57,8 +68,10 @@ export function BulkUnallocate({ companyId, bankAccounts, canEdit, previewMode }
   const [executing, setExecuting] = useState(false);
   const [executeError, setExecuteError] = useState<string | null>(null);
   const [result, setResult] = useState<UnallocationResult | null>(null);
+  const [postedPreview, setPostedPreview] = useState<UnpostingPreview | null>(null);
+  const [postedResult, setPostedResult] = useState<UnpostingResult | null>(null);
 
-  const disabled = previewMode || !canEdit;
+  const disabled = previewMode || !canEdit || (scope === "posted" && !canReverse);
   const rangeError = dateFrom && dateTo ? validateDateRange(dateFrom, dateTo) : null;
 
   const eligible = useMemo(() => (preview?.candidates ?? []).filter((c) => c.exclusionReason === null), [preview]);
@@ -68,6 +81,7 @@ export function BulkUnallocate({ companyId, bankAccounts, canEdit, previewMode }
 
   function resetPreview() {
     setPreview(null);
+    setPostedPreview(null);
     setRequestKey(null);
     setSelectedIds(new Set());
     setConfirming(false);
@@ -78,6 +92,7 @@ export function BulkUnallocate({ companyId, bankAccounts, canEdit, previewMode }
     update();
     resetPreview();
     setResult(null);
+    setPostedResult(null);
   }
 
   async function runPreview() {
@@ -89,9 +104,11 @@ export function BulkUnallocate({ companyId, bankAccounts, canEdit, previewMode }
     setLoading(true);
     setError(null);
     setResult(null);
+    setPostedResult(null);
     resetPreview();
     try {
-      const res = await fetch(`/api/companies/${companyId}/transactions/bulk-unallocate/preview`, {
+      const path = scope === "posted" ? "bulk-unallocate/posted/preview" : "bulk-unallocate/preview";
+      const res = await fetch(`/api/companies/${companyId}/transactions/${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dateFrom, dateTo, bankAccountId: bankAccountId || null }),
@@ -101,7 +118,8 @@ export function BulkUnallocate({ companyId, bankAccounts, canEdit, previewMode }
         setError(body.error ?? "The preview could not be built.");
         return;
       }
-      setPreview(body.preview as UnallocationPreview);
+      if (scope === "posted") setPostedPreview(body.preview as UnpostingPreview);
+      else setPreview(body.preview as UnallocationPreview);
       setRequestKey(newRequestKey());
     } catch {
       setError("The preview could not be built. Check your connection and try again.");
@@ -161,10 +179,20 @@ export function BulkUnallocate({ companyId, bankAccounts, canEdit, previewMode }
           You can view this page, but unallocating bank transactions needs the Banking Edit permission.
         </p>
       )}
+      {canEdit && !canReverse && !previewMode && scope === "posted" && (
+        <p className="text-xs text-vf-ink-faint">Unposting posted transactions also needs the General Ledger Reverse permission.</p>
+      )}
 
       {/* CRITERIA */}
       <div className="flex flex-col gap-3 rounded-vf-lg bg-vf-paper p-4 shadow-vf-paper-lg sm:p-5">
         <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px]">
+            <label htmlFor="bu-scope" className="mb-1 block text-xs font-medium text-vf-ink-soft">Transactions</label>
+            <Select id="bu-scope" value={scope} onChange={(e) => changeCriteria(() => setScope(e.target.value as Scope))}>
+              <option value="allocated">Allocated, not posted — unallocate</option>
+              <option value="posted">Posted — reverse the posting and unallocate</option>
+            </Select>
+          </div>
           <div>
             <label htmlFor="bu-date-from" className="mb-1 block text-xs font-medium text-vf-ink-soft">From Date</label>
             <Input id="bu-date-from" type="date" value={dateFrom} onChange={(e) => changeCriteria(() => setDateFrom(e.target.value))} />
@@ -194,6 +222,22 @@ export function BulkUnallocate({ companyId, bankAccounts, canEdit, previewMode }
         {rangeError && <p className="text-sm text-vf-danger">{rangeError}</p>}
         {error && !rangeError && <p className="text-sm text-vf-danger">{error}</p>}
       </div>
+
+      {/* POSTED: RESULT, then REVIEW + SELECT + CONFIRM */}
+      {postedResult && <BulkUnpostResult result={postedResult} />}
+      {postedPreview && requestKey && (
+        <BulkUnpostReview
+          key={requestKey}
+          companyId={companyId}
+          preview={postedPreview}
+          requestKey={requestKey}
+          disabled={disabled}
+          onDone={(r) => {
+            setPostedResult(r);
+            resetPreview();
+          }}
+        />
+      )}
 
       {/* RESULT */}
       {result && (

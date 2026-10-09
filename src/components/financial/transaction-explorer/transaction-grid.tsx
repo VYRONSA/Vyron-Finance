@@ -355,6 +355,33 @@ export function retainedGlLabel(t: BankTransactionRecord, edit: PendingRowEdit, 
   return name ? `${code} — ${name}` : code;
 }
 
+/** Bulk Unpost (migration 0120) — what a bulk-unallocated or bulk-unposted
+ * transaction was allocated to (customer, supplier or GL account), shown
+ * beside it while it has no allocation, with the pending edit that would
+ * choose it again. The edit is only ever applied when the accountant asks
+ * ("Use again") and still has to be saved like any other allocation. */
+export function retainedAllocationFor(
+  t: BankTransactionRecord,
+  edit: PendingRowEdit,
+  chartOfAccounts: ChartOfAccount[],
+  suppliers: Pick<Supplier, "id" | "name">[],
+  customers: MinimalCustomer[],
+): { label: string; patch: Partial<PendingRowEdit> } | null {
+  if (t.allocationStatus !== "Unallocated" || t.suggestedGlAccount || edit.type !== null) return null;
+  if (t.retainedCustomerId != null) {
+    const customer = customers.find((c) => c.id === t.retainedCustomerId);
+    const label = customer ? `customer ${[customer.customerCode, customer.name].filter(Boolean).join(" — ")}` : `customer #${t.retainedCustomerId}`;
+    return { label, patch: { type: "C", accountCode: "", supplierId: null, customerId: t.retainedCustomerId } };
+  }
+  if (t.retainedSupplierId != null) {
+    const supplier = suppliers.find((s) => s.id === t.retainedSupplierId);
+    return { label: `supplier ${supplier?.name ?? `#${t.retainedSupplierId}`}`, patch: { type: "S", accountCode: "", supplierId: t.retainedSupplierId, customerId: null } };
+  }
+  const gl = retainedGlLabel(t, edit, chartOfAccounts);
+  if (!gl) return null;
+  return { label: gl, patch: { type: "G", accountCode: t.retainedGlAccount!.trim(), supplierId: null, customerId: null } };
+}
+
 /** Whether the row's allocation is complete enough to save — `type`
  * itself being unresolved (`null`) always counts as missing, same as a
  * resolved type with no account/supplier/customer chosen yet. */
@@ -1535,14 +1562,25 @@ export function TransactionGrid({
         cell: ({ row }) => {
           const edit = getEdit(row.original);
           const description = accountDescriptionFor(edit, chartOfAccounts, suppliers, customers);
-          const retained = description ? null : retainedGlLabel(row.original, edit, chartOfAccounts);
+          const retained = description ? null : retainedAllocationFor(row.original, edit, chartOfAccounts, suppliers, customers);
           if (retained) {
             return (
-              <span
-                className="text-vf-ink-faint italic"
-                title="Kept from before this transaction was bulk-unallocated. It is not an allocation — choose an account to allocate it."
-              >
-                Previously {retained}
+              <span className="flex items-center gap-1">
+                <span
+                  className="text-vf-ink-faint italic"
+                  title="Kept from before this transaction was bulk-unallocated or bulk-unposted. It is not an allocation — choose an account to allocate it."
+                >
+                  Previously {retained.label}
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 text-xs text-vf-red-600 hover:underline disabled:opacity-50"
+                  title="Fill in this allocation again for review. Nothing is saved until you save the row."
+                  disabled={savingIds.has(row.original.id)}
+                  onClick={() => updateEdit(row.original, retained.patch)}
+                >
+                  Use again
+                </button>
               </span>
             );
           }
