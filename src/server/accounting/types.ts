@@ -218,6 +218,13 @@ export type BankTransactionRecord = {
   overrideSupplierInvoiceMatchingBy: string | null;
   overrideSupplierInvoiceMatchingAt: string | null;
 
+  // Bulk Unallocate (migration 0119). The GL account this transaction was
+  // allocated to when it was last bulk-unallocated — a reference for the
+  // next review only, never an allocation (`isAllocatedForPosting` and the
+  // database's `is_allocated` ignore it). Optional so the many hand-built
+  // fixtures need not spell it out; the mapper always sets it.
+  retainedGlAccount?: string | null;
+
   // See `import-source-occurrence.ts` — this row's ordinal among
   // identical rows in the source it was imported from. Surfaced on the
   // record so the Explorer can show an accountant that two look-alike

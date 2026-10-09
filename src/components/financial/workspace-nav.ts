@@ -75,6 +75,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { label: "Cashbook", href: "cashbook", icon: IconBanknote },
           { label: "Banking Exceptions", href: "banking-exceptions", icon: IconAlertTriangle },
           { label: "Matching", href: "matching", icon: IconReconcile },
+          { label: "Bulk Unallocate Transactions", href: "bulk-unallocate", icon: IconRefresh },
         ],
       },
       {

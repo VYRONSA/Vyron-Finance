@@ -344,6 +344,17 @@ function accountDescriptionFor(edit: PendingRowEdit, chartOfAccounts: ChartOfAcc
   return "";
 }
 
+/** Bulk Unallocate (migration 0119) — the GL account a bulk-unallocated
+ * transaction had, shown beside it while it has no allocation (saved or
+ * pending). Never pre-fills the editor: it is a reference, not an
+ * allocation. Exported for direct testing (see `computeMatchStatus`). */
+export function retainedGlLabel(t: BankTransactionRecord, edit: PendingRowEdit, chartOfAccounts: ChartOfAccount[]): string | null {
+  const code = t.retainedGlAccount?.trim();
+  if (!code || t.allocationStatus !== "Unallocated" || t.suggestedGlAccount || edit.type !== null) return null;
+  const name = chartOfAccounts.find((a) => a.accountCode === code)?.description;
+  return name ? `${code} — ${name}` : code;
+}
+
 /** Whether the row's allocation is complete enough to save — `type`
  * itself being unresolved (`null`) always counts as missing, same as a
  * resolved type with no account/supplier/customer chosen yet. */
@@ -1524,6 +1535,17 @@ export function TransactionGrid({
         cell: ({ row }) => {
           const edit = getEdit(row.original);
           const description = accountDescriptionFor(edit, chartOfAccounts, suppliers, customers);
+          const retained = description ? null : retainedGlLabel(row.original, edit, chartOfAccounts);
+          if (retained) {
+            return (
+              <span
+                className="text-vf-ink-faint italic"
+                title="Kept from before this transaction was bulk-unallocated. It is not an allocation — choose an account to allocate it."
+              >
+                Previously {retained}
+              </span>
+            );
+          }
           return <span className={description ? "text-vf-ink-soft" : "text-vf-ink-faint italic"}>{description || "—"}</span>;
         },
       }),
