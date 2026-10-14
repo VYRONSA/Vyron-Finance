@@ -262,4 +262,37 @@ export async function reduceInvoiceOutstanding(companyId: string, invoiceId: num
   return setInvoiceFields(companyId, invoiceId, { outstanding });
 }
 
+/** Sets `gl_account` on the named lines of one invoice, ONLY where it is
+ * still empty — a line that already has an account is never overwritten.
+ * Touches no other column (amounts, VAT and totals stay as stored).
+ * Returns the ids actually changed. The service layer decides who may do
+ * this and when (Draft only) and records the audit entry. */
+export async function setMissingLineAccounts(invoiceId: number, lineIds: number[], glAccount: string): Promise<number[]> {
+  if (lineIds.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("sales_invoice_lines")
+    .update({ gl_account: glAccount })
+    .eq("invoice_id", invoiceId)
+    .in("id", lineIds)
+    .is("gl_account", null)
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).map((r: { id: number }) => r.id);
+}
+
+/** Puts the named lines back to "no account" — used only to undo
+ * `setMissingLineAccounts` when its audit entry could not be recorded. */
+export async function clearLineAccounts(invoiceId: number, lineIds: number[], glAccount: string): Promise<void> {
+  if (lineIds.length === 0) return;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("sales_invoice_lines")
+    .update({ gl_account: null })
+    .eq("invoice_id", invoiceId)
+    .in("id", lineIds)
+    .eq("gl_account", glAccount);
+  if (error) throw error;
+}
+
 export { incrementOrderLineQuantity };

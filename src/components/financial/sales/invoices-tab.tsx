@@ -451,6 +451,71 @@ function InvoiceFormPanel({
   );
 }
 
+/** A Draft whose lines arrived without an account (e.g. an import file
+ * with a blank AccountCode): assign one Income account to those lines
+ * only. Lines that already have an account, and every amount, are left
+ * as they are — see `assignMissingLineAccounts`. */
+export function AssignLineAccounts({
+  companyId,
+  invoice,
+  chartOfAccounts,
+  previewMode,
+  onDone,
+}: {
+  companyId: string;
+  invoice: SalesInvoice;
+  chartOfAccounts: ChartOfAccount[];
+  previewMode: boolean;
+  onDone: () => void;
+}) {
+  const income = chartOfAccounts.filter((a) => a.isActive && a.accountType === "Income");
+  const missing = invoice.lines.filter((l) => !l.glAccount).length;
+  const [glAccount, setGlAccount] = useState(income.find((a) => a.accountCode === "1000")?.accountCode ?? "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (invoice.status !== "Draft" || missing === 0) return null;
+
+  async function assign() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/sales/invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "assign-line-accounts", glAccount }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      onDone();
+    } catch {
+      setError("Couldn't reach the API. Check the dev server is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-vf-danger">{missing} line(s) have no revenue account.</span>
+      <div className="w-56">
+        <Select aria-label="Revenue account for lines without one" value={glAccount} onChange={(e) => setGlAccount(e.target.value)}>
+          <option value="">Choose an Income account…</option>
+          {income.map((a) => (
+            <option key={a.accountCode} value={a.accountCode}>{a.accountCode} — {a.description}</option>
+          ))}
+        </Select>
+      </div>
+      <Button variant="subtle" size="sm" disabled={previewMode || loading || !glAccount} onClick={assign}>
+        Assign to lines without an account
+      </Button>
+      {error && <span className="text-vf-danger">{error}</span>}
+    </div>
+  );
+}
+
 export function InvoicesTab({
   companyId,
   invoices,
@@ -652,6 +717,7 @@ export function InvoicesTab({
                             <p className="mt-2 text-xs text-vf-ink-faint">
                               Subtotal {money(i.subtotal)} · VAT {money(i.vatAmount)} · Total {money(i.total)}
                             </p>
+                            <AssignLineAccounts companyId={companyId} invoice={i} chartOfAccounts={chartOfAccounts} previewMode={previewMode} onDone={() => router.refresh()} />
                           </div>
                           <div className="text-xs text-vf-ink-faint">
                             <p className="mb-1.5 font-medium uppercase tracking-wide">History</p>

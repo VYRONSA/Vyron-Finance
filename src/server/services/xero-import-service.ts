@@ -40,9 +40,82 @@ import { assignSourceOccurrences } from "@/server/import-centre/import-source-oc
 import { parseXeroContactsCsv, mergeXeroContactRows, classifyContactRole, type XeroContactRow } from "@/server/import-centre/xero-contacts-parser";
 import { parseXeroInvoiceLinesCsv, type XeroInvoiceGroup } from "@/server/import-centre/xero-invoices-bills-parser";
 import { parseXeroBankTransactionsXlsx } from "@/server/import-centre/xero-bank-transactions-parser";
-import type { AccountType, NormalBalance } from "@/server/general-ledger/types";
+import type { AccountType, ChartOfAccount, NormalBalance } from "@/server/general-ledger/types";
 
 export class XeroImportError extends Error {}
+
+// ---------------------------------------------------------------------
+// Account mapping check (before anything is written)
+// ---------------------------------------------------------------------
+
+export type AccountMappingProblem = { document: string; line: number; accountCode: string; reason: string };
+
+/**
+ * Every account a line will be stored against, checked BEFORE the import
+ * writes anything (contacts, chart or documents).
+ *
+ * Batch 1B of the Handcrafted Food Products migration was uploaded from an
+ * older file whose AccountCode column was blank. The importer stored what
+ * it was given (`gl_account` null on all 132 lines) and reported success,
+ * so the gap only surfaced afterwards. A sales line must now name an
+ * active Income account that exists — or that this import's own chart
+ * step will create — or the whole upload is refused with the list of
+ * lines to fix. Invoices whose numbers already exist are not checked:
+ * they are skipped as duplicates and nothing of theirs is written.
+ *
+ * Bill lines may still arrive without an account (supplier expense
+ * accounts are often allocated after capture), but a code that is given
+ * must exist and be active.
+ */
+export function findImportAccountProblems(input: {
+  salesInvoices: XeroInvoiceGroup[];
+  bills: XeroInvoiceGroup[];
+  existingSalesInvoiceNumbers: Set<string>;
+  chart: Pick<ChartOfAccount, "accountCode" | "accountType" | "isActive">[];
+  plannedAccounts: Pick<XeroAccountMapping, "code" | "accountType">[];
+}): AccountMappingProblem[] {
+  const accounts = new Map<string, { accountType: AccountType; isActive: boolean }>();
+  for (const a of input.plannedAccounts) accounts.set(a.code, { accountType: a.accountType, isActive: true });
+  for (const a of input.chart) accounts.set(a.accountCode, { accountType: a.accountType, isActive: a.isActive });
+
+  const problems: AccountMappingProblem[] = [];
+  for (const invoice of input.salesInvoices) {
+    if (input.existingSalesInvoiceNumbers.has(invoice.invoiceNumber)) continue;
+    invoice.lines.forEach((line, i) => {
+      const code = line.accountCode.trim();
+      const account = accounts.get(code);
+      const reason = !code
+        ? "no AccountCode"
+        : !account
+          ? "account is not in the chart of accounts"
+          : !account.isActive
+            ? "account is inactive"
+            : account.accountType !== "Income"
+              ? `account is ${account.accountType}, not Income`
+              : null;
+      if (reason) problems.push({ document: invoice.invoiceNumber, line: i + 1, accountCode: code, reason });
+    });
+  }
+  for (const bill of input.bills) {
+    bill.lines.forEach((line, i) => {
+      const code = line.accountCode.trim();
+      if (!code) return;
+      const account = accounts.get(code);
+      const reason = !account ? "account is not in the chart of accounts" : !account.isActive ? "account is inactive" : null;
+      if (reason) problems.push({ document: bill.invoiceNumber, line: i + 1, accountCode: code, reason });
+    });
+  }
+  return problems;
+}
+
+export function describeAccountProblems(problems: AccountMappingProblem[]): string {
+  const documents = new Set(problems.map((p) => p.document)).size;
+  const listed = problems
+    .slice(0, 10)
+    .map((p) => `${p.document} line ${p.line}${p.accountCode ? ` (${p.accountCode})` : ""}: ${p.reason}`)
+    .join("; ");
+  return `Nothing was imported: ${problems.length} line(s) on ${documents} document(s) have a missing or invalid account. ${listed}${problems.length > 10 ? `; and ${problems.length - 10} more` : ""}. Correct the AccountCode column and upload again.`;
+}
 
 // ---------------------------------------------------------------------
 // Chart of Accounts reconciliation
@@ -675,6 +748,21 @@ export async function runXeroImport(companyId: string, input: XeroImportInput, p
   const customerNames = new Set(salesGroups.invoices.map((i) => i.contactName.trim().toLowerCase()));
   const supplierNames = new Set(billGroups.invoices.map((b) => b.contactName.trim().toLowerCase()));
 
+  // Refuse a file with missing or invalid account mappings before the
+  // first write — see `findImportAccountProblems`.
+  const [existingChart, existingSalesInvoices] = await Promise.all([
+    listChartOfAccounts(companyId),
+    salesGroups.invoices.length > 0 ? listSalesInvoices(companyId) : Promise.resolve([]),
+  ]);
+  const accountProblems = findImportAccountProblems({
+    salesInvoices: salesGroups.invoices,
+    bills: billGroups.invoices,
+    existingSalesInvoiceNumbers: new Set(existingSalesInvoices.map((i) => i.invoiceNumber)),
+    chart: existingChart,
+    plannedAccounts: XERO_ACCOUNT_MAPPINGS,
+  });
+  if (accountProblems.length > 0) throw new XeroImportError(describeAccountProblems(accountProblems));
+
   const chartOfAccounts = await reconcileChartOfAccounts(companyId);
   const { result: contactsResult, customerIdByName, supplierIdByName } = await importContacts(companyId, mergedContacts, customerNames, supplierNames, performedBy);
 
@@ -683,6 +771,10 @@ export async function runXeroImport(companyId: string, input: XeroImportInput, p
 
   const billsResult = await importBills(companyId, billGroups.invoices, supplierIdByName);
   billGroups.skipped.forEach((s) => billsResult.warnings.push({ identifier: s.invoiceNumber || s.contactName || `row ${s.rowNumber}`, reason: s.reason }));
+  for (const bill of billGroups.invoices) {
+    const unassigned = bill.lines.filter((l) => !l.accountCode.trim()).length;
+    if (unassigned > 0) billsResult.warnings.push({ identifier: bill.invoiceNumber, reason: `${unassigned} line(s) have no expense account — assign one before the bill is approved.` });
+  }
 
   let bankAccountsResult = emptyResult();
   let bankTransactionsResult = emptyResult();

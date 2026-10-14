@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { requireSession } from "@/server/auth/require-session";
+import { getPerformedByLabel, requireSession } from "@/server/auth/require-session";
 import {
   approveAndPostInvoice,
+  assignMissingLineAccounts,
   cancelInvoice,
   getSalesInvoice,
   NotFoundError,
@@ -71,6 +72,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
         const cancelCheck = await requirePermission(companyId, "Sales:Edit");
         if (!cancelCheck.ok) return cancelCheck.response;
         const invoice = await cancelInvoice(companyId, id);
+        return NextResponse.json({ invoice });
+      }
+      case "assign-line-accounts": {
+        // Fills ONLY lines with no account, on a Draft, with an active
+        // Income account — see `assignMissingLineAccounts`. Same
+        // permission as the other Draft actions.
+        const editCheck = await requirePermission(companyId, "Sales:Edit");
+        if (!editCheck.ok) return editCheck.response;
+        const invoice = await assignMissingLineAccounts(companyId, id, body.glAccount, await getPerformedByLabel());
         return NextResponse.json({ invoice });
       }
       default:

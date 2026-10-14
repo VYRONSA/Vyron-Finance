@@ -37,6 +37,8 @@ import { createAndAutoPost } from "@/server/services/inventory-transaction-servi
 import { getCustomer } from "@/server/services/customer-service";
 import { getCompany } from "@/server/services/company-service";
 import { computeInvoiceTotalsFromCodes } from "@/server/sales/invoice-totals";
+import { listChartOfAccounts } from "@/server/repositories/chart-of-accounts-repository";
+import { recordAuditEntry } from "@/server/services/automation-audit-service";
 import type { SalesInvoice, SalesInvoiceDocumentType, SalesInvoiceStatus } from "@/server/sales/types";
 
 export class ValidationError extends Error {}
@@ -315,6 +317,69 @@ export async function cancelInvoice(companyId: string, invoiceId: number): Promi
     throw new ValidationError(`Cannot cancel ${invoice.invoiceNumber} from status ${invoice.status}.`);
   }
   return repo.cancelInvoice(companyId, invoiceId);
+}
+
+/**
+ * Assigns a revenue account to the lines of ONE Draft invoice that have
+ * none — the supported repair for invoices imported without an account
+ * (Batch 1B of the Handcrafted Food Products migration). Narrow on
+ * purpose:
+ *  - Draft only: a submitted, approved or posted invoice is never touched;
+ *  - only lines whose account is empty; an assigned account is never
+ *    changed, so this cannot re-code anything;
+ *  - only an active Income account that exists in this company's chart;
+ *  - only `gl_account` is written: quantities, prices, VAT and totals are
+ *    left exactly as stored (and checked afterwards);
+ *  - every change is recorded in the audit log against the invoice. If
+ *    that record cannot be written the change is undone and an error
+ *    returned, so no change is ever left unaudited.
+ * The account on a sales line drives the Reporting Centre's sales-by-account
+ * and VAT-by-account breakdowns; posting takes its accounts from the
+ * posting rule, so this changes no journal.
+ */
+export async function assignMissingLineAccounts(companyId: string, invoiceId: number, glAccount: string, performedBy: string): Promise<SalesInvoice> {
+  const invoice = await requireInvoice(companyId, invoiceId);
+  if (invoice.status !== "Draft") {
+    throw new ValidationError(`${invoice.invoiceNumber} is ${invoice.status}; accounts can only be assigned on a Draft.`);
+  }
+  const code = typeof glAccount === "string" ? glAccount.trim() : "";
+  const account = (await listChartOfAccounts(companyId)).find((a) => a.accountCode === code);
+  if (!account) throw new ValidationError(`Account "${code}" is not in the chart of accounts.`);
+  if (!account.isActive) throw new ValidationError(`Account ${code} is inactive.`);
+  if (account.accountType !== "Income") throw new ValidationError(`Account ${code} is ${account.accountType}; a sales line needs an Income account.`);
+
+  const missing = invoice.lines.filter((l) => !l.glAccount).map((l) => l.id);
+  if (missing.length === 0) throw new ValidationError(`Every line on ${invoice.invoiceNumber} already has an account.`);
+
+  const changed = await repo.setMissingLineAccounts(invoiceId, missing, code);
+  if (changed.length === 0) throw new ValidationError(`No line on ${invoice.invoiceNumber} was changed; it may have been updated by someone else.`);
+  try {
+    await recordAuditEntry(companyId, {
+      performedBy,
+      actionType: "SalesInvoiceLineAccountsAssigned",
+      reason: `Assigned account ${code} (${account.description}) to ${changed.length} line(s) of Draft ${invoice.invoiceNumber} that had no account. Amounts, VAT and totals unchanged.`,
+      changes: {
+        invoiceNumber: invoice.invoiceNumber,
+        glAccount: code,
+        lineIds: changed,
+        previousGlAccount: null,
+        totals: { subtotal: invoice.subtotal, vatAmount: invoice.vatAmount, total: invoice.total },
+      },
+      documentType: "SalesInvoice",
+      documentId: invoiceId,
+      isReversible: true,
+    });
+  } catch (error) {
+    await repo.clearLineAccounts(invoiceId, changed, code);
+    throw error;
+  }
+
+  const after = await requireInvoice(companyId, invoiceId);
+  if (after.subtotal !== invoice.subtotal || after.vatAmount !== invoice.vatAmount || after.total !== invoice.total) {
+    // Cannot happen (only gl_account is written) — refuse loudly if it ever does.
+    throw new Error(`Totals of ${invoice.invoiceNumber} changed while assigning accounts.`);
+  }
+  return after;
 }
 
 /** Approve AND post in one call — "journals are generated automatically"

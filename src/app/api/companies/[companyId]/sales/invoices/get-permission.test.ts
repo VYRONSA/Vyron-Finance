@@ -20,6 +20,7 @@ vi.mock("@/server/services/sales-invoice-service", () => ({
   createSalesInvoice: vi.fn(),
   createInvoiceFromOrder: vi.fn(),
   approveAndPostInvoice: vi.fn(),
+  assignMissingLineAccounts: vi.fn(),
   submitInvoice: vi.fn(),
   cancelInvoice: vi.fn(),
   retryPostInvoice: vi.fn(),
