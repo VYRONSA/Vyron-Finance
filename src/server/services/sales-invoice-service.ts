@@ -422,7 +422,10 @@ function postedInvoiceFingerprint(invoice: SalesInvoice, journal: Journal): stri
   });
 }
 
-async function requirePostedInvoiceJournal(companyId: string, invoice: SalesInvoice): Promise<Journal> {
+/** The invoice's own journal, Posted and not reversed — or a
+ * ValidationError saying why not. Shared with the bulk repair's preflight
+ * so both apply the same rule. */
+export async function requirePostedInvoiceJournal(companyId: string, invoice: SalesInvoice): Promise<Journal> {
   const journal = invoice.journalId === null ? null : await journalRepo.getJournal(companyId, invoice.journalId);
   if (!journal || journal.sourceType !== "sales_invoice" || journal.sourceId !== invoice.id) {
     throw new ValidationError(`${invoice.invoiceNumber} has no journal of its own; its accounts cannot be assigned here.`);
@@ -507,7 +510,15 @@ export async function assignMissingPostedLineAccounts(companyId: string, invoice
     });
     return after;
   } catch (error) {
-    await repo.clearLineAccounts(invoiceId, changed, code);
+    try {
+      await repo.clearLineAccounts(invoiceId, changed, code);
+    } catch (undoError) {
+      // Never lose the original reason; say plainly that the lines are still set and unaudited.
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)} Undoing it also failed (${undoError instanceof Error ? undoError.message : String(undoError)}): ` +
+          `line(s) ${changed.join(", ")} of ${invoice.invoiceNumber} are on ${code} without an audit entry.`,
+      );
+    }
     throw error;
   }
 }

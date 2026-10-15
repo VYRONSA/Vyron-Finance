@@ -79,6 +79,22 @@ export async function listSalesInvoicesByCustomer(companyId: string, customerId:
   return data.map(salesInvoiceFromRow);
 }
 
+/** The company's documents with these exact numbers — used to check a
+ * pinned repair scope's numbers against its pinned ids. */
+export async function listSalesInvoicesByNumbers(companyId: string, invoiceNumbers: string[]): Promise<SalesInvoice[]> {
+  if (invoiceNumbers.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("sales_invoices")
+    .select(INVOICE_SELECT)
+    .eq("company_id", companyId)
+    .in("invoice_number", invoiceNumbers)
+    .limit(LIST_CAP)
+    .returns<SalesInvoiceRow[]>();
+  if (error) throw error;
+  return data.map(salesInvoiceFromRow);
+}
+
 export async function getSalesInvoice(companyId: string, invoiceId: number): Promise<SalesInvoice | null> {
   const supabase = await createClient();
   const { data, error } = await supabase

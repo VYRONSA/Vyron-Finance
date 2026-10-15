@@ -16,6 +16,7 @@ import { SendCommunicationButton } from "@/components/financial/communications/s
 import { CommunicationHistoryPanel } from "@/components/financial/communications/communication-history-panel";
 import { DocumentsPanel } from "@/components/financial/documents/documents-panel";
 import { InvoiceDocument } from "@/components/documents/invoice-document";
+import { isPostedRepairCandidate, PostedLineAccountsBulkRepair } from "@/components/financial/sales/posted-line-accounts-bulk";
 import type { Customer } from "@/server/customer-management/types";
 import type { SalesInvoice, SalesInvoiceDocumentType, SalesInvoiceStatus } from "@/server/sales/types";
 import type { VatTreatment } from "@/server/company-management/types";
@@ -546,6 +547,9 @@ export function InvoicesTab({
   const [error, setError] = useState<string | null>(null);
   const [viewInvoiceId, setViewInvoiceId] = useState<number | null>(null);
   const viewedInvoice = invoices.find((i) => i.id === viewInvoiceId) ?? null;
+  const [repairSelection, setRepairSelection] = useState<Set<number>>(new Set());
+  // The selection column exists only while some Posted invoice still has a line without an account.
+  const repairColumn = invoices.some(isPostedRepairCandidate);
 
   const base = `/api/companies/${companyId}/sales/invoices`;
   // Phase 5I — the button was already disabled when a company had no
@@ -618,12 +622,23 @@ export function InvoicesTab({
 
       {error && <p className="text-sm text-vf-danger">{error}</p>}
 
+      <PostedLineAccountsBulkRepair
+        companyId={companyId}
+        invoices={invoices}
+        visibleInvoices={filtered}
+        selected={repairSelection}
+        onSelectedChange={setRepairSelection}
+        previewMode={previewMode}
+        onDone={() => router.refresh()}
+      />
+
       {filtered.length === 0 ? (
         <EmptyState icon={<IconFileText className="h-5 w-5" />} title="No sales documents." description="No invoices, credit notes, or debit notes match the current filters." />
       ) : (
         <Table>
           <TableHead>
             <tr>
+              {repairColumn && <TableHeadCell><span className="sr-only">Select for account repair</span></TableHeadCell>}
               <TableHeadCell><span className="sr-only">Expand</span></TableHeadCell>
               <TableHeadCell>Document #</TableHeadCell>
               <TableHeadCell>Type</TableHeadCell>
@@ -642,6 +657,24 @@ export function InvoicesTab({
               return (
                 <Fragment key={i.id}>
                   <TableRow>
+                    {repairColumn && (
+                      <TableCell>
+                        {isPostedRepairCandidate(i) && (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            aria-label={`Select ${i.invoiceNumber} for account repair`}
+                            checked={repairSelection.has(i.id)}
+                            onChange={(e) => {
+                              const next = new Set(repairSelection);
+                              if (e.target.checked) next.add(i.id);
+                              else next.delete(i.id);
+                              setRepairSelection(next);
+                            }}
+                          />
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <button type="button" aria-label={isExpanded ? `Collapse ${i.invoiceNumber}` : `Expand ${i.invoiceNumber}`} onClick={() => setExpandedId(isExpanded ? null : i.id)} className="text-vf-ink-faint hover:text-vf-ink">
                         {isExpanded ? <IconChevronDown className="h-3.5 w-3.5" /> : <IconChevronLeft className="h-3.5 w-3.5" />}
@@ -703,7 +736,7 @@ export function InvoicesTab({
                   </TableRow>
                   {isExpanded && (
                     <TableRow>
-                      <TableCell colSpan={10} className="bg-vf-paper-alt/40">
+                      <TableCell colSpan={repairColumn ? 11 : 10} className="bg-vf-paper-alt/40">
                         <div className="grid grid-cols-1 gap-4 py-2 lg:grid-cols-2">
                           <div>
                             <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-vf-ink-faint">Lines</p>
