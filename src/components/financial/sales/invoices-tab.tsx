@@ -454,7 +454,9 @@ function InvoiceFormPanel({
 /** A Draft whose lines arrived without an account (e.g. an import file
  * with a blank AccountCode): assign one Income account to those lines
  * only. Lines that already have an account, and every amount, are left
- * as they are — see `assignMissingLineAccounts`. */
+ * as they are — see `assignMissingLineAccounts`. A Posted invoice gets
+ * the same control limited to account 1000, which changes no journal —
+ * see `assignMissingPostedLineAccounts`. */
 export function AssignLineAccounts({
   companyId,
   invoice,
@@ -468,12 +470,13 @@ export function AssignLineAccounts({
   previewMode: boolean;
   onDone: () => void;
 }) {
-  const income = chartOfAccounts.filter((a) => a.isActive && a.accountType === "Income");
+  const posted = invoice.status === "Posted" && invoice.documentType === "Invoice";
+  const income = chartOfAccounts.filter((a) => a.isActive && a.accountType === "Income" && (!posted || a.accountCode === "1000"));
   const missing = invoice.lines.filter((l) => !l.glAccount).length;
   const [glAccount, setGlAccount] = useState(income.find((a) => a.accountCode === "1000")?.accountCode ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (invoice.status !== "Draft" || missing === 0) return null;
+  if ((invoice.status !== "Draft" && !posted) || missing === 0) return null;
 
   async function assign() {
     setLoading(true);
@@ -482,7 +485,7 @@ export function AssignLineAccounts({
       const res = await fetch(`/api/companies/${companyId}/sales/invoices/${invoice.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "assign-line-accounts", glAccount }),
+        body: JSON.stringify({ action: posted ? "assign-posted-line-accounts" : "assign-line-accounts", glAccount }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -499,7 +502,9 @@ export function AssignLineAccounts({
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-vf-danger">{missing} line(s) have no revenue account.</span>
+      <span className="text-vf-danger">
+        {missing} line(s) have no revenue account.{posted && " Assigning one changes no journal, amount or VAT."}
+      </span>
       <div className="w-56">
         <Select aria-label="Revenue account for lines without one" value={glAccount} onChange={(e) => setGlAccount(e.target.value)}>
           <option value="">Choose an Income account…</option>

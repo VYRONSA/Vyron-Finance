@@ -3,6 +3,7 @@ import { getPerformedByLabel, requireSession } from "@/server/auth/require-sessi
 import {
   approveAndPostInvoice,
   assignMissingLineAccounts,
+  assignMissingPostedLineAccounts,
   cancelInvoice,
   getSalesInvoice,
   NotFoundError,
@@ -81,6 +82,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
         const editCheck = await requirePermission(companyId, "Sales:Edit");
         if (!editCheck.ok) return editCheck.response;
         const invoice = await assignMissingLineAccounts(companyId, id, body.glAccount, await getPerformedByLabel());
+        return NextResponse.json({ invoice });
+      }
+      case "assign-posted-line-accounts": {
+        // Fills ONLY lines with no account, on a Posted invoice, with
+        // account 1000 — metadata only, the journal is left exactly as it
+        // is (see `assignMissingPostedLineAccounts`). A posted document, so
+        // both the edit and the approve permission are required.
+        const editCheck = await requirePermission(companyId, "Sales:Edit");
+        if (!editCheck.ok) return editCheck.response;
+        const approveCheck = await requirePermission(companyId, "Sales:Approve");
+        if (!approveCheck.ok) return approveCheck.response;
+        const invoice = await assignMissingPostedLineAccounts(companyId, id, body.glAccount, await getPerformedByLabel());
         return NextResponse.json({ invoice });
       }
       default:

@@ -40,6 +40,7 @@ import { computeInvoiceTotalsFromCodes } from "@/server/sales/invoice-totals";
 import { listChartOfAccounts } from "@/server/repositories/chart-of-accounts-repository";
 import { recordAuditEntry } from "@/server/services/automation-audit-service";
 import type { SalesInvoice, SalesInvoiceDocumentType, SalesInvoiceStatus } from "@/server/sales/types";
+import type { Journal } from "@/server/accounting/types";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -380,6 +381,135 @@ export async function assignMissingLineAccounts(companyId: string, invoiceId: nu
     throw new Error(`Totals of ${invoice.invoiceNumber} changed while assigning accounts.`);
   }
   return after;
+}
+
+/** The one account `assignMissingPostedLineAccounts` may write: 1000
+ * Product Sales, the account the Handcrafted Food Products migration maps
+ * every sales line to (decision D16). */
+export const POSTED_LINE_ACCOUNT_REPAIR_CODE = "1000";
+
+/** Everything about a Posted invoice and its journal that a line-account
+ * repair must leave exactly as it was — the accounting entry, its amounts
+ * and its status, and every line's amounts and VAT. Line accounts are
+ * compared separately. */
+function postedInvoiceFingerprint(invoice: SalesInvoice, journal: Journal): string {
+  return JSON.stringify({
+    invoice: {
+      status: invoice.status,
+      journalId: invoice.journalId,
+      postedAt: invoice.postedAt,
+      subtotal: invoice.subtotal,
+      vatAmount: invoice.vatAmount,
+      total: invoice.total,
+      outstanding: invoice.outstanding,
+      lines: [...invoice.lines]
+        .sort((a, b) => a.id - b.id)
+        .map((l) => [l.id, l.description, l.quantity, l.unitPrice, l.discount, l.netAmount, l.vatAmount, l.lineTotal, l.vatCode, l.stockItemId]),
+    },
+    journal: {
+      id: journal.id,
+      journalNumber: journal.journalNumber,
+      journalDate: journal.journalDate,
+      status: journal.status,
+      totalDebit: journal.totalDebit,
+      totalCredit: journal.totalCredit,
+      postedAt: journal.postedAt,
+      postingBatchId: journal.postingBatchId,
+      isReversed: journal.isReversed,
+      reversedByJournalId: journal.reversedByJournalId,
+      lines: [...journal.lines].sort((a, b) => a.id - b.id).map((l) => [l.id, l.accountCode, l.debit, l.credit]),
+    },
+  });
+}
+
+async function requirePostedInvoiceJournal(companyId: string, invoice: SalesInvoice): Promise<Journal> {
+  const journal = invoice.journalId === null ? null : await journalRepo.getJournal(companyId, invoice.journalId);
+  if (!journal || journal.sourceType !== "sales_invoice" || journal.sourceId !== invoice.id) {
+    throw new ValidationError(`${invoice.invoiceNumber} has no journal of its own; its accounts cannot be assigned here.`);
+  }
+  if (journal.status !== "Posted" || journal.isReversed || journal.reversedByJournalId !== null) {
+    throw new ValidationError(`Journal ${journal.journalNumber} of ${invoice.invoiceNumber} is not a live posted journal; its accounts cannot be assigned here.`);
+  }
+  return journal;
+}
+
+/**
+ * The Posted counterpart of `assignMissingLineAccounts`, for invoices that
+ * were posted before their missing line accounts were filled (Batch 1B of
+ * the Handcrafted Food Products migration). Metadata only, and narrower
+ * still:
+ *  - a Posted Invoice (not a credit note) whose own journal is Posted and
+ *    not reversed;
+ *  - only lines whose account is empty, and only with account 1000 when
+ *    it is an active Income account in this company's chart;
+ *  - only `gl_account` is written. Posting takes its accounts from the
+ *    posting rule, not from the lines, so the journal is not — and must
+ *    not be — touched: the invoice and its journal (status, amounts,
+ *    lines, dates, batch) are fingerprinted before and after, and any
+ *    difference undoes the change and fails loudly;
+ *  - recorded in the audit log with the journal it left alone. If that
+ *    record cannot be written, the change is undone.
+ */
+export async function assignMissingPostedLineAccounts(companyId: string, invoiceId: number, glAccount: string, performedBy: string): Promise<SalesInvoice> {
+  const invoice = await requireInvoice(companyId, invoiceId);
+  if (invoice.status !== "Posted" || invoice.documentType !== "Invoice") {
+    throw new ValidationError(`${invoice.invoiceNumber} is a ${invoice.status} ${invoice.documentType}; this repair is only for Posted invoices.`);
+  }
+  const code = typeof glAccount === "string" ? glAccount.trim() : "";
+  if (code !== POSTED_LINE_ACCOUNT_REPAIR_CODE) {
+    throw new ValidationError(`Only account ${POSTED_LINE_ACCOUNT_REPAIR_CODE} can be assigned to a Posted invoice's lines.`);
+  }
+  const account = (await listChartOfAccounts(companyId)).find((a) => a.accountCode === code);
+  if (!account) throw new ValidationError(`Account "${code}" is not in the chart of accounts.`);
+  if (!account.isActive) throw new ValidationError(`Account ${code} is inactive.`);
+  if (account.accountType !== "Income") throw new ValidationError(`Account ${code} is ${account.accountType}; a sales line needs an Income account.`);
+
+  const missing = invoice.lines.filter((l) => !l.glAccount).map((l) => l.id);
+  if (missing.length === 0) throw new ValidationError(`Every line on ${invoice.invoiceNumber} already has an account.`);
+  const journal = await requirePostedInvoiceJournal(companyId, invoice);
+  const before = postedInvoiceFingerprint(invoice, journal);
+
+  const changed = await repo.setMissingLineAccounts(invoiceId, missing, code);
+  if (changed.length === 0) throw new ValidationError(`No line on ${invoice.invoiceNumber} was changed; it may have been updated by someone else.`);
+  try {
+    const after = await requireInvoice(companyId, invoiceId);
+    const afterJournal = after.journalId === null ? null : await journalRepo.getJournal(companyId, after.journalId);
+    const accountsOk = after.lines.every((l) =>
+      changed.includes(l.id) ? l.glAccount === code : l.glAccount === (invoice.lines.find((o) => o.id === l.id)?.glAccount ?? null),
+    );
+    if (!afterJournal || postedInvoiceFingerprint(after, afterJournal) !== before || !accountsOk) {
+      // Cannot happen (only gl_account of empty lines is written) — undo and refuse loudly if it ever does.
+      throw new Error(`${invoice.invoiceNumber} or journal ${journal.journalNumber} changed while assigning accounts; the change was undone.`);
+    }
+    await recordAuditEntry(companyId, {
+      performedBy,
+      actionType: "SalesInvoicePostedLineAccountsAssigned",
+      reason: `Assigned account ${code} (${account.description}) to ${changed.length} line(s) of Posted ${invoice.invoiceNumber} that had no account. Journal ${journal.journalNumber}, amounts, VAT, totals and status unchanged.`,
+      changes: {
+        invoiceNumber: invoice.invoiceNumber,
+        glAccount: code,
+        lineIds: changed,
+        previousGlAccount: null,
+        totals: { subtotal: invoice.subtotal, vatAmount: invoice.vatAmount, total: invoice.total, outstanding: invoice.outstanding },
+        journal: {
+          id: journal.id,
+          journalNumber: journal.journalNumber,
+          status: journal.status,
+          totalDebit: journal.totalDebit,
+          totalCredit: journal.totalCredit,
+          lines: journal.lines.map((l) => ({ accountCode: l.accountCode, debit: l.debit, credit: l.credit })),
+        },
+      },
+      journalIds: [journal.id],
+      documentType: "SalesInvoice",
+      documentId: invoiceId,
+      isReversible: true,
+    });
+    return after;
+  } catch (error) {
+    await repo.clearLineAccounts(invoiceId, changed, code);
+    throw error;
+  }
 }
 
 /** Approve AND post in one call — "journals are generated automatically"
