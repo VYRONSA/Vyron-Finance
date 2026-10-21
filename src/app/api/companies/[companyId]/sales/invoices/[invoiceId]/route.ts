@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getPerformedByLabel, requireSession } from "@/server/auth/require-session";
 import {
+  allocateCreditNote,
   approveAndPostInvoice,
   assignMissingLineAccounts,
   assignMissingPostedLineAccounts,
   cancelInvoice,
+  ConflictError,
+  ForbiddenError,
   getSalesInvoice,
   NotFoundError,
   retryPostInvoice,
@@ -96,12 +99,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
         const invoice = await assignMissingPostedLineAccounts(companyId, id, body.glAccount, await getPerformedByLabel());
         return NextResponse.json({ invoice });
       }
+      case "allocate-credit-note": {
+        // Applies credit from THIS Posted credit note to a Posted invoice
+        // of the same customer (migration 0121). Changes two posted
+        // documents' balances, so both the edit and the approve permission
+        // are required — checked here and again inside the database.
+        const editCheck = await requirePermission(companyId, "Sales:Edit");
+        if (!editCheck.ok) return editCheck.response;
+        const approveCheck = await requirePermission(companyId, "Sales:Approve");
+        if (!approveCheck.ok) return approveCheck.response;
+        const allocation = await allocateCreditNote(companyId, id, Number(body.invoiceId), Number(body.amount), body.requestKey);
+        return NextResponse.json({ allocation });
+      }
       default:
         return NextResponse.json({ error: `Unknown action '${body.action}'.` }, { status: 400 });
     }
   } catch (error) {
     if (error instanceof ValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
     if (error instanceof NotFoundError) return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof ConflictError) return NextResponse.json({ error: error.message }, { status: 409 });
+    if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
     throw error;
   }
 }

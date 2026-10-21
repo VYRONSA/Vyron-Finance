@@ -426,6 +426,37 @@ async function importContacts(
 // Sales invoices
 // ---------------------------------------------------------------------
 
+/**
+ * Xero exports a credit note with NEGATIVE amounts. PRECISIA stores every
+ * sales and purchase document — credit notes included — as POSITIVE
+ * figures and takes the direction from the document type: the 'Customer
+ * Credit Note' posting rule is DR Sales Returns / DR VAT Output / CR
+ * Debtors, the VAT201 engine and the statements negate a credit note, and
+ * so does the approval limit. A credit note stored with Xero's negative
+ * figures was therefore negated twice: posting it INCREASED Debtors and
+ * Output VAT (production, Metanoia Hospitality: all ten imported credit
+ * notes).
+ *
+ * So a credit note whose total is negative has its money figures flipped
+ * on the way in: total, VAT, amount paid, amount due, and each line's unit
+ * amount, net and VAT. Quantities, descriptions, accounts and tax types
+ * are untouched. A credit note Xero already gives as positive, and every
+ * invoice or bill, is returned as it is.
+ */
+export function normaliseCreditNoteSign(group: XeroInvoiceGroup): XeroInvoiceGroup {
+  const isCreditNote = /credit note$/i.test(group.xeroType.trim());
+  if (!isCreditNote || group.total >= 0) return group;
+  const flip = (n: number) => (n === 0 ? 0 : -n);
+  return {
+    ...group,
+    total: flip(group.total),
+    taxTotal: flip(group.taxTotal),
+    amountPaid: flip(group.amountPaid),
+    amountDue: flip(group.amountDue),
+    lines: group.lines.map((line) => ({ ...line, unitAmount: flip(line.unitAmount), lineAmount: flip(line.lineAmount), taxAmount: flip(line.taxAmount) })),
+  };
+}
+
 function dominantVatCode(lines: { taxType: string }[]): string {
   const counts = new Map<string, number>();
   for (const line of lines) {
@@ -446,7 +477,8 @@ async function importSalesInvoices(companyId: string, invoices: XeroInvoiceGroup
   const existing = await listSalesInvoices(companyId);
   const existingNumbers = new Set(existing.map((i) => i.invoiceNumber));
 
-  for (const invoice of invoices) {
+  for (const source of invoices) {
+    const invoice = normaliseCreditNoteSign(source);
     if (existingNumbers.has(invoice.invoiceNumber)) {
       result.duplicatesPrevented++;
       continue;
@@ -553,7 +585,8 @@ async function importBills(companyId: string, bills: XeroInvoiceGroup[], supplie
   result.found = bills.length;
   const seenKeys = new Set<string>();
 
-  for (const bill of bills) {
+  for (const source of bills) {
+    const bill = normaliseCreditNoteSign(source);
     const supplierId = supplierIdByName.get(bill.contactName.trim().toLowerCase());
     if (supplierId === undefined) {
       result.skipped++;

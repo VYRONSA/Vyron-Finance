@@ -287,6 +287,41 @@ export async function cancelJournal(companyId: string, journalId: number): Promi
   return setJournalStatus(companyId, journalId, "Cancelled", { cancelled_by: performedBy, cancelled_at: new Date().toISOString() });
 }
 
+/** Cancels a journal ONLY while it is still Approved (never posted) — the
+ * condition is part of the write, so a journal the Posting Engine posted a
+ * moment earlier is left alone. Returns whether it was cancelled. Used to
+ * withdraw a journal whose document approval did not complete. */
+export async function cancelUnpostedJournal(companyId: string, journalId: number): Promise<boolean> {
+  const supabase = await createClient();
+  const performedBy = await getPerformedByLabel();
+  const { data, error } = await supabase
+    .from("ae_journals")
+    .update({ status: "Cancelled", cancelled_by: performedBy, cancelled_at: new Date().toISOString() })
+    .eq("company_id", companyId)
+    .eq("id", journalId)
+    .eq("status", "Approved")
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
+/** Every journal raised for one source document, oldest first —
+ * including reversed, rejected and cancelled ones; the caller decides
+ * which still count. */
+export async function listJournalsBySource(companyId: string, sourceType: string, sourceId: number): Promise<Journal[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ae_journals")
+    .select("*, ae_journal_lines(*)")
+    .eq("company_id", companyId)
+    .eq("source_type", sourceType)
+    .eq("source_id", sourceId)
+    .order("id", { ascending: true })
+    .returns<JournalRow[]>();
+  if (error) throw error;
+  return data.map(journalFromRow);
+}
+
 /** Flags the original as reversed and links it to its reversal journal —
  * called once the reversal journal itself has already been created (see
  * `journal-workflow-service.ts::reverseJournal`). Two updates because the

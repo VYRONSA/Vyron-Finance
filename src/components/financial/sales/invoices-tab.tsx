@@ -522,6 +522,121 @@ export function AssignLineAccounts({
   );
 }
 
+/** A credit note's credit not yet applied, as a positive amount, whichever
+ * sign it is stored with (credit notes imported from Xero before 0121 are
+ * stored negative). */
+export function availableCredit(creditNote: Pick<SalesInvoice, "total" | "outstanding">): number {
+  return Math.round((creditNote.total < 0 ? -creditNote.outstanding : creditNote.outstanding) * 100) / 100;
+}
+
+function newRequestKey(): string {
+  return crypto.randomUUID();
+}
+
+/** Applies credit from a Posted credit note to a Posted invoice of the
+ * same customer — see `allocateCreditNote` (migration 0121). The request
+ * key is kept until the target or the amount changes, so retrying after a
+ * lost response can never apply the credit twice. */
+export function AllocateCreditNote({
+  companyId,
+  creditNote,
+  invoices,
+  previewMode,
+  onDone,
+}: {
+  companyId: string;
+  creditNote: SalesInvoice;
+  invoices: SalesInvoice[];
+  previewMode: boolean;
+  onDone: () => void;
+}) {
+  const [targetId, setTargetId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [requestKey, setRequestKey] = useState(newRequestKey);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const available = availableCredit(creditNote);
+  if (creditNote.documentType !== "Credit Note" || creditNote.status !== "Posted" || available <= 0) return null;
+
+  const targets = invoices.filter(
+    (i) => i.id !== creditNote.id && i.customerId === creditNote.customerId && i.status === "Posted" && i.documentType !== "Credit Note" && i.outstanding > 0,
+  );
+
+  function chooseTarget(value: string) {
+    setTargetId(value);
+    const target = targets.find((t) => String(t.id) === value);
+    setAmount(target ? String(Math.min(available, target.outstanding).toFixed(2)) : "");
+    setRequestKey(newRequestKey());
+    setError(null);
+  }
+
+  async function apply() {
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/sales/invoices/${creditNote.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "allocate-credit-note", invoiceId: Number(targetId), amount: Number(amount), requestKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      const a = data.allocation;
+      setMessage(`Applied ${money(a.amount)} to ${a.invoiceNumber}. ${a.invoiceNumber} now has ${money(a.invoiceOutstanding)} outstanding.`);
+      setTargetId("");
+      setAmount("");
+      setRequestKey(newRequestKey());
+      onDone();
+    } catch {
+      setError("Couldn't reach the server. Trying again is safe — the credit will not be applied twice.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-vf-ink-soft">{money(available)} of this credit note is not yet applied.</span>
+      {targets.length === 0 ? (
+        <span className="text-vf-ink-faint">No posted invoice for this customer has an outstanding balance.</span>
+      ) : (
+        <>
+          <div className="w-64">
+            <Select aria-label="Invoice to apply the credit to" value={targetId} onChange={(e) => chooseTarget(e.target.value)}>
+              <option value="">Apply to invoice…</option>
+              {targets.map((t) => (
+                <option key={t.id} value={String(t.id)}>{t.invoiceNumber} — {money(t.outstanding)} outstanding</option>
+              ))}
+            </Select>
+          </div>
+          <div className="w-32">
+            <Input
+              aria-label="Amount to apply"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setRequestKey(newRequestKey());
+              }}
+            />
+          </div>
+          <Button variant="subtle" size="sm" disabled={previewMode || loading || !targetId || !(Number(amount) > 0)} onClick={apply}>
+            {loading ? "Applying…" : "Apply credit"}
+          </Button>
+        </>
+      )}
+      {message && <span className="text-vf-success">{message}</span>}
+      {error && <span className="text-vf-danger">{error}</span>}
+    </div>
+  );
+}
+
 export function InvoicesTab({
   companyId,
   invoices,
@@ -756,6 +871,7 @@ export function InvoicesTab({
                               Subtotal {money(i.subtotal)} · VAT {money(i.vatAmount)} · Total {money(i.total)}
                             </p>
                             <AssignLineAccounts companyId={companyId} invoice={i} chartOfAccounts={chartOfAccounts} previewMode={previewMode} onDone={() => router.refresh()} />
+                            <AllocateCreditNote companyId={companyId} creditNote={i} invoices={invoices} previewMode={previewMode} onDone={() => router.refresh()} />
                           </div>
                           <div className="text-xs text-vf-ink-faint">
                             <p className="mb-1.5 font-medium uppercase tracking-wide">History</p>

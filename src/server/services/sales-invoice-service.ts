@@ -44,6 +44,9 @@ import type { Journal } from "@/server/accounting/types";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
+/** Another request changed the document first (a second approval click, a
+ * concurrent cancel). Nothing was written by the losing request. */
+export class ConflictError extends Error {}
 
 const EVENT_TYPE_BY_DOCUMENT: Record<SalesInvoiceDocumentType, string> = {
   Invoice: "Sales Invoice",
@@ -538,6 +541,7 @@ export async function approveAndPostInvoice(companyId: string, invoiceId: number
   }
 
   const eventType = EVENT_TYPE_BY_DOCUMENT[invoice.documentType];
+  const amounts = salesJournalAmounts(invoice);
 
   /* Phase 5J — the journal is posted from the invoice's OWN saved
    * figures, not from a fresh split of its total.
@@ -563,61 +567,135 @@ export async function approveAndPostInvoice(companyId: string, invoiceId: number
    * ones on the PDF, which are the ones the VAT report reads. They cannot
    * disagree, because there is only one of them. */
   const built = await buildJournalFromEvent(companyId, eventType, {
-    grossAmount: invoice.total,
+    grossAmount: amounts.gross,
     // Retained for callers/rules that read it; the split below is what
     // the amounts are actually taken from.
-    vatRatePercent: invoice.subtotal === 0 ? 0 : (invoice.vatAmount / invoice.subtotal) * 100,
-    amounts: { gross: invoice.total, net: invoice.subtotal, vat: invoice.vatAmount },
+    vatRatePercent: amounts.net === 0 ? 0 : (amounts.vat / amounts.net) * 100,
+    amounts,
     description: `${invoice.documentType} ${invoice.invoiceNumber}`,
   });
   if (!built.ok) {
     throw new ValidationError(`Could not generate a journal for ${invoice.invoiceNumber}: ${built.reason}`);
   }
 
-  const journal = await journalRepo.createJournal(companyId, {
-    /* Phase 5J — the journal is dated the DOCUMENT's date, not today's.
-     *
-     * `createJournal` defaults `journalDate` to `new Date()` when the
-     * caller omits one, and this caller omitted one. `posting_date` comes
-     * from that date, and the trial balance, the financial statements and
-     * the statutory VAT Return (which reads GL accounts 2100/2200 by
-     * `posting_date`) all period-assign from it. So an invoice dated
-     * 31 August but approved on 3 September recognised its revenue and
-     * its output VAT in SEPTEMBER, while every document-based report put
-     * it in August. The two could never reconcile, and the VAT201 for the
-     * August period was understated by exactly that invoice.
-     *
-     * Consequence to be aware of: a document dated inside a closed or
-     * locked financial period can no longer be posted — the Posting
-     * Engine refuses it, the invoice honestly stays Approved-but-unposted
-     * with the reason shown, and `retryPostInvoice` picks it up once the
-     * period is reopened. That is the correct answer: the previous
-     * behaviour did not avoid the problem, it silently posted the entry
-     * into the wrong period instead. */
-    journalDate: invoice.invoiceDate,
-    journalType: invoice.documentType,
-    description: `${invoice.documentType} ${invoice.invoiceNumber}${invoice.reference ? ` — ${invoice.reference}` : ""}`,
-    reference: invoice.reference || invoice.invoiceNumber,
-    sourceType: "sales_invoice",
-    sourceId: invoice.id,
-    status: "Approved",
-    lines: built.lines,
-  });
+  /* One live journal per document (migration 0121 enforces it in the
+   * database). If one already exists, an earlier approval of this
+   * document got as far as creating it and no further — or is finishing
+   * right now. It is taken over, not duplicated, but only when it is
+   * exactly the journal this approval would create; anything else needs a
+   * person to look at it. */
+  const live = (await journalRepo.listJournalsBySource(companyId, "sales_invoice", invoice.id)).filter(isLiveJournal);
+  if (live.length > 1) {
+    throw new ConflictError(`${invoice.invoiceNumber} already has ${live.length} live journals (${live.map((j) => j.journalNumber).join(", ")}). Review them before approving.`);
+  }
+  if (live.length === 1 && !sameJournalLines(live[0].lines, built.lines)) {
+    throw new ConflictError(`${invoice.invoiceNumber} already has journal ${live[0].journalNumber}, which does not match this document. Review it before approving.`);
+  }
 
-  await repo.approveInvoice(companyId, invoiceId, journal.id);
+  const created = live.length === 0;
+  const journal = live[0] ?? (await createSalesJournal(companyId, invoice, built.lines));
 
-  const outcome = await postApprovedJournals(companyId);
-  const wasPosted = outcome.posted.some((p) => p.journalId === journal.id);
-  if (!wasPosted) {
-    const skip = outcome.skipped.find((s) => s.journalId === journal.id);
-    throw new ValidationError(
-      `${invoice.invoiceNumber} was approved but could not be posted${skip ? `: ${skip.reason}` : "."} It remains Approved.`,
-    );
+  const linked = await repo.approveInvoice(companyId, invoiceId, journal.id, invoice.status);
+  if (!linked) {
+    // Another request changed the document between our read and this
+    // write. If it linked this same journal, that request is posting it.
+    // Otherwise the document was changed (e.g. cancelled): withdraw the
+    // journal this request created, unless it was already posted.
+    const now = await requireInvoice(companyId, invoiceId);
+    if (now.journalId !== journal.id && created && !(await journalRepo.cancelUnpostedJournal(companyId, journal.id))) {
+      throw new ConflictError(
+        `${invoice.invoiceNumber} changed to ${now.status} while it was being approved, and its journal ${journal.journalNumber} had already been posted. Review it before doing anything else.`,
+      );
+    }
+    throw new ConflictError(`${invoice.invoiceNumber} was changed by another request while it was being approved (it is now ${now.status}). Refresh to see it.`);
+  }
+
+  if (journal.status !== "Posted") {
+    const outcome = await postApprovedJournals(companyId);
+    const wasPosted = outcome.posted.some((p) => p.journalId === journal.id);
+    if (!wasPosted) {
+      const skip = outcome.skipped.find((s) => s.journalId === journal.id);
+      throw new ValidationError(
+        `${invoice.invoiceNumber} was approved but could not be posted${skip ? `: ${skip.reason}` : "."} It remains Approved.`,
+      );
+    }
   }
 
   await applyInventoryMovement(companyId, invoice);
 
   return repo.markInvoicePosted(companyId, invoiceId);
+}
+
+/**
+ * The figures a sales document posts with: its own stored net, VAT and
+ * total. PRECISIA stores every sales document — a credit note included —
+ * as POSITIVE figures; the posting rule decides the direction (a credit
+ * note's rule is DR Sales Returns / DR VAT Output / CR Debtors). A
+ * document stored with negative figures would be negated twice and post
+ * the opposite of what it says (the ten credit notes imported from Xero
+ * before 0121 increased Debtors and Output VAT). So it is refused, not
+ * "fixed" here: the document itself is wrong and every report reads it.
+ */
+export function salesJournalAmounts(invoice: Pick<SalesInvoice, "invoiceNumber" | "documentType" | "total" | "subtotal" | "vatAmount">): { gross: number; net: number; vat: number } {
+  if (invoice.total < 0 || invoice.subtotal < 0 || invoice.vatAmount < 0) {
+    throw new ValidationError(
+      `${invoice.invoiceNumber} is stored with negative amounts (total ${invoice.total}, VAT ${invoice.vatAmount}). PRECISIA stores every ${invoice.documentType.toLowerCase()} as positive figures and the posting rule sets the direction, so posting it as stored would reverse the entry. Correct the document before approving it.`,
+    );
+  }
+  return { gross: invoice.total, net: invoice.subtotal, vat: invoice.vatAmount };
+}
+
+/** Has moved, or can still move, the ledger — the same definition as
+ * `fn_sales_journal_is_live` in migration 0121. */
+function isLiveJournal(journal: Journal): boolean {
+  return !journal.isReversed && journal.status !== "Rejected" && journal.status !== "Cancelled";
+}
+
+function sameJournalLines(a: { accountCode: string; debit: number; credit: number }[], b: { accountCode: string; debit: number; credit: number }[]): boolean {
+  const key = (lines: { accountCode: string; debit: number; credit: number }[]) =>
+    lines.map((l) => `${l.accountCode}|${Math.round(Number(l.debit) * 100)}|${Math.round(Number(l.credit) * 100)}`).sort().join(";");
+  return key(a) === key(b);
+}
+
+async function createSalesJournal(companyId: string, invoice: SalesInvoice, lines: journalRepo.NewJournalLine[]): Promise<Journal> {
+  try {
+    return await journalRepo.createJournal(companyId, {
+      /* Phase 5J — the journal is dated the DOCUMENT's date, not today's.
+       *
+       * `createJournal` defaults `journalDate` to `new Date()` when the
+       * caller omits one, and this caller omitted one. `posting_date` comes
+       * from that date, and the trial balance, the financial statements and
+       * the statutory VAT Return (which reads GL accounts 2100/2200 by
+       * `posting_date`) all period-assign from it. So an invoice dated
+       * 31 August but approved on 3 September recognised its revenue and
+       * its output VAT in SEPTEMBER, while every document-based report put
+       * it in August. The two could never reconcile, and the VAT201 for the
+       * August period was understated by exactly that invoice.
+       *
+       * Consequence to be aware of: a document dated inside a closed or
+       * locked financial period can no longer be posted — the Posting
+       * Engine refuses it, the invoice honestly stays Approved-but-unposted
+       * with the reason shown, and `retryPostInvoice` picks it up once the
+       * period is reopened. That is the correct answer: the previous
+       * behaviour did not avoid the problem, it silently posted the entry
+       * into the wrong period instead. */
+      journalDate: invoice.invoiceDate,
+      journalType: invoice.documentType,
+      description: `${invoice.documentType} ${invoice.invoiceNumber}${invoice.reference ? ` — ${invoice.reference}` : ""}`,
+      reference: invoice.reference || invoice.invoiceNumber,
+      sourceType: "sales_invoice",
+      sourceId: invoice.id,
+      status: "Approved",
+      lines,
+    });
+  } catch (error) {
+    // Migration 0121: another request created this document's journal a
+    // moment earlier. Nothing was written by this one.
+    if (String((error as { message?: unknown })?.message ?? "").includes("PRECISIA_SALES_JOURNAL_EXISTS")) {
+      throw new ConflictError(`${invoice.invoiceNumber} is already being approved by another request. Refresh to see it.`);
+    }
+    throw error;
+  }
 }
 
 /** The real "Sales reduces inventory" / "Credit Notes restore stock"
@@ -705,4 +783,64 @@ export async function retryPostInvoice(companyId: string, invoiceId: number): Pr
 
   await applyInventoryMovement(companyId, invoice);
   return repo.markInvoicePosted(companyId, invoiceId);
+}
+
+/** The caller lacks the permission the database checked (Sales:Edit and
+ * Sales:Approve for an allocation). */
+export class ForbiddenError extends Error {}
+
+const REQUEST_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Applies `amount` of a Posted credit note's remaining credit to a Posted
+ * invoice (or debit note) of the same customer — migration 0121's
+ * `fn_allocate_sales_credit_note`, which does all of it in one database
+ * transaction: both documents locked, both outstanding balances moved, the
+ * allocation and its audit entry written, or nothing.
+ *
+ * No journal is created, and none is needed: posting the credit note
+ * already credited Debtors. Applying it only matches two open items in
+ * the customer's ledger, so both outstanding balances fall by the same
+ * amount and the customer's balance does not change.
+ *
+ * `requestKey` makes a retry safe: the same key returns the first result
+ * (`replayed: true`) instead of allocating again; reusing it for a
+ * different allocation is refused.
+ */
+export async function allocateCreditNote(
+  companyId: string,
+  creditNoteId: number,
+  invoiceId: number,
+  amount: number,
+  requestKey: string,
+): Promise<repo.CreditNoteAllocationResult> {
+  if (!Number.isInteger(creditNoteId) || !Number.isInteger(invoiceId) || creditNoteId <= 0 || invoiceId <= 0) {
+    throw new ValidationError("Choose the credit note and the invoice to apply it to.");
+  }
+  if (creditNoteId === invoiceId) throw new ValidationError("A credit note cannot be applied to itself.");
+  if (!Number.isFinite(amount) || amount <= 0 || Math.abs(Math.round(amount * 100) - amount * 100) > 1e-6) {
+    throw new ValidationError("The amount must be greater than zero, in rand and cents.");
+  }
+  if (typeof requestKey !== "string" || !REQUEST_KEY.test(requestKey)) {
+    throw new ValidationError("A request key is required.");
+  }
+  try {
+    return await repo.allocateCreditNote(companyId, creditNoteId, invoiceId, amount, requestKey);
+  } catch (error) {
+    throw allocationError(error);
+  }
+}
+
+/** Turns the database's PRECISIA_CN_ALLOCATION_* errors into this
+ * service's error classes, with the prefix removed from the message. */
+function allocationError(error: unknown): Error {
+  const raw = String((error as { message?: unknown })?.message ?? error);
+  const code = (error as { code?: unknown })?.code;
+  const match = /PRECISIA_CN_ALLOCATION_([A-Z_]+):\s*([\s\S]*)$/.exec(raw);
+  const message = match ? match[2].trim() : raw;
+  if (code === "42501" || match?.[1] === "FORBIDDEN") return new ForbiddenError(message);
+  if (match?.[1] === "NOT_FOUND") return new NotFoundError(message);
+  if (match?.[1] === "KEY_REUSED") return new ConflictError(message);
+  if (match) return new ValidationError(message);
+  return error instanceof Error ? error : new Error(raw);
 }

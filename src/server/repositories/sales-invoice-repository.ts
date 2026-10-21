@@ -251,15 +251,70 @@ export async function submitInvoice(companyId: string, invoiceId: number): Promi
 }
 
 /** Stamps Approved and links the journal the service layer just created —
- * one write, since both happen atomically from the caller's perspective. */
-export async function approveInvoice(companyId: string, invoiceId: number, journalId: number): Promise<SalesInvoice> {
+ * one write, and a CONDITIONAL one: it only applies while the invoice is
+ * still in `expectedStatus` with no journal linked. Two overlapping
+ * approvals both read "Submitted"; only the first of them gets past this
+ * write (the second matches no row and gets `null`), so a document can no
+ * longer be linked — and then posted — twice (INV-3611). */
+export async function approveInvoice(companyId: string, invoiceId: number, journalId: number, expectedStatus: SalesInvoiceStatus): Promise<SalesInvoice | null> {
+  const supabase = await createClient();
   const performedBy = await getPerformedByLabel();
-  return setInvoiceFields(companyId, invoiceId, {
-    status: "Approved",
-    approved_by: performedBy,
-    approved_at: new Date().toISOString(),
-    journal_id: journalId,
+  const { data, error } = await supabase
+    .from("sales_invoices")
+    .update({ status: "Approved", approved_by: performedBy, approved_at: new Date().toISOString(), journal_id: journalId })
+    .eq("company_id", companyId)
+    .eq("id", invoiceId)
+    .eq("status", expectedStatus)
+    .is("journal_id", null)
+    .select("id");
+  if (error) throw error;
+  if ((data ?? []).length === 0) return null;
+  return getSalesInvoice(companyId, invoiceId);
+}
+
+export type CreditNoteAllocationResult = {
+  allocationId: number;
+  /** True when this request key had already been used: nothing new was
+   * written, the first request's result is returned. */
+  replayed: boolean;
+  amount: number;
+  creditNoteId: number;
+  creditNoteNumber: string;
+  creditNoteOutstanding: number;
+  invoiceId: number;
+  invoiceNumber: string;
+  invoiceOutstanding: number;
+  auditId: number | null;
+};
+
+/** Migration 0121 — applies credit from a Posted credit note to a Posted
+ * invoice in ONE database transaction (both rows locked, both outstanding
+ * balances, the allocation row and its audit entry), idempotent on
+ * `requestKey`. Every rule — permissions, same customer, no
+ * over-allocation — is enforced inside `fn_allocate_sales_credit_note`. */
+export async function allocateCreditNote(companyId: string, creditNoteId: number, invoiceId: number, amount: number, requestKey: string): Promise<CreditNoteAllocationResult> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fn_allocate_sales_credit_note", {
+    p_company_id: companyId,
+    p_credit_note_id: creditNoteId,
+    p_invoice_id: invoiceId,
+    p_amount: amount,
+    p_request_key: requestKey,
   });
+  if (error) throw error;
+  const r = data as Record<string, unknown>;
+  return {
+    allocationId: Number(r.allocationId),
+    replayed: r.replayed === true,
+    amount: Number(r.amount),
+    creditNoteId: Number(r.creditNoteId),
+    creditNoteNumber: String(r.creditNoteNumber),
+    creditNoteOutstanding: Number(r.creditNoteOutstanding),
+    invoiceId: Number(r.invoiceId),
+    invoiceNumber: String(r.invoiceNumber),
+    invoiceOutstanding: Number(r.invoiceOutstanding),
+    auditId: r.auditId === null || r.auditId === undefined ? null : Number(r.auditId),
+  };
 }
 
 export async function markInvoicePosted(companyId: string, invoiceId: number): Promise<SalesInvoice> {

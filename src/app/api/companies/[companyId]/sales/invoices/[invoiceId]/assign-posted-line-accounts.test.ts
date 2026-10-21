@@ -18,6 +18,9 @@ vi.mock("@/server/services/sales-invoice-service", () => ({
   retryPostInvoice: vi.fn(),
   NotFoundError: class NotFoundError extends Error {},
   ValidationError: class ValidationError extends Error {},
+  ConflictError: class ConflictError extends Error {},
+  ForbiddenError: class ForbiddenError extends Error {},
+  allocateCreditNote: vi.fn(),
 }));
 
 import { PATCH } from "./route";
